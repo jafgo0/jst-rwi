@@ -143,6 +143,24 @@ GET  /api/strategy/scenarios?...                                 -> [ScenarioRes
 GET  /api/alerts                      -> [Alert]
 ```
 
+## 4b. Contract clarifications agreed during implementation
+
+1. **`ArrayConfig.surface_azimuth_deg` under `vehicle_relative` mounting** is a
+   bearing *relative to the vehicle heading*: `None`/`0` means the surface faces
+   the heading, `+90` means it faces heading + 90 deg. For `fixed_tilt` it is an
+   absolute azimuth. A `vehicle_relative` array with an unknown heading raises
+   `ModelConfigurationError` rather than assuming a direction.
+2. **`decompose_ghi` on an OBSERVATION input returns `DataKind.DERIVED`**, not
+   `OBSERVATION`. Only GHI was measured; the DNI/DHI split is a model estimate,
+   so calling it a measurement would be a provenance lie. Forecast and
+   clear-sky inputs keep their kind.
+3. **A provider's positive irradiance while the Sun is below the horizon is
+   clipped to zero** and flagged, at both the decomposition boundary and the
+   API integration boundary. Geometry wins over a grid-interpolated forecast.
+4. **`ArrayConfig` has no soiling, glass-reflection, mismatch or Faiman u0/u1
+   fields** in phase 1. They live as documented module constants in
+   `rwi.energy` until there is measured data to fit them.
+
 ## 5. Definition of done for every module
 
 1. Public functions exactly as specified above, fully type annotated.

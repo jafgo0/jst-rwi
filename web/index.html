@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JST-RWI Race Weather Intelligence</title>
+  <meta name="description" content="JU Solar Team race weather intelligence and decision-support dashboard">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230d1116'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%23e5a73b'/%3E%3C/svg%3E">
+  <script>
+    /* Apply the saved theme before first paint (storage may be unavailable). */
+    try { if (localStorage.getItem("rwi.theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
+  </script>
+  <!-- Pinned CDN builds (exact versions, SRI-verified): MapLibre GL JS 4.7.1, uPlot 1.6.31 -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css"
+        integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/views.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><b>JST-RWI</b><span>Race Weather Intelligence</span></div>
+    <nav class="nav" id="nav" aria-label="Views"></nav>
+    <div class="spacer"></div>
+    <div id="status"></div>
+    <div class="tools" id="tools"></div>
+  </header>
+  <div id="banners" aria-live="polite"></div>
+  <main id="view"><div class="state loading"><h3>Loading dashboard&hellip;</h3>If this message does not go away, JavaScript modules failed to load (see below).</div></main>
+  <footer id="footer"></footer>
+  <noscript><div class="boot-fail">This dashboard needs JavaScript.</div></noscript>
+
+  <script>
+    /* Collect uncaught errors so the boot watchdog (below) can show them. */
+    window.__rwiErrors = [];
+    window.addEventListener("error", function (e) { window.__rwiErrors.push(String(e.message || e.error)); });
+    window.addEventListener("unhandledrejection", function (e) { window.__rwiErrors.push("promise: " + String((e.reason && e.reason.message) || e.reason)); });
+  </script>
+  <script src="config.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+          integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"
+          integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
+  <script type="module" src="js/main.js"></script>
+  <script>
+    /* Boot watchdog: ES modules cannot load from file:// in most browsers. */
+    setTimeout(function () {
+      if (window.__rwiBooted) return;
+      var m = document.getElementById("view");
+      var fileProto = location.protocol === "file:";
+      m.innerHTML = "";
+      var d = document.createElement("div"); d.className = "boot-fail";
+      var t = document.createElement("h3"); t.textContent = "Dashboard failed to start";
+      var p = document.createElement("p");
+      p.textContent = fileProto
+        ? "This page was opened from file://. Browsers block ES modules there. Serve the web/ folder instead: run  python -m http.server 8080  inside web/ and open http://localhost:8080/ , or open http://localhost:8000/ when the API serves the UI."
+        : "The JavaScript modules did not load. Open the browser console for the error.";
+      d.appendChild(t); d.appendChild(p);
+      if (window.__rwiErrors.length) { var pre = document.createElement("pre"); pre.textContent = "Errors: " + window.__rwiErrors.join("\n"); d.appendChild(pre); }
+      m.appendChild(d);
+    }, 2500);
+  </script>
+</body>
+</html>

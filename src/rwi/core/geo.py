@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import math
 from functools import cached_property
-from typing import Annotated, Self
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
 from pyproj import Geod
 
 from rwi.core.errors import InvalidCoordinateError
@@ -36,18 +37,24 @@ class GeoPoint(BaseModel):
     latitude_deg: Latitude
     longitude_deg: Longitude
     elevation_m: float | None = Field(
-        default=None, ge=-500.0, le=9000.0, description="metres above mean sea level, None = unknown"
+        default=None,
+        ge=-500.0,
+        le=9000.0,
+        description="metres above mean sea level; None = unknown",
     )
 
-    @model_validator(mode="after")
-    def _check_finite(self) -> Self:
-        for name in ("latitude_deg", "longitude_deg"):
-            v = getattr(self, name)
-            if not math.isfinite(v):
-                raise InvalidCoordinateError(f"{name} is not finite: {v!r}")
-        if self.elevation_m is not None and not math.isfinite(self.elevation_m):
-            raise InvalidCoordinateError(f"elevation_m is not finite: {self.elevation_m!r}")
-        return self
+    @field_validator("latitude_deg", "longitude_deg", "elevation_m", mode="before")
+    @classmethod
+    def _reject_non_finite(cls, value: object, info: ValidationInfo) -> object:
+        """Raise our own typed error for NaN/inf before pydantic's range check.
+
+        Pydantic's ``ge``/``le`` constraints reject NaN too, but as a generic
+        validation error. The API layer maps :class:`InvalidCoordinateError` to a
+        specific client response, so the typed error must win.
+        """
+        if isinstance(value, float) and not math.isfinite(value):
+            raise InvalidCoordinateError(f"{info.field_name} is not finite: {value!r}")
+        return value
 
     @cached_property
     def elevation_or_zero_m(self) -> float:

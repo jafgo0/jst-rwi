@@ -16,9 +16,10 @@ Conventions that apply to everything here:
 from __future__ import annotations
 
 import bisect
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from itertools import pairwise
 from typing import Literal, Protocol, Self, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -117,13 +118,13 @@ class IrradianceComponents(BaseModel):
 
     @model_validator(mode="after")
     def _enforce_night_zero(self) -> Self:
-        if self.solar_elevation_deg is not None and self.solar_elevation_deg <= 0.0:
-            if max(self.ghi_w_m2, self.dni_w_m2, self.dhi_w_m2) > 0.0:
-                raise ValueError(
-                    "sun below horizon (elevation "
-                    f"{self.solar_elevation_deg:.3f} deg) but irradiance is positive: "
-                    f"ghi={self.ghi_w_m2}, dni={self.dni_w_m2}, dhi={self.dhi_w_m2}"
-                )
+        night = self.solar_elevation_deg is not None and self.solar_elevation_deg <= 0.0
+        if night and max(self.ghi_w_m2, self.dni_w_m2, self.dhi_w_m2) > 0.0:
+            raise ValueError(
+                "sun below horizon (elevation "
+                f"{self.solar_elevation_deg} deg) but irradiance is positive: "
+                f"ghi={self.ghi_w_m2}, dni={self.dni_w_m2}, dhi={self.dhi_w_m2}"
+            )
         return self
 
     def as_measured(self) -> dict[str, Measured]:
@@ -211,7 +212,7 @@ class WeatherSeries(BaseModel):
     @model_validator(mode="after")
     def _sorted_and_utc(self) -> Self:
         times = [ensure_utc(s.valid_time_utc) for s in self.steps]
-        if any(b < a for a, b in zip(times, times[1:], strict=False)):
+        if any(b < a for a, b in pairwise(times)):
             raise ValueError("WeatherSeries steps must be sorted by valid_time_utc")
         return self
 
@@ -221,13 +222,17 @@ class WeatherSeries(BaseModel):
 
     @property
     def variables(self) -> frozenset[str]:
-        return frozenset().union(*(frozenset(s.values) for s in self.steps)) if self.steps else frozenset()
+        if not self.steps:
+            return frozenset()
+        return frozenset().union(*(frozenset(s.values) for s in self.steps))
 
     @property
     def window(self) -> TimeWindow | None:
         if not self.steps:
             return None
-        return TimeWindow(start_utc=self.steps[0].valid_time_utc, end_utc=self.steps[-1].valid_time_utc)
+        return TimeWindow(
+            start_utc=self.steps[0].valid_time_utc, end_utc=self.steps[-1].valid_time_utc
+        )
 
     def series(self, variable: str) -> list[tuple[datetime, float]]:
         """(time, value) pairs for one variable, skipping unusable entries."""
@@ -238,7 +243,9 @@ class WeatherSeries(BaseModel):
                 out.append((step.valid_time_utc, v))
         return out
 
-    def nearest_step(self, when: datetime, *, tolerance_s: float | None = None) -> WeatherStep | None:
+    def nearest_step(
+        self, when: datetime, *, tolerance_s: float | None = None
+    ) -> WeatherStep | None:
         """Step closest in time, or None when nothing is within ``tolerance_s``."""
         if not self.steps:
             return None
@@ -253,13 +260,15 @@ class WeatherSeries(BaseModel):
 
     def base_provenance(self) -> Provenance:
         """Provenance for the series as a whole (no single valid time)."""
+        first_time = self.steps[0].valid_time_utc if self.steps else None
+        last_time = self.steps[-1].valid_time_utc if self.steps else None
         return Provenance(
             provider=self.provider,
             dataset=self.dataset,
             kind=self.kind,
             retrieved_at_utc=self.retrieved_at_utc,
-            valid_time_utc=self.steps[0].valid_time_utc if self.kind is DataKind.FORECAST and self.steps else None,
-            observation_time_utc=self.steps[-1].valid_time_utc if self.kind is DataKind.OBSERVATION and self.steps else None,
+            valid_time_utc=first_time if self.kind is DataKind.FORECAST else None,
+            observation_time_utc=last_time if self.kind is DataKind.OBSERVATION else None,
             model_name=self.model_name,
             model_version=self.model_version,
             model_init_time_utc=self.model_init_time_utc,
@@ -283,7 +292,9 @@ class EnsembleForecast(BaseModel):
     retrieved_at_utc: datetime
     members: list[WeatherSeries]
 
-    def member_values(self, variable: str, when: datetime, *, tolerance_s: float = 1800.0) -> list[float]:
+    def member_values(
+        self, variable: str, when: datetime, *, tolerance_s: float = 1800.0
+    ) -> list[float]:
         values: list[float] = []
         for member in self.members:
             step = member.nearest_step(when, tolerance_s=tolerance_s)
@@ -395,7 +406,7 @@ class Route(BaseModel):
         if len(self.waypoints) < 2:
             raise ValueError("a route needs at least two waypoints")
         d = [w.cumulative_distance_m for w in self.waypoints]
-        if any(b < a for a, b in zip(d, d[1:], strict=False)):
+        if any(b < a for a, b in pairwise(d)):
             raise ValueError("cumulative_distance_m must be non-decreasing")
         return self
 
@@ -495,14 +506,23 @@ class ArrayConfig(BaseModel):
     area_m2: float = Field(gt=0.0)
     cell_efficiency_stc: float = Field(gt=0.0, le=0.5, description="module efficiency at STC, 0-1")
     temperature_coefficient_pmax_per_c: float = Field(
-        le=0.0, description="relative dP/dT, 1/degC, negative for silicon and GaAs"
+        le=0.0,
+        description=(
+            "relative dP/dT, 1/degC; negative for silicon. Note clause 2.4.4 prohibits "
+            "GaAs, CdTe and CuInSe2 for solar conversion - see rwi.regulations"
+        ),
     )
     mppt_efficiency: float = Field(gt=0.0, le=1.0)
     wiring_efficiency: float = Field(gt=0.0, le=1.0)
     mounting: Literal["horizontal", "fixed_tilt", "vehicle_relative"] = "horizontal"
     surface_tilt_deg: float = Field(default=0.0, ge=0.0, le=90.0)
     surface_azimuth_deg: float | None = Field(
-        default=None, description="None with vehicle_relative mounting: derived from heading"
+        default=None,
+        description=(
+            "absolute azimuth for fixed_tilt mounting; for vehicle_relative mounting it is "
+            "a bearing RELATIVE to the vehicle heading (0 or None = facing the heading, "
+            "+90 = tilted about the longitudinal axis facing heading+90)"
+        ),
     )
     noct_c: float = Field(default=48.0, description="nominal operating cell temperature")
     albedo: float = Field(default=0.2, ge=0.0, le=1.0)
@@ -700,9 +720,9 @@ __all__ = [
     "Recommendation",
     "Route",
     "RouteProjection",
+    "RouteWaypoint",
     "RouteWeatherForecast",
     "RouteWeatherSample",
-    "RouteWaypoint",
     "ScenarioConstraintViolation",
     "ScenarioResult",
     "SolarDayEvents",

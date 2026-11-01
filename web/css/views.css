@@ -1,0 +1,13 @@
+/* ---- map view ---- */
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--gap); height: calc(100vh - 190px); min-height: 560px; }
+.mapbox { height: 100%; }
+.mapside { display: flex; flex-direction: column; gap: var(--gap); overflow-y: auto; min-height: 0; }
+.map-notice { font-size: 12px; min-height: 0; }
+.map-notice.err { padding: 6px 8px; background: rgba(255, 93, 93, 0.14); border: 1px solid var(--crit); }
+.map-notice.warn { padding: 4px 8px; background: rgba(229, 167, 59, 0.14); border: 1px solid var(--warn); }
+.lg { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.sw { display: inline-block; flex: 0 0 auto; }
+.sw.line { width: 22px; height: 0; border-top: 3.5px solid #0b5fd0; }
+.sw.stop { width: 10px; height: 10px; border-radius: 50%; border: 3px solid #7a1fa2; background: #fff; }
+.sw.dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #10263f; }
+.sw.ring { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed var(--text-dim); }

@@ -57,9 +57,13 @@ class PositionFix(BaseModel):
     source: str = Field(description="e.g. 'vehicle_telemetry', 'operator', 'route_sim'")
     received_at_utc: datetime
     gps_time_utc: datetime | None = None
-    accuracy_m: float | None = Field(default=None, ge=0.0, description="horizontal 1-sigma or HDOP-derived")
+    accuracy_m: float | None = Field(
+        default=None, ge=0.0, description="horizontal 1-sigma, or derived from HDOP"
+    )
     speed_mps: float | None = Field(default=None, ge=0.0, description="ground speed")
-    course_deg: float | None = Field(default=None, ge=0.0, lt=360.0, description="course over ground")
+    course_deg: float | None = Field(
+        default=None, ge=0.0, lt=360.0, description="course over ground"
+    )
     fix_quality: FixQuality = FixQuality.UNKNOWN
     satellites: int | None = Field(default=None, ge=0)
 

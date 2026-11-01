@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create environment
+        run: |
+          uv venv --python 3.12 .venv
+          VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+
+      - name: Lint
+        run: .venv/bin/ruff check src tests
+
+      - name: Type check
+        run: .venv/bin/mypy src/rwi
+
+      - name: Tests
+        # Network tests are excluded: CI must not depend on an external weather
+        # provider being up, and a provider outage is not a code regression.
+        env:
+          RWI_ALLOW_NETWORK: "false"
+        run: .venv/bin/pytest tests -q -m "not network" --durations=10
+
+      - name: Scientific reference tests
+        env:
+          RWI_ALLOW_NETWORK: "false"
+        run: .venv/bin/pytest tests -q -m "science" --durations=0

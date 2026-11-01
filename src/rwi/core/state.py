@@ -33,7 +33,9 @@ class StateStore:
                 del self._history[:-5000]
             return self._state
 
-    async def update_fix(self, fix: PositionFix, *, heading_deg: float | None = None) -> ActiveState:
+    async def update_fix(
+        self, fix: PositionFix, *, heading_deg: float | None = None
+    ) -> ActiveState:
         async with self._lock:
             current = self._state
             self._state = ActiveState(

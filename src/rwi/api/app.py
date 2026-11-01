@@ -1,0 +1,137 @@
+"""FastAPI application.
+
+Design notes:
+  * every endpoint reads the single authoritative position/time state, or takes
+    an explicit coordinate - there is no default location anywhere;
+  * a feature area whose module is absent answers 501 naming what is missing,
+    instead of returning a plausible-looking placeholder;
+  * /api/health reports what the platform can currently do, so the dashboard can
+    disable a view rather than show an empty one.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from rwi import __version__
+from rwi.api.capability import capability_status, import_errors, require_attr
+from rwi.api.errors import register_error_handlers
+from rwi.api.routers import alerts, energy, route, solar, state, strategy, weather
+from rwi.config import Settings, get_settings
+from rwi.contracts import ProviderHealth
+from rwi.core.timebase import utc_now
+
+_STARTED_AT = utc_now()
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    server_time_utc: datetime
+    uptime_s: float
+    capabilities: dict[str, bool]
+    unavailable_modules: dict[str, str]
+    providers: list[ProviderHealth]
+    provider_errors: dict[str, str]
+    network_enabled: bool
+
+
+health_router = APIRouter(tags=["health"])
+
+
+@health_router.get("/api/health", response_model=HealthResponse)
+async def health(settings: SettingsDep) -> Any:
+    capabilities = capability_status()
+    providers: list[ProviderHealth] = []
+    errors: dict[str, str] = {}
+    if capabilities.get("providers"):
+        try:
+            available: Any = require_attr(
+                "rwi.providers.registry", "available_providers", capability="weather providers"
+            )
+            for name, provider in available(settings).items():
+                try:
+                    providers.append(await provider.health())
+                except Exception as exc:
+                    errors[name] = f"{type(exc).__name__}: {exc}"
+        except Exception as exc:
+            errors["registry"] = f"{type(exc).__name__}: {exc}"
+    degraded = not all(capabilities.values()) or bool(errors)
+    return HealthResponse(
+        status="degraded" if degraded else "ok",
+        version=__version__,
+        server_time_utc=utc_now(),
+        uptime_s=(utc_now() - _STARTED_AT).total_seconds(),
+        capabilities=capabilities,
+        unavailable_modules=import_errors(),
+        providers=providers,
+        provider_errors=errors,
+        network_enabled=settings.allow_network,
+    )
+
+
+@health_router.get("/api/regulations")
+async def regulations() -> dict[str, Any]:
+    """The verified BWSC 2027 limits the platform enforces, with clause numbers.
+
+    Includes what the regulations do NOT yet publish and what they are silent
+    about, so the UI can show the gaps rather than imply completeness.
+    """
+    from rwi.regulations import summary
+
+    return summary()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    settings.cache_dir.mkdir(parents=True, exist_ok=True)
+    yield
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="JST-RWI - Race Weather Intelligence",
+        version=__version__,
+        summary="Meteorological and race decision-support platform for JU Solar Team, BWSC 2027",
+        description=(
+            "Every numeric payload carries provenance: provider, model, valid time, "
+            "position, unit and quality. Observations, forecasts and physical-model "
+            "output are distinct kinds and are never substituted for one another."
+        ),
+        lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "null"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+    register_error_handlers(app)
+    app.include_router(health_router)
+    app.include_router(state.router)
+    app.include_router(solar.router)
+    app.include_router(weather.router)
+    app.include_router(route.router)
+    app.include_router(energy.router)
+    app.include_router(strategy.router)
+    app.include_router(alerts.router)
+
+    web_dir = Path(__file__).resolve().parents[3] / "web"
+    if web_dir.is_dir():
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="dashboard")
+    return app
+
+
+app = create_app()

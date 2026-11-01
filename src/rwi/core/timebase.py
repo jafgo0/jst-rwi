@@ -4,8 +4,14 @@ Rules enforced here:
   * every internal datetime is timezone-aware and in UTC;
   * naive datetimes are rejected loudly rather than guessed at;
   * local time is derived from the *active geographic position*, never from the
-    machine's own timezone, and never from one hardcoded Australian offset
-    (the race route crosses NT/SA, which differ by 30 minutes plus DST rules).
+    machine's own timezone, and never from one hardcoded Australian offset. The
+    route crosses NT into SA: during race week (August) both observe UTC+9:30,
+    but South Australia observes daylight saving and the Northern Territory does
+    not, so the two diverge outside winter. Deriving the zone from the position
+    is correct in both cases.
+
+Regulation clock times are a separate matter: clause 1.3.1 fixes event time at
+ACST = UTC+9:30 regardless of position. Those live in :mod:`rwi.regulations`.
 """
 
 from __future__ import annotations

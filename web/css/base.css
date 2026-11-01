@@ -1,0 +1,163 @@
+/* JST-RWI dashboard - design tokens and page chrome. Dark is the default theme. */
+:root {
+  color-scheme: dark;
+  --bg: #0d1116;
+  --panel: #141a21;
+  --panel-2: #1a222b;
+  --panel-3: #212b36;
+  --border: #2a3541;
+  --border-strong: #3a4756;
+  --text: #dde5ee;
+  --text-dim: #9aa8b8;
+  --text-faint: #6f7e8f;
+  --accent: #4da3ff;
+  --accent-bg: rgba(77, 163, 255, 0.14);
+
+  /* data-kind colours: distinct hue AND distinct border style per kind */
+  --k-observed: #3fbf8f;
+  --k-forecast: #6fa8ff;
+  --k-clearsky: #e5a73b;
+  --k-model: #b79cf5;
+  --k-sim: #ff5f8f;
+  --k-derived: #8fa1b4;
+
+  --ok: #3fbf8f;
+  --watch: #6fa8ff;
+  --warn: #e5a73b;
+  --crit: #ff5d5d;
+  --stale: #f08a24;
+
+  --series-1: #ff9f4a;
+  --series-2: #5cb8ff;
+  --series-3: #9fb0c2;
+  --series-4: #f2cf4a;
+  --series-5: #ff6f6f;
+  --series-6: #4fd1c5;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 4px;
+  --gap: 12px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f5f7fa;
+  --panel-3: #e8ecf1;
+  --border: #d3dae3;
+  --border-strong: #b6c1ce;
+  --text: #17202a;
+  --text-dim: #4d5b6a;
+  --text-faint: #75828f;
+  --accent: #0b64c0;
+  --accent-bg: rgba(11, 100, 192, 0.1);
+
+  --k-observed: #0f7f58;
+  --k-forecast: #1f5fc4;
+  --k-clearsky: #9a6200;
+  --k-model: #6b45c7;
+  --k-sim: #c4164f;
+  --k-derived: #596a7c;
+
+  --ok: #0f7f58;
+  --watch: #1f5fc4;
+  --warn: #9a6200;
+  --crit: #c62828;
+  --stale: #b85a00;
+
+  --series-1: #d9650a;
+  --series-2: #1f6fc4;
+  --series-3: #5b6b7c;
+  --series-4: #a68500;
+  --series-5: #c62828;
+  --series-6: #0b8a82;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  display: flex;
+  flex-direction: column;
+  min-width: 1200px;
+  min-height: 100vh;
+}
+a { color: var(--accent); }
+button, select, input { font: inherit; color: inherit; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dim { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 0 12px; height: 44px; flex: 0 0 auto;
+}
+.brand { display: flex; flex-direction: column; line-height: 1.1; }
+.brand b { font-size: 14px; letter-spacing: 0.04em; }
+.brand span { font-size: 10px; color: var(--text-faint); letter-spacing: 0.06em; text-transform: uppercase; }
+.nav { display: flex; gap: 2px; height: 100%; }
+.topbar, .topbar * { white-space: nowrap; }
+.nav a {
+  display: flex; align-items: center; padding: 0 9px; color: var(--text-dim);
+  text-decoration: none; border-bottom: 2px solid transparent; font-weight: 500;
+}
+.nav a:hover { color: var(--text); background: var(--panel-2); }
+.nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+.nav a .badge { margin-left: 6px; }
+.topbar .spacer { flex: 1; }
+.topbar .tools { display: flex; align-items: center; gap: 8px; }
+
+.btn {
+  background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 3px 10px; cursor: pointer; line-height: 1.5;
+}
+.btn:hover { background: var(--panel-3); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.primary { background: var(--accent-bg); border-color: var(--accent); color: var(--text); }
+.btn.sm { padding: 1px 7px; font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; }
+.seg button { background: var(--panel-2); border: 0; padding: 3px 9px; cursor: pointer; border-right: 1px solid var(--border-strong); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--accent-bg); color: var(--text); font-weight: 600; }
+
+/* ---- banners ---- */
+#banners { flex: 0 0 auto; }
+.banner { padding: 7px 14px; font-weight: 600; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid var(--border); }
+.banner small { font-weight: 400; opacity: 0.95; }
+.banner.sim {
+  color: #fff; font-size: 14px; letter-spacing: 0.02em;
+  background: repeating-linear-gradient(135deg, #b3123f 0 14px, #8f0e32 14px 28px);
+  border-bottom: 2px solid #ff5f8f;
+}
+.banner.err { background: rgba(255, 93, 93, 0.16); color: var(--text); border-bottom-color: var(--crit); }
+.banner.warn { background: rgba(229, 167, 59, 0.16); color: var(--text); border-bottom-color: var(--warn); }
+.banner .tag { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border: 1px solid currentColor; border-radius: 2px; }
+
+/* ---- main / footer ---- */
+main#view { flex: 1 1 auto; padding: var(--gap); min-height: 0; }
+footer#footer {
+  flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--panel);
+  color: var(--text-faint); font-size: 11px; padding: 6px 14px; display: flex; flex-wrap: wrap; gap: 4px 20px;
+}
+footer b { color: var(--text-dim); font-weight: 600; }
+
+.view-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: var(--gap); flex-wrap: wrap; }
+.view-head h1 { font-size: 17px; }
+.view-head .sub { color: var(--text-dim); }
+.view-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.grid { display: grid; gap: var(--gap); }
+.g-cc { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; }
+.span-12 { grid-column: span 12; }
+.g-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.g-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.boot-fail { margin: 40px auto; max-width: 720px; padding: 20px; border: 2px solid var(--crit); background: var(--panel); }

@@ -1,0 +1,17 @@
+{
+ "_captured_utc": "2026-11-01T22:25:24Z",
+ "_url": "https://ensemble-api.open-meteo.com/v1/ensemble?latitude=-12.4634&longitude=130.8456&hourly=temperature_2m&models=gfs025&timezone=UTC&forecast_hours=1",
+ "status_code": 429,
+ "headers": {
+  "X-RateLimit-Limit": "10000.0",
+  "X-RateLimit-Remaining": "0.0",
+  "X-RateLimit-Reset": "1793577617",
+  "X-RateLimit-Window": "86400",
+  "Retry-After": "5693",
+  "Content-Type": "application/json; charset=utf-8"
+ },
+ "body": {
+  "error": true,
+  "reason": "Daily API request limit exceeded. Please try again tomorrow."
+ }
+}
