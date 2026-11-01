@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jst-rwi"
+version = "0.1.0"
+description = "JU Solar Team Race Weather Intelligence - meteorological and race decision-support platform for BWSC 2027"
+requires-python = ">=3.12"
+license = { text = "Proprietary - JU Solar Team (license decision pending, see docs/adr/0002-license.md)" }
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "httpx>=0.27",
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "scipy>=1.14",
+  "pvlib>=0.11",
+  "pyproj>=3.7",
+  "timezonefinder>=6.5",
+  "gpxpy>=1.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.7", "mypy>=1.13"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rwi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+  "network: test requires live internet access to an external provider",
+  "science: scientific correctness test with documented reference values",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ANN"]
+ignore = ["ANN401", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["rwi"]
+mypy_path = "src"
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+ignore_missing_imports = true
