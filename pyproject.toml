@@ -42,6 +42,13 @@ markers = [
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# Keep a bare `ruff check` in agreement with what CI checks (`ruff check src
+# tests`). data/routes/build_stuart_highway_route.py is a one-off provenance
+# record of how the route GeoJSON was produced, kept so the derivation is
+# auditable; it is not imported by the application and does not carry the
+# annotation rules that production code does. Excluding it explicitly is
+# honest; leaving it to fail only on a bare invocation is just confusing.
+extend-exclude = ["data/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ANN"]

@@ -53,11 +53,14 @@ __all__ = [
     "N_BREAK_CLEAR",
     "N_BREAK_CLOUDY",
     "N_BREAK_OVERCAST",
+    "N_CLAMP_HIGH",
+    "N_CLAMP_LOW",
     "ClippedIndex",
     "ReferenceEstimationError",
+    "clamp_cloud_index",
     "clear_sky_index",
-    "cloud_index",
     "clip_clear_sky_index",
+    "cloud_index",
     "estimate_clear_sky_reflectance",
     "estimate_max_reflectance",
     "normalise_reflectance_by_sun",
@@ -210,6 +213,68 @@ def cloud_index(
 # ---------------------------------------------------------------------------
 # A. Clear-sky index (the published piecewise relation)
 # ---------------------------------------------------------------------------
+
+
+#: Heliosat-2 limits the cloud index itself, independently of the k* clip.
+#: Source: Mines ParisTech "Description of the software Heliosat-2", which
+#: states the cloud index is limited to -0.5 and 1.5. Values outside that are
+#: retrieval artefacts (specular reflection, bad reference fields), not weather.
+N_CLAMP_LOW: Final = -0.5
+N_CLAMP_HIGH: Final = 1.5
+
+# ---------------------------------------------------------------------------
+# VERIFICATION STATUS OF THE n -> k* RELATION, checked by the integrator
+# 2026-11-02. Read this before trusting a retrieved irradiance.
+#
+# The coefficients below were written from memory of the literature by the
+# engineer who implemented them, and an attempt to confirm them against a
+# primary source in that session FAILED: the Mines ParisTech software
+# description PDF has no text layer, and the arXiv paper tried as a secondary
+# source yielded no extractable text either.
+#
+# Independently CORROBORATED by literature search:
+#   * the linear middle branch k* = 1 - n. A Heliosat-2 description states
+#     that a cloud index above 0.2 means a clear-sky index below 0.8, which is
+#     exactly k*(0.2) = 0.8 under this branch.
+#   * the existence of a quadratic branch above n = 0.8, introduced because a
+#     linear relation underestimates k* for overcast skies.
+#
+# NOT corroborated, and therefore NOT to be trusted without checking:
+#   * the constant k* = 1.2 below n = -0.2;
+#   * the quadratic coefficients 2.0667, -3.6667, 1.6667;
+#   * the floor k* = 0.05 above n = 1.1.
+#
+# TO RESOLVE: read Rigollier, Lefevre and Wald (2004), Solar Energy 77(2),
+# 159-169, section on the cloud index, or the Heliosat-2 software description
+# from Mines ParisTech, and confirm or correct the four branches. Until then
+# every retrieved irradiance carries an unquantified systematic error on top
+# of the unknown error from having no ground truth at all.
+#
+# A separate and equally important caveat: this relation was developed for
+# Meteosat over Europe and Africa. Central Australia is bright red desert
+# under a different viewing geometry, which is the hardest case for the
+# method, and no one has tuned it for Himawari.
+# ---------------------------------------------------------------------------
+
+
+def clamp_cloud_index(cloud_index: np.ndarray | float) -> np.ndarray:
+    """Apply Heliosat-2's limits on ``n`` itself: ``[-0.5, 1.5]``.
+
+    Deliberately NOT applied inside :func:`cloud_index`, which returns the raw
+    index so that a caller can see how far outside the plausible range a pixel
+    fell - that is diagnostic information about the reference fields, and
+    hiding it would make a bad clear-ground estimate invisible.
+
+    Use this wherever ``n`` is shown or advected rather than immediately
+    converted to ``k*``: the piecewise relation already saturates outside its
+    breakpoints, but a raw ``n`` of -40 from a near-zero reference span would
+    otherwise be displayed, or smeared across a nowcast, as if it meant
+    something.
+
+    NaN is preserved: unknown is not clamped into a value.
+    """
+    values = np.asarray(cloud_index, dtype=float)
+    return np.clip(values, N_CLAMP_LOW, N_CLAMP_HIGH)
 
 
 def clear_sky_index(cloud_index: np.ndarray | float) -> np.ndarray:
