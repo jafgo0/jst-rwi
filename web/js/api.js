@@ -140,6 +140,29 @@ import { setClockOffset } from "./format.js";
  * @property {number|null} [distance_along_route_m] @property {string[]} evidence @property {string|null} [recommended_action] @property {Provenance} provenance
  */
 
+/**
+ * @typedef {Object} VerificationScore one model, one variable, one lead-time bucket
+ * @property {string} variable @property {string} provider @property {string|null} model_name
+ * @property {[number,number]} lead_time_bucket_s half-open [lower, upper) in seconds @property {number} sample_count
+ * @property {number|null} mean_absolute_error @property {number|null} root_mean_square_error @property {number|null} bias
+ * @property {number|null} [mean_observed] @property {number|null} [mean_forecast] @property {number|null} persistence_mae
+ * @property {number|null} skill_vs_persistence 1 - MAE/persistence_MAE; negative = worse than "nothing changes"
+ * @property {string} unit @property {Provenance} provenance
+ */
+/** @typedef {{scores:VerificationScore[], computed_at_utc:string, period:({start_utc:string,end_utc:string}|null), pair_count:number, variables:string[], notes:string[]}} VerificationReport */
+/**
+ * @typedef {Object} EnsembleSummary
+ * @property {string} variable @property {string} valid_time_utc @property {string} unit @property {number} member_count
+ * @property {number} mean @property {number} median @property {number} minimum @property {number} maximum @property {number} standard_deviation
+ * @property {Object<string,number>} percentiles keyed "10","25","50","75","90"; EMPTY for wind direction by design
+ * @property {string} provider @property {string|null} model_name @property {Provenance} provenance
+ */
+/** @typedef {{summaries:EnsembleSummary[], variable:string, member_count:number, model_name:(string|null), caveat:string}} EnsembleResponse */
+/** @typedef {{variable:string, valid_time_utc:string, unit:string, values_by_model:Object<string,number>, spread:number, standard_deviation:number, mean:number, median:number, is_significant:boolean, threshold:number, provenance:Provenance}} ModelDisagreement */
+/** @typedef {{variable:string, generated_at_utc:string, series_by_model:Object<string,[string,number][]>, disagreements:ModelDisagreement[], preferred_model:(string|null), preference_basis:(string|null), notes:string[]}} ModelComparison */
+/** @typedef {{available:boolean, coverage:Object, message:(string|null), capture_enabled:boolean, capture_interval_s:(number|null)}} ArchiveStatus */
+/** @typedef {{summary:string, forecast_rows:number, observation_rows:number, failures:string[], notes:string[]}} CaptureResult */
+
 /* --------------------------------------------------------------------- errors */
 
 /**
@@ -330,6 +353,16 @@ export const api = {
       humanReviewRequired: r.human_review_required ?? true,
     };
   },
+  /** GET /api/forecast/archive. available=false means no archive or a broken one (message says which); available=true with zero rows is an EMPTY archive. @returns {Promise<ArchiveStatus>} */
+  archiveStatus: () => request("/api/forecast/archive"),
+  /** @returns {Promise<VerificationReport>} */
+  verification: ({ variables, days, provider }) => request("/api/forecast/verification", { params: { variables: variables?.join(","), days, provider }, timeoutMs: 60000 }),
+  /** Ensemble spread from members that actually ran. @returns {Promise<EnsembleResponse>} */
+  ensemble: ({ variable, lat, lon, hours }) => request("/api/forecast/ensemble", { params: { variable, lat, lon, hours }, timeoutMs: 60000 }),
+  /** Several numerical models side by side. @returns {Promise<ModelComparison>} */
+  models: ({ variable, lat, lon, hours, models }) => request("/api/forecast/models", { params: { variable, lat, lon, hours, models: models?.join(",") }, timeoutMs: 90000 }),
+  /** Operator action: runs one capture cycle NOW. Makes real provider calls. @returns {Promise<CaptureResult>} */
+  capture: (sites) => request("/api/forecast/capture", { method: "POST", params: { sites }, timeoutMs: 180000 }),
   /** GET /api/regulations: verified BWSC 2027 limits and what is not yet published. */
   regulations: () => request("/api/regulations"),
   /** @returns {Promise<Alert[]>} */
@@ -340,7 +373,7 @@ export const api = {
 export const ENDPOINTS = [
   "GET /api/health", "GET /api/state", "POST /api/state/position", "POST /api/state/time",
   "GET /api/solar/position", "GET /api/solar/day", "GET /api/solar/clearsky/day",
-  "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations",
+  "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations", "GET /api/forecast/archive", "GET /api/forecast/verification", "GET /api/forecast/ensemble", "GET /api/forecast/models", "POST /api/forecast/capture",
   "GET /api/route", "GET /api/route/{id}/geojson", "GET /api/route/{id}/progress", "GET /api/route/{id}/trajectory", "GET /api/route/{id}/weather",
   "GET /api/energy/forecast", "GET /api/strategy/scenarios", "GET /api/regulations", "GET /api/alerts",
 ];

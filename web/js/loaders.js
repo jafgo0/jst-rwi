@@ -93,6 +93,33 @@ export async function loadObservations({ hours = 24, key = "observations", force
     () => api.observations({ lat: p.lat, lon: p.lon, hours, variables }));
 }
 
+/** What the verification history contains (archive coverage). */
+export function loadArchive(force = false) {
+  return load("archive", { endpoint: "GET /api/forecast/archive", ttlMs: 30000, force }, () => api.archiveStatus());
+}
+
+/** Measured forecast skill by variable and lead time (needs no position: it reads the archive). */
+export function loadVerification({ days = 30, provider = "", force = false } = {}) {
+  return load("verification", { endpoint: "GET /api/forecast/verification", paramsKey: `${days}|${provider}`, ttlMs: 60000, force },
+    () => api.verification({ days, provider: provider || undefined }));
+}
+
+/** Ensemble spread for one variable at the active position (51 ECMWF IFS members). */
+export async function loadEnsemble({ variable = "ghi", hours = 48, force = false } = {}) {
+  const p = activePoint();
+  if (!p) { block("ensemble", NO_POS, "GET /api/forecast/ensemble"); return; }
+  return load("ensemble", { endpoint: "GET /api/forecast/ensemble", paramsKey: `${posKey(p)}|${variable}|${hours}|${timeKey()}`, ttlMs: 300000, force },
+    () => api.ensemble({ variable, lat: p.lat, lon: p.lon, hours }));
+}
+
+/** Several numerical models for one variable at the active position. */
+export async function loadModels({ variable = "cloud_cover", hours = 48, force = false } = {}) {
+  const p = activePoint();
+  if (!p) { block("models", NO_POS, "GET /api/forecast/models"); return; }
+  return load("models", { endpoint: "GET /api/forecast/models", paramsKey: `${posKey(p)}|${variable}|${hours}|${timeKey()}`, ttlMs: 300000, force },
+    () => api.models({ variable, lat: p.lat, lon: p.lon, hours }));
+}
+
 /** Projection of the active fix onto the display route (backend map-matching). */
 export async function loadProgress(force = false) {
   const dr = displayRoute();

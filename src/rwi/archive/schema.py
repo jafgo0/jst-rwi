@@ -18,7 +18,9 @@ Storage conventions
 Layout
 ------
 ``series``  one row per *retrieved series* - the provenance stored once.
-``value``   one row per (series, variable, valid time) - the numbers.
+``value``   one row per (series, variable, valid time) - the numbers, each with
+            the instant it was actually retrieved (the leakage guard reads THIS,
+            not the series' first-retrieval time).
 ``daily_aggregate``  what retention keeps after raw rows are pruned.
 
 Migrations are forward-only: ``MIGRATIONS[n]`` upgrades user_version ``n-1`` to
@@ -83,6 +85,7 @@ _V1: Final[tuple[str, ...]] = (
         value          REAL,
         unit           TEXT    NOT NULL,
         quality        TEXT    NOT NULL,
+        retrieved_at_utc INTEGER NOT NULL,
         PRIMARY KEY (series_id, variable, valid_time_utc)
     ) WITHOUT ROWID
     """,

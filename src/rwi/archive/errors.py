@@ -30,9 +30,9 @@ class ArchiveReadOnlyError(ArchiveError):
 
 
 class ArchiveConflictError(ArchiveError):
-    """A series with an already-recorded identity carries different values.
+    """A series contradicts itself: two different values for one variable and instant.
 
-    Recorded forecasts are immutable, so the archive refuses to overwrite and
-    refuses to silently ignore: the caller learns that the same retrieval was
-    reported with two different contents.
+    Raised before anything is written. (A *later* record of a cell that is already
+    archived with a different value is not an error: the archived value is kept
+    and the event is reported in ``SqliteArchive.last_record_report``.)
     """

@@ -116,6 +116,17 @@ class PairsReport:
 
 
 @dataclass(frozen=True)
+class RecordReport:
+    """Outcome of one :meth:`SqliteArchive.record_series` call, in cells."""
+
+    written: int = 0
+    already_present: int = 0
+    """Identical cell already archived: nothing written (idempotency)."""
+    conflicting: int = 0
+    """Cell already archived with a different value: the archived one was kept."""
+
+
+@dataclass(frozen=True)
 class _Match:
     valid_s: int
     forecast_value: float
@@ -160,6 +171,8 @@ class SqliteArchive:
         self._lock = threading.RLock()
         self.last_pairs_report: PairsReport | None = None
         """Report of the most recent :meth:`pairs` call on this object."""
+        self.last_record_report: RecordReport = RecordReport()
+        """Report of the most recent :meth:`record_series` call on this object."""
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -306,14 +319,11 @@ class SqliteArchive:
 
     @staticmethod
     def _identity_key(series: WeatherSeries) -> str:
-        """Hash of the provenance identity of a retrieved series.
-
-        Identity = (provider, dataset, kind, model_name, model_version,
-        model_init_time_utc, retrieved_at_utc, grid point latitude, longitude,
-        elevation), with times as floored epoch seconds and coordinates rounded
-        to 1e-6 degrees / 0.1 m. Values are NOT part of the identity.
-        """
+        """Hash of the provenance identity of a series (see :meth:`record_series`)."""
         point = series.point
+        retrieval_distinguishes = (
+            series.kind is DataKind.FORECAST and series.model_init_time_utc is None
+        )
         fields = [
             series.provider,
             series.dataset,
@@ -321,7 +331,7 @@ class SqliteArchive:
             series.model_name,
             series.model_version,
             None if series.model_init_time_utc is None else to_epoch_s(series.model_init_time_utc),
-            to_epoch_s(series.retrieved_at_utc),
+            to_epoch_s(series.retrieved_at_utc) if retrieval_distinguishes else None,
             round(point.latitude_deg, 6),
             round(point.longitude_deg, 6),
             None if point.elevation_m is None else round(point.elevation_m, 1),
@@ -356,24 +366,36 @@ class SqliteArchive:
     def record_series(self, series: WeatherSeries) -> int:
         """Archive a series; return the number of ``value`` rows newly written.
 
-        **Idempotency identity** (stored as ``series.identity_key``, UNIQUE):
-        ``(provider, dataset, kind, model_name, model_version, model_init_time_utc,
-        retrieved_at_utc, grid latitude, grid longitude, grid elevation)``. The same
-        retrieval recorded again therefore resolves to the same ``series`` row and
-        writes zero rows. A *different* retrieval - a later model run, or the same
-        run fetched again later - has a different identity and is a new series with
-        new rows; nothing already stored is ever changed.
+        **Idempotency identity** (``series.identity_key``, UNIQUE) is the
+        provenance of the *model run or station*, not of the download:
 
-        If the identity already exists, only (variable, valid time) cells not yet
-        stored are added (the same retrieval reported further variables); a cell
-        that exists with a different value, unit or quality raises
-        :class:`ArchiveConflictError` and the whole call is rolled back.
+        * forecast with a known ``model_init_time_utc`` -
+          ``(provider, dataset, kind, model_name, model_version, model_init_time_utc,
+          grid latitude, longitude, elevation)``. Fetching the same run again an
+          hour later is the same forecast, not a second one, so it must not become
+          a second row (it would count one forecast several times in every score);
+        * forecast with no init time - the same plus ``retrieved_at_utc`` (runs
+          cannot be told apart, so each retrieval stands alone);
+        * observation and every other kind - ``(provider, dataset, kind,
+          model_name, model_version, point)``: one series per station/source that
+          grows as new readings arrive.
+
+        A *different* model run (different init time) is a new series with new
+        rows; nothing already stored is ever changed. Within a known identity each
+        (variable, valid time) cell is written at most once, **with its own
+        ``retrieved_at_utc``** - the leakage guard reads the cell's retrieval time,
+        so a cell added by a later fetch is judged by when it was really fetched,
+        never by the first fetch of the run. Re-recording the same series writes 0
+        rows. A cell that already exists with a *different* value, unit or quality
+        is kept as it was (immutable), counted, and logged at WARNING; see
+        :attr:`last_record_report`.
         """
         rows = self._rows(series)
+        self.last_record_report = RecordReport()
         if not rows:
             return 0
         key = self._identity_key(series)
-        written = 0
+        retrieved = to_epoch_s(series.retrieved_at_utc)
         with self._txn(write=True) as conn:
             found = conn.execute("SELECT id FROM series WHERE identity_key = ?", (key,)).fetchone()
             existing: dict[tuple[str, int], tuple[float | None, str, str]] = {}
@@ -381,32 +403,46 @@ class SqliteArchive:
                 series_id = self._insert_series(conn, series, key)
             else:
                 series_id = int(found[0])
-                for var, t, val, unit, qual in conn.execute(
-                    "SELECT variable, valid_time_utc, value, unit, quality "
-                    "FROM value WHERE series_id = ?",
-                    (series_id,),
-                ):
-                    existing[(var, t)] = (val, unit, qual)
+                span: dict[str, list[int]] = {}
+                for variable, t in rows:
+                    lo_hi = span.setdefault(variable, [t, t])
+                    lo_hi[0], lo_hi[1] = min(lo_hi[0], t), max(lo_hi[1], t)
+                for variable, (lo, hi) in span.items():
+                    for t, val, unit, qual in conn.execute(
+                        "SELECT valid_time_utc, value, unit, quality FROM value "
+                        "WHERE series_id = ? AND variable = ? AND valid_time_utc BETWEEN ? AND ?",
+                        (series_id, variable, lo, hi),
+                    ):
+                        existing[(variable, t)] = (val, unit, qual)
             new_rows = []
-            for (variable, t), (value, unit, quality) in rows.items():
+            same = differing = 0
+            for (variable, t), cell in rows.items():
                 stored = existing.get((variable, t))
                 if stored is None:
-                    new_rows.append((series_id, variable, t, value, unit, quality))
-                elif stored != (value, unit, quality):
-                    raise ArchiveConflictError(
-                        f"{series.provider}/{series.dataset} retrieved "
-                        f"{series.retrieved_at_utc.isoformat()} is already archived with a "
-                        f"different {variable} at {from_epoch_s(t).isoformat()} "
-                        f"(stored {stored}, new {(value, unit, quality)}); archived values are "
-                        "immutable"
-                    )
+                    new_rows.append((series_id, variable, t, *cell, retrieved))
+                elif stored == cell:
+                    same += 1
+                else:
+                    differing += 1
             conn.executemany(
-                "INSERT INTO value (series_id, variable, valid_time_utc, value, unit, quality) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO value (series_id, variable, valid_time_utc, value, unit, quality, "
+                "retrieved_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 new_rows,
             )
-            written = len(new_rows)
-        return written
+        self.last_record_report = RecordReport(
+            written=len(new_rows), already_present=same, conflicting=differing
+        )
+        if differing:
+            logger.warning(
+                "archive record_series %s/%s init=%s: %d cell(s) already archived with a "
+                "different value; the archived values were kept (immutable)",
+                series.provider,
+                series.model_name,
+                None if series.model_init_time_utc is None
+                else series.model_init_time_utc.isoformat(),
+                differing,
+            )
+        return len(new_rows)
 
     @staticmethod
     def _insert_series(conn: sqlite3.Connection, s: WeatherSeries, key: str) -> int:
@@ -529,7 +565,7 @@ class SqliteArchive:
     # exists to provide, and INDEXED BY makes a regression fail loudly.
     _FORECAST_SELECT: Final[str] = (
         "SELECT v.series_id, v.valid_time_utc, v.value, s.provider, s.model_name, "
-        "s.model_init_time_utc, s.retrieved_at_utc, s.latitude_deg, s.longitude_deg, "
+        "s.model_init_time_utc, v.retrieved_at_utc, s.latitude_deg, s.longitude_deg, "
         "s.elevation_m "
     )
     _FORECAST_FROM: Final[str] = (
@@ -543,7 +579,7 @@ class SqliteArchive:
     )
     _FORECAST_ELIGIBLE: Final[str] = (
         # THE LEAKAGE GUARD: strictly before the valid time, in SQL.
-        "AND s.retrieved_at_utc < v.valid_time_utc "
+        "AND v.retrieved_at_utc < v.valid_time_utc "
         "AND s.model_init_time_utc IS NOT NULL "
         "AND v.valid_time_utc >= s.model_init_time_utc "
         "AND (v.valid_time_utc - s.model_init_time_utc) >= :lead_lo "
@@ -561,10 +597,10 @@ class SqliteArchive:
     )
     _DROPPED_SQL: Final[str] = (
         "SELECT COUNT(*), "
-        "COALESCE(SUM(s.retrieved_at_utc >= v.valid_time_utc), 0), "
-        "COALESCE(SUM(s.retrieved_at_utc < v.valid_time_utc "
+        "COALESCE(SUM(v.retrieved_at_utc >= v.valid_time_utc), 0), "
+        "COALESCE(SUM(v.retrieved_at_utc < v.valid_time_utc "
         "AND s.model_init_time_utc IS NULL), 0), "
-        "COALESCE(SUM(s.retrieved_at_utc < v.valid_time_utc "
+        "COALESCE(SUM(v.retrieved_at_utc < v.valid_time_utc "
         "AND s.model_init_time_utc IS NOT NULL "
         "AND v.valid_time_utc < s.model_init_time_utc), 0) "
     )
