@@ -43,7 +43,13 @@ KATHERINE = CaptureSite(
     name="Katherine",
     point=GeoPoint(latitude_deg=-14.4652, longitude_deg=132.2635, elevation_m=108.0),
     route_distance_m=315_873.0,
-    rationale="Control stop 1; first day's target. Tindal/Katherine stations nearby.",
+    rationale=(
+        "Control stop 1 and the first day's target. NOTE: measured 2026-11-02, the "
+        "nearest BoM station the adapter will accept is Daly Waters at 232 km, beyond "
+        "the 100 km limit, so this site yields NO observations and can never produce "
+        "verification pairs. It is captured anyway because its forecasts still feed "
+        "model comparison and the route view at a control stop the vehicle must visit."
+    ),
 )
 TENNANT_CREEK = CaptureSite(
     id="tennant-creek",

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hourly forecast/observation capture for JST-RWI (macOS launchd).
+
+  Install:
+    sed "s|@PROJECT_DIR@|$(pwd)|g; s|@HOME@|$HOME|g" \
+      deploy/com.jusolarteam.jst-rwi.capture.plist.template \
+      > ~/Library/LaunchAgents/com.jusolarteam.jst-rwi.capture.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jusolarteam.jst-rwi.capture.plist
+
+  Status:   launchctl print gui/$(id -u)/com.jusolarteam.jst-rwi.capture
+  Run now:  launchctl kickstart -k gui/$(id -u)/com.jusolarteam.jst-rwi.capture
+  Stop:     launchctl bootout gui/$(id -u)/com.jusolarteam.jst-rwi.capture
+  Log:      tail -f ~/Library/Logs/jst-rwi-capture.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jusolarteam.jst-rwi.capture</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>@PROJECT_DIR@/scripts/capture.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>@PROJECT_DIR@</string>
+
+  <!-- Hourly. The forecast models run every 6 h, but hourly capture records
+       each run shortly after it lands and keeps the observation side dense. -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <!-- Capture once at load so an install is verifiable immediately rather than
+       in an hour. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/jst-rwi-capture.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/jst-rwi-capture.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RWI_PROJECT_DIR</key>
+    <string>@PROJECT_DIR@</string>
+    <key>RWI_LOG_LEVEL</key>
+    <string>INFO</string>
+  </dict>
+
+  <!-- If the machine was asleep when a cycle was due, run it on wake rather
+       than skipping silently: a gap nobody is told about is the failure mode
+       that matters. -->
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
