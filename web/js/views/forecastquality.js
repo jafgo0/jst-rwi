@@ -82,6 +82,29 @@ export function scoreCell(sc) {
 
 /* ------------------------------------------------------------ verification */
 
+const n0 = (v) => (Number.isFinite(v) ? v.toLocaleString("en-US") : DASH);
+
+/**
+ * Plain-words account of why archived forecasts are or are not scoreable, from
+ * archive coverage.pairs. Each reason is different in kind, so each gets its own
+ * line: waiting (will resolve), structurally unscoreable (no model run time),
+ * and excluded by the leakage guard.
+ * @param {any} coverage GET /api/forecast/archive -> coverage
+ */
+export function pairsExplanation(coverage) {
+  const p = coverage?.pairs;
+  if (!p) return null;
+  const lines = [];
+  if (p.unmatched_forecasts > 0) lines.push(h("li", null, h("b", null, `${n0(p.unmatched_forecasts)} archived forecasts are waiting`), " for an observation to match them (for example the time they predict has not arrived yet). These become scoreable simply by waiting."));
+  if (p.dropped_no_init_time > 0) lines.push(h("li", null, h("b", null, `${n0(p.dropped_no_init_time)} can never be scored`), ": their model does not publish a run time, so the lead time is unknown. This is a documented limitation (docs/science/capture.md), not a fault."));
+  if (p.dropped_recorded_after_valid > 0) lines.push(h("li", null, h("b", null, `${n0(p.dropped_recorded_after_valid)} were excluded by the leakage guard`), ": they were recorded after the time they predict, and a forecast made after the fact is not a forecast."));
+  if (p.dropped_negative_lead > 0) lines.push(h("li", null, h("b", null, `${n0(p.dropped_negative_lead)} had a negative lead time`), " and were excluded."));
+  const head = p.pair_count > 0 ? `${n0(p.pair_count)} forecast/observation pair(s) are scoreable.` : "No forecast has been scored yet.";
+  return h("div", { class: "state", style: { marginTop: "8px", borderColor: "var(--k-forecast)" } }, h("h3", null, head),
+    h("div", { class: "note", style: { marginBottom: "4px" } }, `Of ${n0(p.forecast_values_considered)} archived forecast values considered (pairing within ${fmtNum((p.max_separation_m ?? 0) / 1000, 0)} km and ${fmtDuration(p.max_time_offset_s)} of an observation):`),
+    lines.length ? h("ul", { class: "plain" }, lines) : textCell(null, "no exclusion reasons were reported"));
+}
+
 /** Archive asymmetry sentence (observations without forecasts cannot be scored). */
 export function archiveSummaryLine() {
   const a = res("archive");
@@ -119,6 +142,7 @@ export function verificationPanel() {
     }
     out.push(h("h3", { style: { margin: "10px 0 4px" } }, `Notes from the verification (${rep.notes.length})`));
     out.push(rep.notes.length ? h("ul", { class: "plain" }, rep.notes.map((n) => h("li", null, n))) : textCell(null, "the report carried no notes"));
+    const why = pairsExplanation(res("archive").data?.coverage); if (why) out.push(why);
     const line = archiveSummaryLine(); if (line) out.push(line);
     return out;
   }, { label: "verification" });
@@ -220,4 +244,3 @@ export function modelsPanel(charts) {
   return panel("Numerical model comparison", wrap, { right: sel, footer: d?.disagreements?.[0] ? provFooter(d.disagreements[0].provenance) : null });
 }
 
-void fmtDuration;
