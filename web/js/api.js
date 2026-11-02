@@ -298,7 +298,7 @@ export const api = {
   forecast: ({ lat, lon, hours, variables, provider }) =>
     request("/api/weather/forecast", { params: { lat, lon, hours, variables: variables?.join(","), provider } }),
   /** Throws ApiError kind "unsupported" (501) when no provider offers observations. @returns {Promise<WeatherSeries>} */
-  observations: ({ lat, lon, hours }) => request("/api/weather/observations", { params: { lat, lon, hours } }),
+  observations: ({ lat, lon, hours, variables }) => request("/api/weather/observations", { params: { lat, lon, hours, variables: variables?.join(",") } }),
 
   /** @returns {Promise<RouteInfo[]>} */
   routes: async () => arrayFrom(await request("/api/route"), ["routes", "items"]) || [],

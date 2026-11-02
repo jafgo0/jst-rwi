@@ -7,7 +7,6 @@ when it gets there - Weather = f(lat, lon, elevation, future time).
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -16,19 +15,21 @@ from pydantic import BaseModel, Field
 
 from rwi.api.capability import require_attr
 from rwi.api.deps import RouteRepository, get_route_repository
+from rwi.api.integration import (
+    MAX_TRAJECTORY_SAMPLES,
+    ROUTE_WEATHER_VARIABLES,
+    trajectory_weather,
+)
 from rwi.config import Settings, get_settings
 from rwi.contracts import (
     Route,
     RouteProjection,
     RouteWeatherForecast,
-    RouteWeatherSample,
     Trajectory,
 )
-from rwi.core.provenance import DataKind
 from rwi.core.state import StateStore, get_state_store
-from rwi.core.timebase import TimeWindow, to_local, utc_now
+from rwi.core.timebase import to_local, utc_now
 from rwi.core.units import kmh_to_ms
-from rwi.core.wind import relative_wind
 
 router = APIRouter(prefix="/api/route", tags=["route"])
 
@@ -36,18 +37,6 @@ StoreDep = Annotated[StateStore, Depends(get_state_store)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RepoDep = Annotated[RouteRepository, Depends(get_route_repository)]
 
-ROUTE_WEATHER_VARIABLES = (
-    "temperature_2m",
-    "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
-    "cloud_cover",
-    "precipitation",
-    "precipitation_probability",
-    "ghi",
-)
-MAX_WEATHER_SAMPLES = 12
-"""Upper bound on provider calls per request, to stay inside rate limits."""
 
 
 class RouteSummary(BaseModel):
@@ -223,11 +212,14 @@ async def read_route_weather(
     start_distance_m: Annotated[float | None, Query(ge=0.0)] = None,
     hours: Annotated[float, Query(gt=0.0, le=240.0)] = 24.0,
 ) -> Any:
+    """Forecast weather at each predicted position, valid at its predicted ETA.
+
+    Sampling is shared with the strategy engine
+    (:func:`rwi.api.integration.trajectory_weather`), so the two views can never
+    disagree about what the forecast says along the route.
+    """
     available: Any = require_attr(
         "rwi.providers.registry", "available_providers", capability="weather providers"
-    )
-    fetch_with_fallback: Any = require_attr(
-        "rwi.providers.registry", "fetch_with_fallback", capability="weather providers"
     )
     route = repo.get(route_id)
     trajectory = _build_trajectory(
@@ -236,65 +228,26 @@ async def read_route_weather(
     now = utc_now()
     horizon = now + timedelta(hours=hours)
     points = [p for p in trajectory.points if p.eta_utc <= horizon]
-    if len(points) > MAX_WEATHER_SAMPLES:
-        stride = max(1, len(points) // MAX_WEATHER_SAMPLES)
-        points = points[::stride][:MAX_WEATHER_SAMPLES]
+    if len(points) > MAX_TRAJECTORY_SAMPLES:
+        stride = max(1, len(points) // MAX_TRAJECTORY_SAMPLES)
+        points = points[::stride][:MAX_TRAJECTORY_SAMPLES]
+    trajectory = trajectory.model_copy(update={"points": points})
 
     providers = available(settings)
-    notes: list[str] = []
-
-    async def _one(trajectory_point: Any) -> RouteWeatherSample | None:
-        window = TimeWindow(
-            start_utc=min(now, trajectory_point.eta_utc - timedelta(hours=1)),
-            end_utc=trajectory_point.eta_utc + timedelta(hours=1),
-        )
-        try:
-            series = await fetch_with_fallback(
-                providers,
-                trajectory_point.point,
-                window,
-                ROUTE_WEATHER_VARIABLES,
-                kind=DataKind.FORECAST,
-            )
-        except Exception as exc:
-            notes.append(f"{trajectory_point.distance_m / 1000:.0f} km: {type(exc).__name__}")
-            return None
-        step = series.nearest_step(trajectory_point.eta_utc, tolerance_s=5400.0)
-        if step is None:
-            notes.append(
-                f"{trajectory_point.distance_m / 1000:.0f} km: no forecast step near the ETA"
-            )
-            return None
-        wind_speed = step.value("wind_speed_10m")
-        wind_from = step.value("wind_direction_10m")
-        rel = None
-        if wind_speed is not None and wind_from is not None:
-            rel = relative_wind(
-                vehicle_speed_mps=trajectory_point.speed_mps,
-                vehicle_heading_deg=trajectory_point.heading_deg,
-                wind_speed_mps=wind_speed,
-                wind_from_deg=wind_from,
-            )
-        base = series.base_provenance()
-        return RouteWeatherSample(
-            trajectory_point=trajectory_point,
-            series_point=series.point,
-            values=dict(step.values),
-            lead_time_s=(trajectory_point.eta_utc - base.retrieved_at_utc).total_seconds(),
-            relative_wind=rel,
-        )
-
-    results = await asyncio.gather(*(_one(p) for p in points))
-    samples = [s for s in results if s is not None]
+    samples, notes = await trajectory_weather(
+        trajectory, providers, variables=ROUTE_WEATHER_VARIABLES
+    )
+    usable = [s for s in samples if s is not None]
     forecast = RouteWeatherForecast(
         route_id=route_id,
         generated_at_utc=now,
-        samples=samples,
+        samples=usable,
         provider=",".join(sorted(providers)) or "none",
         assumptions={
             "speed_kmh": speed_kmh,
-            "sampled_points": len(samples),
-            "max_samples": MAX_WEATHER_SAMPLES,
+            "sampled_points": len(usable),
+            "requested_points": len(samples),
+            "max_samples": MAX_TRAJECTORY_SAMPLES,
             "trajectory_assumptions": str(trajectory.assumptions),
         },
     )
@@ -302,7 +255,7 @@ async def read_route_weather(
         forecast=forecast,
         local_arrival_times=[
             to_local(s.trajectory_point.eta_utc, s.trajectory_point.point).isoformat()
-            for s in samples
+            for s in usable
         ],
-        notes=sorted(set(notes)),
+        notes=notes,
     )

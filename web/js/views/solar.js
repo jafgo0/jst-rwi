@@ -8,7 +8,7 @@
 import { h, replace, append } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, fmtLocal, compass, toMs, fmtEnergyWh } from "../format.js";
 import { panel, kv, numCell, textCell, kindChip, chip, withResource, positionUnknown, stateBox, provFooter, ageSpan } from "../ui.js";
-import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, signature } from "../store.js";
+import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, signature, setSession } from "../store.js";
 import { loadSolar, loadForecast, loadObservations, loadEnergy, solarDate } from "../loaders.js";
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
@@ -17,14 +17,17 @@ const KEYS = ["state", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "
 
 export function create(root) {
   const body = h("div");
+  const daySel = h("select", { class: "ctl", onchange: (e) => setSession({ solarDayOffset: Number(e.target.value) }) },
+    [["0", "Local day of the selected time"], ["1", "Next day"], ["2", "Day after next"]].map(([v, t]) => h("option", { value: v, selected: Number(v) === session.solarDayOffset ? "" : null }, t)));
   root.append(h("div", { class: "view-head" }, h("h1", null, "Solar Intelligence"),
-    h("span", { class: "sub" }, "Sun geometry, clear-sky bound versus forecast irradiance, modelled array power")), body);
+    h("span", { class: "sub" }, "Sun geometry, clear-sky bound versus forecast irradiance, modelled array power"),
+    h("div", { class: "right" }, h("span", { class: "dim" }, "Irradiance chart day:"), daySel)), body);
   const charts = chartHost();
   let lastSig = "";
   return {
     update() {
       loadSolar(); loadForecast({ hours: 48, key: "forecastSolar" }); loadObservations({ hours: 24, key: "observationsSolar" }); loadEnergy();
-      const sig = signature(KEYS);
+      const sig = signature(KEYS, String(session.solarDayOffset));
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
       replace(body, layout(charts));

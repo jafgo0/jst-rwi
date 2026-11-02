@@ -8,7 +8,7 @@ import { h, replace } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, fmtLatLon, provenanceTitle } from "../format.js";
 import { panel, severityChip, chip, withResource, stateBox, ageSpan, kindChip, table } from "../ui.js";
 import { res, signature, notify } from "../store.js";
-import { loadAlerts, loadHealth } from "../loaders.js";
+import { loadAlerts, loadHealth, loadRegulations } from "../loaders.js";
 
 const ORDER = ["critical", "warning", "watch", "info"];
 const SYSTEM_CATS = new Set(["data_quality", "provider", "position"]);
@@ -20,8 +20,8 @@ export function create(root) {
   let lastSig = "";
   return {
     update() {
-      loadAlerts(); loadHealth();
-      const sig = signature(["alerts", "health", "state"], filter.cat);
+      loadAlerts(); loadHealth(); loadRegulations();
+      const sig = signature(["alerts", "health", "state", "regulations"], filter.cat);
       if (sig === lastSig) return;
       lastSig = sig;
       replace(body, layout());
@@ -48,7 +48,7 @@ function layout() {
     }
     return out;
   }, { label: "alerts" });
-  wrap.append(panel("Active alerts", main), healthPanel());
+  wrap.append(panel("Active alerts", main), h("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } }, healthPanel(), regulationsNote()));
   return wrap;
 }
 
@@ -79,4 +79,14 @@ function healthPanel() {
     ], hl.providers) : stateBox("unknown", "No providers reported", "GET /api/health lists no provider."),
     h("div", { class: "note" }, "'Checked' flips to STALE after 5 min (UI default for health checks; the API reports no limit)."),
   ]));
+}
+
+/** What the regulations do NOT publish / are silent on (GET /api/regulations), so a quiet alert list is not read as "all clear". */
+function regulationsNote() {
+  const r = res("regulations");
+  return panel("What alerts cannot cover (regulations)", withResource(r, (g) => [
+    h("div", { class: "note" }, `BWSC 2027 regulations ${g.version || ""}${g.read_on ? ", read " + g.read_on : ""}. Alerts only apply limits the platform has verified; clause numbers appear in the alert text where the backend cites them.`),
+    h("h3", { style: { margin: "8px 0 4px" } }, "Not yet published"), h("ul", { class: "plain" }, (g.not_yet_published || []).map((t) => h("li", null, t))),
+    h("h3", { style: { margin: "8px 0 4px" } }, "Regulations are silent on"), h("ul", { class: "plain" }, (g.silent_in_regulations || []).map((t) => h("li", null, t))),
+  ], { label: "regulations" }), { footer: r.data?.url ? h("footer", { class: "prov" }, "Source: ", r.data.url) : null });
 }

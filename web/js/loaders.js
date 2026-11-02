@@ -9,6 +9,7 @@ import { load, block, res, activePoint, activeState, displayRoute, effectiveTime
 import { cfg } from "./settings.js";
 import { localDate, toMs } from "./format.js";
 
+const OBS_VARIABLES = ["temperature_2m", "relative_humidity_2m", "dew_point_2m", "pressure_msl", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"];
 const NO_POS = "position unknown - no request was made for a guessed location";
 
 /** Rounded position key: refetch when the vehicle moves ~2 km or the selected time changes. */
@@ -38,7 +39,7 @@ export async function loadRouteGeojson(force = false) {
 /** Local calendar date at the vehicle (falls back to UTC date, flagged). */
 export function solarDate() {
   const { tz } = vehicleTimezone();
-  const t = effectiveTimeMs();
+  const t = effectiveTimeMs() + session.solarDayOffset * 86400000;
   const d = tz ? localDate(t, tz) : null;
   return { date: d || new Date(t).toISOString().slice(0, 10), basis: d ? "local" : "utc" };
 }
@@ -47,15 +48,16 @@ export async function loadSolar(force = false) {
   const p = activePoint();
   if (!p) { for (const k of ["solarPos", "solarDay", "clearskyDay"]) block(k, NO_POS); return; }
   const t = new Date(effectiveTimeMs()).toISOString();
+  const dayT = new Date(effectiveTimeMs() + session.solarDayOffset * 86400000).toISOString();
   const { date } = solarDate();
   const key = posKey(p);
   await Promise.all([
     load("solarPos", { endpoint: "GET /api/solar/position", paramsKey: key + "|" + timeKey(), ttlMs: 20000, force },
       () => api.solarPosition({ lat: p.lat, lon: p.lon, elev: p.elev, time: t })),
     load("solarDay", { endpoint: "GET /api/solar/day", paramsKey: key + "|" + date, ttlMs: 600000, force },
-      () => api.solarDay({ lat: p.lat, lon: p.lon, date, time: t })),
+      () => api.solarDay({ lat: p.lat, lon: p.lon, date, time: dayT })),
     load("clearskyDay", { endpoint: "GET /api/solar/clearsky/day", paramsKey: key + "|" + date, ttlMs: 600000, force },
-      () => api.clearskyDay({ lat: p.lat, lon: p.lon, date, time: t, stepS: 900 })),
+      () => api.clearskyDay({ lat: p.lat, lon: p.lon, date, time: dayT, stepS: 900 })),
   ]);
 }
 
@@ -71,7 +73,8 @@ export async function loadObservations({ hours = 24, key = "observations", force
   const p = activePoint();
   if (!p) { block(key, NO_POS, "GET /api/weather/observations"); return; }
   return load(key, { endpoint: "GET /api/weather/observations", paramsKey: `${posKey(p)}|${hours}`, ttlMs: 120000, force },
-    () => api.observations({ lat: p.lat, lon: p.lon, hours }));
+    // Only variables a station network can measure: asking for irradiance/precipitation makes the backend skip BoM entirely.
+    () => api.observations({ lat: p.lat, lon: p.lon, hours, variables: OBS_VARIABLES }));
 }
 
 /** Projection of the active fix onto the display route (backend map-matching). */

@@ -224,6 +224,8 @@ export const session = {
   provider: prefs.get("provider", ""),
   /** Operator-entered start state of charge for scenario evaluation (%); blank = backend default. */
   startSocPct: prefs.get("startSocPct", ""),
+  /** Solar view: 0 = local day of the effective time, 1 = next day, ... (forecast covers 48 h) */
+  solarDayOffset: Number(prefs.get("solarDayOffset", 0)) || 0,
 };
 
 export function setSession(patch) {

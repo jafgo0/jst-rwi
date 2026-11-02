@@ -98,7 +98,16 @@ function regulationsPanel() {
     const right = h("div", null,
       h("h3", { style: { margin: "0 0 4px" } }, "Not yet published"), items(g.not_yet_published),
       h("h3", { style: { margin: "8px 0 4px" } }, "Regulations are silent on"), items(g.silent_in_regulations));
-    return h("div", { class: "grid g-2" }, left, right);
+    const limits = Object.entries(g.class_limits || {});
+    const classTable = limits.length ? table([
+      { h: "Class", cell: ([k]) => k },
+      { h: "Max collector area", cls: "r", cell: ([, v]) => (v.max_collector_area_m2 != null ? numCell(v.max_collector_area_m2, "m\u00b2", { digits: 1 }) : textCell(null, "not stated")) },
+      { h: "Max energy storage", cls: "r", cell: ([, v]) => (v.max_energy_storage_wh != null ? numCell(v.max_energy_storage_wh, "Wh", { digits: 0 }) : textCell(null, "not stated")) },
+      { h: "Max energy storage", cls: "r", cell: ([, v]) => (v.max_energy_storage_mj != null ? numCell(v.max_energy_storage_mj, "MJ", { digits: 1 }) : textCell(null, "not stated")) },
+      { h: "Clause(s)", cell: ([, v]) => (v.clauses ? (Array.isArray(v.clauses) ? v.clauses.join(", ") : typeof v.clauses === "object" ? Object.entries(v.clauses).map(([a, b]) => `${a}: ${b}`).join("; ") : String(v.clauses)) : textCell(null, "no clause supplied")) },
+    ], limits) : null;
+    return h("div", null, h("div", { class: "grid g-2" }, left, right), classTable ? h("div", { style: { marginTop: "10px" } }, h("h3", { style: { margin: "0 0 4px" } }, "Class limits (with clause numbers)"), classTable) : null,
+      h("div", { class: "note", style: { marginTop: "6px" } }, "Only values returned by GET /api/regulations are shown. Where the API supplies no clause number for a figure, none is invented; verify against the regulations document linked below."));
   };
   return panel("Regulatory context (BWSC 2027)", withResource(r, render, { label: "regulations" }),
     { footer: r.data?.url ? h("footer", { class: "prov" }, "Source: ", r.data.url) : null });

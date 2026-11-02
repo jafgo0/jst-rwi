@@ -18,7 +18,7 @@ Status was derived from the files on disk, not from intentions:
 * **researching**: no code, but written research or an ADR exists for it.
 * **implementing**: code exists but no passing automated tests for it, or the capability is only partly covered, or it needs a module that does not exist yet. Parallel work is in progress, so this is the conservative reading; a finished module without tests is still reported here.
 * **tested**: code exists and its unit tests pass (`pytest`, run during generation). This is *not* meteorological accuracy and not validation: it means the code does what its tests say, including documented external reference values where marked `@pytest.mark.science`.
-* **validated against real data**, **operationally ready**: used by no row. There is no vehicle telemetry, no recorded forecast/observation history and no observation source yet, so nothing can honestly claim either.
+* **validated against real data**, **operationally ready**: used by no row. There is no vehicle telemetry and no recorded forecast/observation history, so nothing can honestly claim either. (Correction, verified live 2026-11-02: a real observation source *does* now exist - `rwi.providers.bom` returns BoM station measurements, confirmed end to end through `GET /api/weather/observations` against Darwin Airport. That still does not make any row 'validated against real data': validation needs a *comparison* of model against measurement over time, which has not been done.)
 * A row that needs several modules takes the *least* advanced of them, so a row whose weather input does not exist cannot read 'tested' merely because its solar-geometry half does.
 
 Snapshot of the modules on the generation date:
@@ -75,7 +75,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 23 | Wind Gust Analysis | operational requirement | Gusts above 100 km/h are possible (Reg 2.19.3 note); stability | Gust threshold alerts; gust factor | wind_gusts_10m | `rwi.alerts.rules`, `rwi.quality` | Alert at declared (assumed) threshold; threshold set by vehicle limits once known | P0 | implementing |
 | 24 | Pressure Analysis | operational requirement | Plausibility check; synoptic tendency | Rate-of-change limit from registry | surface_pressure, pressure_msl | `rwi.quality` | Step > limit flagged | P1 | implementing |
 | 25 | Humidity Analysis | operational requirement | Plausibility; fog indicator | Range 0-100 and dew-point <= temperature | RH2m, dew point | `rwi.quality` | Violations flagged | P2 | implementing |
-| 26 | Precipitation Measurement | operational requirement | Rain risk validation needs observed rain | Accumulation and intensity QC; needs an observation source | Observed precipitation (source unresolved) | `rwi.providers` (observation adapter not built), `rwi.quality` | Observed rain never mixed with forecast rain | P1 | implementing |
+| 26 | Precipitation Measurement | operational requirement | Rain risk validation needs observed rain | Accumulation and intensity QC | Observed precipitation: BoM publishes `rain_trace`/`rain_hour`, not yet mapped to a canonical variable | `rwi.providers.bom` (adapter built; precipitation not among its 10 mapped variables), `rwi.quality` | Observed rain never mixed with forecast rain | P1 | implementing |
 | 27 | Cloud Observation | operational requirement | Verify cloud forecasts; clear-sky index from measured GHI | Station/satellite cloud, clearness from measured irradiance | Observed cloud or GHI (no source yet) | `rwi.providers`; `rwi.solar` | Measured clearness index <= physical limit | P1 | implementing |
 | 28 | Visibility Analysis | operational requirement | Reg 3.31.6 penalises driving without adequate visibility (smoke, dust, rain) | Visibility threshold alerts | visibility | `rwi.alerts.rules` | Alert below declared threshold on fixture | P1 | tested |
 | 29 | Solar Irradiance Measurement | operational requirement | Compare model with measured array output / pyranometer | Error metrics model vs measured; night values flagged | Telemetry or pyranometer (none yet) | `rwi.energy.series.compare_with_measured` | Metrics reproduce hand calculation; measured and clear-sky kept separate | P0 | tested |
@@ -332,7 +332,8 @@ Independent work continues around these; the platform uses explicit, labelled as
 | Vehicle parameters (mass, CdA, rolling resistance, drivetrain efficiency, auxiliary power, yaw sensitivity) | #86, #108, #113, #116, #125, #126 |
 | Solar array and battery specification (area, cell type, temperature coefficient, MPPT efficiency, usable energy; Group B, due 5 Mar 2027) | #114, #115, #116, #123, #126 |
 | Telemetry protocol and link (fields, rate, receiver) | #29, #34, #73, #79, #87, #129 |
-| A licensed real observation source (BoM licence path or team sensors) | #26, #27, #32, #34, #37, #59, #128, #129 |
+| **Licence decision** for observations, not the data itself. BoM station observations already work anonymously (verified 2026-11-02, 10 variables), but the free product is licensed for personal / within-organisation use only and may not be supplied to others, so anything shown outside the team needs a Registered User or data-licence route. See `docs/science/providers.md` section 2.2. | #27, #32, #34, #37, #59, #128, #129 |
+| **Measured irradiance**: no provider measures it. Needs a pyranometer or array telemetry; until then, measured-vs-modelled irradiance cannot be compared at all | #26, #29, #102, #105 |
 | Official 2027 route geometry, control stops, driver-change points (Route Notes not published as of 2026-11-01) | #17, #39, #102, #110, #111, #117, #118, #121, #126, #128 |
 | Segment-level posted speed limits (not in Regulations or Guide) | #86, #125 |
 | Competition class and team decision on regulation limits (6 m2, 11 MJ apply to Challenger) | #115, #116, #125 |
@@ -348,3 +349,11 @@ Source of the regulation-related blockers: `docs/research/bwsc-2027-regulations.
 * When `docs/CONTRACTS.md` changes, re-check the component column.
 * This file is regenerated from a table plus a disk scan; when editing by hand keep the vocabulary exact.
 
+## Correction log
+
+Hand corrections made after generation, by the integrator, with the evidence:
+
+| Date | What changed | Evidence |
+|---|---|---|
+| 2026-11-02 | The claim that there is "no observation source yet" was wrong by the time it was written: the BoM adapter landed in the same session. Corrected in the status vocabulary note, in row #26 and in the blocked-inputs table. | `GET /api/weather/observations?variables=temperature_2m,wind_speed_10m,wind_direction_10m,relative_humidity_2m,pressure_msl` at Darwin returned HTTP 200, `kind=observation`, station -12.4239/130.8925, `observation_time_utc=2026-11-02T11:30:00Z`, 30.6 degC / 65 % / 101370 Pa. The same request for the full default variable set correctly returns HTTP 501, because no configured provider *measures* irradiance. |
+| 2026-11-02 | The regulatory limits are no longer open questions: they were read from the official 2027 Event Regulations V1.0 PDF and are encoded with clause references in `src/rwi/regulations.py`. This also corrected the placeholder vehicle's battery from an illegal 5000 Wh to the 11 MJ = 3055.56 Wh ceiling of clause 2.5.2. | `tests/unit/test_regulations.py` (14 tests, 2 marked `science`); `GET /api/regulations`. |
