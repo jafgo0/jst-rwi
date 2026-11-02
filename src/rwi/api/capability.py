@@ -27,6 +27,7 @@ _CAPABILITY_MODULES: dict[str, tuple[str, ...]] = {
     "ensemble": ("rwi.ensemble",),
     "fusion": ("rwi.fusion",),
     "capture": ("rwi.capture",),
+    "satellite": ("rwi.satellite.source", "rwi.satellite.scene"),
 }
 
 
