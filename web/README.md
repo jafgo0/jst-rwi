@@ -108,7 +108,9 @@ js/views/*.js     one module per view
 `GET /api/weather/observable`, `GET /api/weather/observations`, `GET /api/route`, `GET /api/route/{id}/geojson`,
 `GET /api/route/{id}/progress`, `GET /api/route/{id}/trajectory`,
 `GET /api/route/{id}/weather`, `GET /api/energy/forecast`,
-`GET /api/strategy/scenarios`, `GET /api/regulations`, `GET /api/alerts`.
+`GET /api/strategy/scenarios`, `GET /api/regulations`, `GET /api/alerts`,
+`GET /api/forecast/archive`, `GET /api/forecast/verification`, `GET /api/forecast/ensemble`,
+`GET /api/forecast/models`, `POST /api/forecast/capture` (operator button, History view).
 
 Not called: `/api/solar/clearsky` (single instant), `/api/weather/variables`,
 `/api/energy/array`, `/api/strategy/vehicle`, `/api/route/{id}` (full route).
@@ -149,6 +151,14 @@ read "not sampled".
 | Head/tail wind is not confused with apparent wind | `format.trueHeadwind` (true wind along track); the API's `relative_wind.headwind_mps` (includes vehicle speed) is shown separately as "Apparent head" |
 | Assumed vehicle/array parameters are flagged as illustrative | `views/strategy.contextPanel` (ASSUMED chip, "not predictions for the team's car"), `views/command.solarPanel` and `views/solar.powerPanel` (array parameter_source) |
 | Blocking violation cannot be mistaken for a warning | `views/strategy.scenariosPanel`: solid red BLOCKING chip, red row and left rule, INFEASIBLE chip, blocking count in the row; warnings use a yellow WARNING chip |
+| Verification score never bare; provisional below 30 pairs | `forecastquality.scoreCell` (MAE with unit, `n =`, PROVISIONAL chip), `forecastquality.isProvisional` (`MIN_SAMPLES = 30`) |
+| Negative skill reads as worse than "nothing changes" | `forecastquality.skillNode` (WORSE THAN PERSISTENCE chip with signed value) |
+| Zero scores is a stated state, notes always shown, pair diagnostics explained | `forecastquality.verificationPanel`, `forecastquality.pairsExplanation` (waiting / no run time / leakage guard, from `coverage.pairs`) |
+| Ensemble caveat always visible; wind direction has no band | `forecastquality.ensemblePanel` (caveat box; circular-SD line when percentiles are empty) |
+| Preferred model never defaulted | `forecastquality.modelsPanel` (shows NONE plus `preference_basis`) |
+| Provider outage is not an empty chart | `ui.errorPanel` (PROVIDER UNAVAILABLE / BACKEND ERROR), `ui.withResource` (LAST LOADED age + stale data), `forecastquality.outageNote`, `forecast.chartPanel` empty text |
+| Archive states never merged | `history.archivePanel` (endpoint failed / `available:false` / empty / populated) |
+| Capture makes real calls | `history.capturePanel` (warning text, confirm dialog) |
 | Regulations cited with clauses; unpublished items shown | `views/strategy.regulationsPanel` and `views/alerts.regulationsNote` from `/api/regulations` (class limits with the clause string the API supplies, "not yet published", "silent on"). The UI never states a limit without data from that endpoint |
 | Data gaps and regulatory notes rendered | `views/strategy.contextPanel` (`data_gaps`, `regulatory_notes`, `human_review_required`) |
 | Defaults the backend applied are shown, not guessed | `views/strategy.contextPanel` "Inputs applied by the backend" renders the echoed `assumptions` (`ECHO` list); `views/command.energyPanel` labels start SoC "MODEL INPUT" |
@@ -158,7 +168,7 @@ read "not sampled".
 
 * **Historical Analysis**: no archive, session or verification endpoint exists, so
   the view is an explicit empty state plus health/uptime.
-* **Forecast verification table**: every cell reads "no verification history yet".
+* **Forecast verification**: live, but with zero scoreable pairs it shows the archive diagnostics instead of numbers.
 * **Model comparison**: compares providers (from `/api/health`) only; model-level
   comparison inside one provider is not exposed.
 * **Battery state of charge now**: no telemetry endpoint (by design for now); shown as
@@ -208,3 +218,11 @@ Could not verify:
 * Any browser other than the Browser pane's Chromium. The pane throttles
   rendering, so map tiles took about 10 to 15 s to appear.
 * Printing, accessibility audit, long-session memory use.
+
+Phase 2 verification: ensemble fan chart (real ECMWF IFS members), verification panel in its
+zero-evidence state with the real pair diagnostics, History archive panel, and the Forecast
+Center during a real Open-Meteo 503 (PROVIDER UNAVAILABLE). Verification scores, the 503 on the
+ensemble endpoint and the capture result were exercised with canned client-side responses (the
+live backend has no scores, and a real capture was not run because it writes to the shared
+archive). `/api/forecast/models` returned HTTP 500 with no body on the live API (backend raises on an
+empty model set); the UI renders it as BACKEND ERROR.

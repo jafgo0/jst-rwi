@@ -44,13 +44,13 @@ export function isProvisional(score) { return !(Number.isFinite(score.sample_cou
 
 function bucketLabel([lo, hi]) { return `${fmtNum(lo / 3600, 0)}–${fmtNum(hi / 3600, 0)} h`; }
 
-/** Where the archive's last data is, for outage messages ("here is when we last had data"). */
+/** Outage companion note: says what the archive holds, without calling it "the last observation". */
 function outageNote() {
   const a = res("archive").data;
   const last = a?.available ? a.coverage?.latest_valid_time_utc : null;
   return last
-    ? h("div", { class: "note warn" }, `Last data in the archive: valid time ${fmtUtc(last)} (observations; the live forecast provider is not reachable now).`)
-    : null;
+    ? h("div", { class: "note warn" }, `The live provider did not answer. The archive holds data up to valid time ${fmtUtc(last)} (this can include forecasts for future times; it is not the time of the last observation). The panel above shows the last good response from this session, if any, with its age.`)
+    : h("div", { class: "note warn" }, "The live provider did not answer, and archive coverage is not loaded.");
 }
 
 /** Skill versus persistence, signed. Negative = the model is worse than assuming nothing changes. */

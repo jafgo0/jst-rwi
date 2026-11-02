@@ -64,14 +64,29 @@ async def read_archive_status(settings: SettingsDep) -> Any:
             capture_interval_s=settings.capture_interval_s,
         )
     try:
+        coverage = archive.coverage()
+    except Exception as exc:
+        # Opening succeeded but reading did not: a file created by an older or
+        # unreleased build, a corrupt page, a concurrent writer. For the
+        # operator this is the same as unavailable, and the message says which.
         return ArchiveStatus(
-            available=True,
-            coverage=archive.coverage(),
+            available=False,
+            message=(
+                f"archive opened but could not be read: {type(exc).__name__}: {exc}. "
+                "If it was created by an older build, recreate it; the capture worker "
+                "will refill it."
+            ),
             capture_enabled=settings.capture_enabled,
             capture_interval_s=settings.capture_interval_s,
         )
     finally:
         archive.close()
+    return ArchiveStatus(
+        available=True,
+        coverage=coverage,
+        capture_enabled=settings.capture_enabled,
+        capture_interval_s=settings.capture_interval_s,
+    )
 
 
 @router.get("/verification", response_model=VerificationReport)
@@ -204,11 +219,26 @@ async def read_model_comparison(
             )
         except Exception as exc:
             notes.append(f"{name}: {type(exc).__name__}: {exc}")
+    if not series_by_model:
+        # Every model failed. Returning 500 here would throw away the only
+        # useful thing we have - WHICH model failed and why - and would look
+        # like a fault in us rather than an upstream outage.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "ProviderUnavailableError",
+                    "message": (
+                        f"no model returned {variable} for this point: "
+                        f"{len(names)} model(s) attempted, all failed"
+                    ),
+                    "detail": "; ".join(notes) or "no further detail from the provider",
+                }
+            },
+        )
     comparison = compare(series_by_model, variable=variable)
     if notes:
-        comparison = comparison.model_copy(
-            update={"notes": [*comparison.notes, *notes]}
-        )
+        comparison = comparison.model_copy(update={"notes": [*comparison.notes, *notes]})
     return comparison
 
 

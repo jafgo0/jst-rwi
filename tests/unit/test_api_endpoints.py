@@ -290,3 +290,66 @@ def test_observable_variables_are_advertised_rather_than_guessed(
     # A provider that only models anything is absent, not listed with an empty set.
     assert set(body) == {"measuring"}
     assert body["measuring"] == ["temperature_2m", "wind_speed_10m"]
+
+
+def test_an_unreadable_archive_answers_honestly_instead_of_crashing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening an archive can succeed while reading it fails - an older file, a
+    corrupt page. That must read as "unavailable, here is why", not as a 500."""
+
+    class BrokenArchive:
+        def coverage(self) -> dict[str, object]:
+            raise RuntimeError("no such column: v.retrieved_at_utc")
+
+        def close(self) -> None:
+            return None
+
+    import types
+
+    stub = types.ModuleType("rwi.archive")
+    stub.open_archive = lambda _settings: BrokenArchive()  # type: ignore[attr-defined]
+    real_import = capability._try_import
+
+    def _patched(module_name: str) -> Any:
+        return stub if module_name == "rwi.archive" else real_import(module_name)
+
+    monkeypatch.setattr(capability, "_try_import", _patched)
+    response = client.get("/api/forecast/archive")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is False
+    assert "no such column" in body["message"]
+    assert "recreate it" in body["message"]
+
+
+def test_all_models_failing_returns_503_with_the_reasons(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When every model is down, the per-model reasons are the only useful
+    thing we have. A bare 500 would throw them away and blame ourselves."""
+
+    class DeadProvider:
+        async def fetch_forecast(self, *args: Any, **kwargs: Any) -> Any:
+            raise ConnectionError("HTTP 503 from open-meteo: The service is overloaded")
+
+    import types
+
+    registry = types.ModuleType("rwi.providers.registry")
+    registry.available_providers = lambda _s: {"open-meteo": DeadProvider()}  # type: ignore[attr-defined]
+    real_import = capability._try_import
+
+    def _patched(module_name: str) -> Any:
+        return registry if module_name == "rwi.providers.registry" else real_import(module_name)
+
+    monkeypatch.setattr(capability, "_try_import", _patched)
+    client.post(
+        "/api/state/position",
+        json={"mode": "manual", "latitude_deg": -23.698, "longitude_deg": 133.8807},
+    )
+    response = client.get("/api/forecast/models", params={"variable": "cloud_cover"})
+    assert response.status_code == 503
+    error = response.json()["detail"]["error"]
+    assert error["code"] == "ProviderUnavailableError"
+    assert "all failed" in error["message"]
+    assert "overloaded" in error["detail"]

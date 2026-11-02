@@ -56,33 +56,48 @@ efficiency) and precipitation (safety). Pressure and humidity are cheap and
 make the thermodynamic picture checkable.
 """
 
-CAPTURE_MODELS: tuple[str, ...] = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless")
-"""Named models to capture separately, so their skill can be compared.
+CAPTURE_MODELS: tuple[str, ...] = (
+    "ecmwf_ifs025",
+    "ecmwf_ifs",
+    "ecmwf_aifs025_single",
+    "gfs_global",
+    "icon_global",
+)
+"""Named models captured separately. Two purposes, deliberately in one list.
 
-'best_match' is excluded on purpose: it is a blend whose composition can change
-without notice, so a score computed from it would not describe any model that
-exists.
+'best_match' is excluded: it is a blend whose composition can change without
+notice, so a score computed from it would not describe any model that exists.
 
-KNOWN LIMITATION, measured on 2026-11-02 against a real capture of 3,600
-forecast values: only ``ecmwf_ifs025`` reports a model initialisation time.
-``gfs_seamless`` and ``icon_seamless`` do not, and the archive cannot score a
-forecast whose run time is unknown, because lead time is undefined without it.
-In that capture, 2,352 of 3,600 values (65 %) were dropped as
-``dropped_no_init_time``.
+VERIFIABLE (the three ECMWF entries). Probed against the live API on
+2026-11-02: only ECMWF models report a model initialisation time through this
+provider. Without a run time, lead time is undefined and the archive correctly
+refuses to build a pair, so a forecast that lacks one can never be scored.
 
-The likely cause is that a "seamless" model is itself a stitched blend of
-several runs (global, regional and local), so no single initialisation time
-exists - the same reason 'best_match' is excluded.
+  | model                | reports run time |
+  |----------------------|------------------|
+  | ecmwf_ifs025         | yes              |
+  | ecmwf_ifs            | yes              |
+  | ecmwf_aifs025_single | yes              |
+  | gfs_global           | NO               |
+  | gfs_seamless         | NO               |
+  | icon_global          | NO               |
+  | icon_seamless        | NO               |
 
-The likely fix is to capture the single-run variants (``gfs_global``,
-``icon_global``, ``ecmwf_aifs025_single``) instead. That is a HYPOTHESIS, not a
-verified fact: the probe to confirm which of them report a run time could not
-be completed because Open-Meteo was returning HTTP 503 for every request. Do
-not change this tuple until the probe has actually run; capturing a model that
-also lacks a run time would waste storage for months before anyone noticed.
+This refuted the earlier hypothesis that the cause was 'seamless' models being
+stitched blends: the single-run `gfs_global` and `icon_global` lack it too.
 
-The seamless models remain useful for ``rwi.fusion`` model comparison, which
-needs no lead time, so capturing them is not wasted - only unverifiable.
+``ecmwf_aifs025_single`` is ECMWF's AI forecast and ``ecmwf_ifs``/``ecmwf_ifs025``
+are its physics-based ones, all with run times, so capturing the three together
+is what makes an AI-versus-physics benchmark possible on identical lead times.
+The master specification forbids claiming that AI forecasting beats physical
+models without exactly that evidence.
+
+COMPARISON ONLY (gfs_global, icon_global). These can never be scored, but
+`rwi.fusion` compares models at the same valid time and needs no lead time, so
+they still earn their place: genuine disagreement between forecasting centres
+is the cheapest honest signal that a forecast needs a margin. The single-run
+`_global` variants are used rather than `_seamless` because a seamless model is
+itself a stitched blend, which is not a meaningful comparison member.
 """
 
 

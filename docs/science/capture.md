@@ -63,37 +63,55 @@ composition can change without notice, so a skill score computed from it would
 not describe any model that exists, and it could not tell the team which model
 to trust in central Australia — which is the question verification is for.
 
-### The model-run-time problem (measured 2026-11-02)
+### The model-run-time problem (measured and then resolved, 2026-11-02)
 
-A real capture of 3,600 forecast values across the three models above produced
-**zero scoreable pairs**, for a reason worth recording:
+A capture of 3,600 forecast values across `ecmwf_ifs025`, `gfs_seamless` and
+`icon_seamless` produced **zero scoreable pairs**. The archive refuses to pair
+a forecast whose initialisation time is unknown, and it is right to: lead time
+is *valid time minus run time*, so without a run time the single most important
+dimension of forecast skill is undefined. 2,352 of 3,600 values (65 %) were
+dropped as `dropped_no_init_time`.
 
-| Model | Reports a model run time? | Values captured |
-|---|---|---|
-| `ecmwf_ifs025` | yes | 1,200 |
-| `gfs_seamless` | **no** | 1,200 |
-| `icon_seamless` | **no** | 1,200 |
+**The first explanation was wrong.** It was recorded as a hypothesis that
+"seamless" models are stitched blends of several runs, so no single run time
+exists. A direct probe of the live API refuted it:
 
-The archive refuses to build a pair from a forecast whose initialisation time
-is unknown, and it is right to: lead time is *valid time minus run time*, so
-without a run time the single most important dimension of forecast skill is
-undefined. In that capture 2,352 of 3,600 values (65 %) were dropped as
-`dropped_no_init_time`.
+| `models=` | Reports a model run time? |
+|---|---|
+| `ecmwf_ifs025` | yes |
+| `ecmwf_ifs` | yes |
+| `ecmwf_aifs025_single` | yes |
+| `gfs_global` | **no** |
+| `gfs_seamless` | **no** |
+| `icon_global` | **no** |
+| `icon_seamless` | **no** |
 
-The likely cause is that a "seamless" model is a stitched blend of several runs
-at different resolutions, so no single initialisation time exists — the same
-reason `best_match` is excluded from capture entirely.
+The single-run `gfs_global` and `icon_global` lack it as well. The actual rule
+is simpler and has nothing to do with blending: **only ECMWF models expose a
+run time through this provider.** Switching from the seamless to the global
+variants would have changed nothing, which is exactly why the model list was
+not changed until the probe had run.
 
-The likely fix is to capture the single-run variants instead (`gfs_global`,
-`icon_global`, `ecmwf_aifs025_single`). **This is a hypothesis.** The probe to
-confirm which of them actually report a run time could not be completed:
-Open-Meteo returned HTTP 503 for every request at the time. It must be run
-before the capture model list is changed, because switching to another model
-that also lacks a run time would silently waste months of storage.
+**What this unlocked.** `ecmwf_aifs025_single` is ECMWF's AI forecast, and
+`ecmwf_ifs` / `ecmwf_ifs025` are its physics-based ones. All three report run
+times, so capturing them together makes an **AI-versus-physics benchmark on
+identical lead times** possible. Section 5 of the master specification forbids
+claiming that AI forecasting outperforms physical models without that evidence;
+this is how the team will get it.
 
-Separately, the seamless models are still useful to `rwi.fusion`, which
-compares models at the same valid time and needs no lead time at all. So
-capturing them is unverifiable, not useless.
+**The resulting model list** (`CAPTURE_MODELS`) serves two purposes:
+
+* *verifiable*: `ecmwf_ifs025`, `ecmwf_ifs`, `ecmwf_aifs025_single`;
+* *comparison only*: `gfs_global`, `icon_global`. They can never be scored, but
+  `rwi.fusion` compares models at the same valid time and needs no lead time,
+  and genuine disagreement between forecasting centres is the cheapest honest
+  signal that a forecast needs a margin. The `_global` variants are preferred
+  over `_seamless` because a seamless model is itself a blend, which is not a
+  meaningful comparison member.
+
+If GFS or ICON lead times are ever needed, the run time would have to come from
+somewhere else — NOAA's own distribution publishes it — which is a provider
+question, not an archive one.
 
 ## Design rules
 
@@ -158,7 +176,8 @@ the retention policy keeps bounded.
 | `run_forever` backoff and stop | implemented, not validated (no long run yet) |
 | CLI entry point | implemented, not validated |
 | Forecast capture against a live provider | tested — 3,600 forecast values captured from 3 models at 2 sites on 2026-11-02, 0 failures |
-| Model run times from non-ECMWF models | **researching** — see "The model-run-time problem"; 65 % of captured values are currently unscoreable |
+| Model run times | tested — probed across 7 models; only ECMWF reports one, and the capture list now reflects that |
+| AI-versus-physics benchmark (AIFS vs IFS) | not started — the data is now being captured; a score needs forecasts to reach their valid time |
 | Retention enforcement (`enforce_retention`) | tested |
 | Continuous operation over weeks | not started |
 

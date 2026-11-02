@@ -624,6 +624,7 @@ class OpenMeteoProvider(BaseProvider):
 
         # unit converters, resolved once per column from the unit the API reports
         converters: dict[str, _Conv | None] = {}
+        unavailable_variables: list[str] = []
         for v in variables:
             col = columns[v]
             if col not in hourly:
@@ -632,6 +633,17 @@ class OpenMeteoProvider(BaseProvider):
             unit = units.get(col, "")
             conv = _BY_CANONICAL[v].units.get(unit)
             if conv is None:
+                # Open-Meteo signals "this model does not have this variable" by
+                # returning the column with unit "undefined" and nothing but
+                # nulls. That is a variable the model lacks, not a unit we
+                # cannot trust, and failing the whole request over it would
+                # throw away every other variable in the series - which cost us
+                # the entire ECMWF AIFS forecast because it publishes no gusts.
+                column_values = hourly.get(col) or []
+                if all(value is None for value in column_values):
+                    converters[v] = None  # every value MISSING, and said so
+                    unavailable_variables.append(v)
+                    continue
                 raise ProviderUnavailableError(
                     f"open-meteo: unexpected unit {unit!r} for {col!r}; expected one of "
                     f"{sorted(_BY_CANONICAL[v].units)} - refusing to guess a conversion"
@@ -643,6 +655,18 @@ class OpenMeteoProvider(BaseProvider):
         license_ = OPENMETEO_LICENSE
         source_url = str(blob.get("request_url", ""))
         notes = self._notes(endpoint, model, fetched, temporal_s, init_note, member, blob)
+        if unavailable_variables:
+            notes = "; ".join(
+                filter(
+                    None,
+                    [
+                        notes,
+                        f"model {model or 'default'} does not publish "
+                        f"{', '.join(sorted(unavailable_variables))}: returned with unit "
+                        "'undefined' and no values, recorded as MISSING",
+                    ],
+                )
+            )
 
         steps: list[WeatherStep] = []
         for i in keep:
