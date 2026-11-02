@@ -54,6 +54,36 @@ VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 Dashboard: open `web/index.html` (or `http://localhost:8000/` once the API
 serves it) with the API running.
 
+## Running it in VS Code
+
+Open the folder `jst-rwi` itself (not its parent), then:
+
+1. **Pick the interpreter.** `Cmd+Shift+P` -> "Python: Select Interpreter" ->
+   `./.venv/bin/python`. This is the step that matters: with the system Python
+   selected instead, nothing imports and the editor reports errors that are not
+   real. `.vscode/settings.json` already points at it, so usually VS Code finds
+   it by itself.
+2. **Install the recommended extensions** when prompted (Python, Pylance, Ruff,
+   Mypy). `.vscode/extensions.json` lists them.
+3. **Press F5** and choose **"API + dashboard (localhost:8000)"**, then open
+   <http://localhost:8000>. The API serves the dashboard at the root, so there
+   is no separate web server to start.
+
+After every restart the platform has no position and the dashboard shows
+"POSITION UNKNOWN" in each panel - it refuses to guess where the vehicle is.
+Set one from **Operator controls** at the bottom of the Command Center, or run
+the task "set a demo position (Alice Springs)" (`Cmd+Shift+P` -> "Tasks: Run
+Task").
+
+Other launch configurations: capture once (all sites or one), the whole test
+suite, the file you are looking at, the scientific reference cases, and the
+live network tests. Use the non-reloading API configuration when you need
+breakpoints: with `--reload` the app runs in a child process and breakpoints
+are unreliable.
+
+`Cmd+Shift+P` -> "Tasks: Run Task" also offers `make check` (lint, types,
+tests) and the end-to-end smoke check.
+
 ## Documentation
 
 * `docs/CONTRACTS.md` — module interfaces and ownership

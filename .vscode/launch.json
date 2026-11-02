@@ -1,0 +1,96 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The one you want most of the time. Serves the API AND the dashboard on
+      // http://localhost:8000 - no separate web server is needed.
+      "name": "API + dashboard (localhost:8000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["rwi.api.app:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // Same, but restarts on every save. Convenient while editing; breakpoints
+      // can be unreliable because the reloader runs the app in a child process,
+      // so use the plain configuration above when you actually need to debug.
+      "name": "API with auto-reload (no reliable breakpoints)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["rwi.api.app:app", "--port", "8000", "--reload"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // One capture cycle. Makes real provider calls and writes to the archive.
+      "name": "Capture once (all 7 sites)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "rwi.capture",
+      "args": ["--once", "--verbose"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Capture once (Alice Springs only)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "rwi.capture",
+      "args": ["--once", "--sites", "alice-springs", "--verbose"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Tests: the whole suite",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-q"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Tests: the file I am looking at",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // The scientific reference cases: solar geometry against NREL's published
+      // example, the circular wind-direction scoring, the regulatory limits.
+      "name": "Tests: scientific reference cases only",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-m", "science", "-v"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      // Hits the real Open-Meteo, BoM and NOAA endpoints. Excluded from the
+      // normal run so a provider outage is never mistaken for a code failure.
+      "name": "Tests: live network tests (needs internet)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-m", "network", "-v"],
+      "cwd": "${workspaceFolder}",
+      "env": { "RWI_RUN_NETWORK_TESTS": "1" },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
