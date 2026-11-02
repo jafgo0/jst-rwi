@@ -41,11 +41,11 @@ export function res(key) {
 
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-/** Coalesced notification (one per animation frame). */
+/** Coalesced notification (one per 20 ms; setTimeout rather than rAF so hidden/throttled tabs still update). */
 export function notify() {
   if (notifyQueued) return;
   notifyQueued = true;
-  requestAnimationFrame(() => { notifyQueued = false; for (const fn of [...listeners]) { try { fn(); } catch (e) { console.error("store listener failed", e); } } });
+  setTimeout(() => { notifyQueued = false; for (const fn of [...listeners]) { try { fn(); } catch (e) { console.error("store listener failed", e); } } }, 20);
 }
 
 /**
@@ -118,6 +118,7 @@ export function activePoint() {
 export function isSimulation() {
   const s = activeState();
   if (!s) return false;
+  if (s.is_simulated) return true;
   return s.mode === "route_sim" || s.mode === "historical_replay" || s.fix?.mode === "route_sim" || s.fix?.mode === "historical_replay" || s.fix?.fix_quality === "simulated";
 }
 
@@ -134,6 +135,22 @@ export function vehicleTimezone() {
   const d = res("solarDay").data;
   if (d?.timezone_name && validTimezone(d.timezone_name)) return { tz: d.timezone_name, source: "GET /api/solar/day" };
   return { tz: null, source: "not reported by the API" };
+}
+
+/**
+ * Distance along the route: the state's own value, else the backend projection of
+ * the fix onto the route (GET /api/route/{id}/progress) when the fix is on the route.
+ * @returns {{m:number|null, source:"state"|"projection"|"none", crossTrackM:(number|null), offRoute:boolean}}
+ */
+export function routeProgress() {
+  const s = activeState();
+  if (s?.route_distance_m !== null && s?.route_distance_m !== undefined) return { m: s.route_distance_m, source: "state", crossTrackM: null, offRoute: false };
+  const pr = res("progress").data;
+  if (pr?.projection) {
+    const off = pr.projection.is_on_route === false;
+    return { m: off ? null : pr.projection.distance_along_m, source: off ? "none" : "projection", crossTrackM: pr.projection.cross_track_m ?? null, offRoute: off };
+  }
+  return { m: null, source: "none", crossTrackM: null, offRoute: false };
 }
 
 /** Instant all calculations use: selected (frozen) time if set, else now. */
@@ -154,6 +171,28 @@ export function displayRoute() {
   if (id) return { id, info: list.find((r) => r.id === id) || null, assumed: false };
   if (list.length) return { id: list[0].id, info: list[0], assumed: true };
   return null;
+}
+
+/**
+ * Control stops of the display route. The route list (GET /api/route) only
+ * carries a count in the implemented backend, so the stops come from the route
+ * GeoJSON marker features (properties.kind === "control_stop"); a `control_stops`
+ * array on the list entry (CONTRACTS.md shape) is used as a fallback.
+ * @returns {{stops:{name:(string|null), cumulative_distance_m:number, mandatory_dwell_s:(number|null), point:{latitude_deg:number, longitude_deg:number}}[], source:string, declaredCount:(number|null)}}
+ */
+export function controlStops() {
+  const gj = res("routeGeojson").data;
+  const info = displayRoute()?.info || null;
+  const declaredCount = info?.control_stop_count ?? (Array.isArray(info?.control_stops) ? info.control_stops.length : null);
+  const fromGj = (gj?.features || [])
+    .filter((f) => f.geometry?.type === "Point" && (f.properties?.kind ?? f.properties?.type) === "control_stop")
+    .map((f) => ({
+      name: f.properties.name ?? null, cumulative_distance_m: f.properties.cumulative_distance_m ?? NaN,
+      mandatory_dwell_s: f.properties.mandatory_dwell_s ?? null, point: { latitude_deg: f.geometry.coordinates[1], longitude_deg: f.geometry.coordinates[0] },
+    }));
+  if (fromGj.length) return { stops: fromGj, source: "route GeoJSON", declaredCount };
+  if (Array.isArray(info?.control_stops) && info.control_stops.length) return { stops: info.control_stops, source: "GET /api/route", declaredCount };
+  return { stops: [], source: gj ? "route GeoJSON (no control_stop features)" : "route GeoJSON not loaded", declaredCount };
 }
 
 /** Push API-reported freshness limits into format.js when they appear. */
@@ -183,6 +222,8 @@ export const session = {
   routeHours: Number(prefs.get("routeHours", 10)) || 10,
   forecastHours: Number(prefs.get("forecastHours", 48)) || 48,
   provider: prefs.get("provider", ""),
+  /** Operator-entered start state of charge for scenario evaluation (%); blank = backend default. */
+  startSocPct: prefs.get("startSocPct", ""),
 };
 
 export function setSession(patch) {

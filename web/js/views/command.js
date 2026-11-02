@@ -13,11 +13,11 @@ import {
 } from "../format.js";
 import { panel, kv, valueCell, numCell, textCell, kindChip, modeChip, chip, severityChip, ageSpan, provFooter, withResource, positionUnknown, stateBox, freshnessNode } from "../ui.js";
 import {
-  res, activeState, activePoint, effectiveTimeMs, isTimeFrozen, isSimulation, vehicleTimezone, displayRoute, signature, session,
+  res, activeState, activePoint, effectiveTimeMs, isTimeFrozen, isSimulation, vehicleTimezone, displayRoute, signature, session, controlStops, routeProgress,
 } from "../store.js";
-import { loadForecast, loadObservations, loadEnergy, loadScenarios, loadSolar, loadRouteGeojson, loadAlerts, loadHealth, loadState, nearestStep } from "../loaders.js";
+import { loadProgress, loadForecast, loadObservations, loadEnergy, loadScenarios, loadSolar, loadRouteGeojson, loadAlerts, loadHealth, loadState, nearestStep } from "../loaders.js";
 
-const KEYS = ["state", "health", "routes", "solarDay", "forecastNow", "observationsNow", "energy", "scenarios", "alerts"];
+const KEYS = ["state", "health", "routes", "routeGeojson", "progress", "solarDay", "forecastNow", "observationsNow", "energy", "scenarios", "alerts"];
 
 export function create(root) {
   const body = h("div");
@@ -29,7 +29,7 @@ export function create(root) {
 
   return {
     update() {
-      loadSolar(); loadRouteGeojson();
+      loadSolar(); loadRouteGeojson(); loadProgress();
       loadForecast({ hours: 6, key: "forecastNow" }); loadObservations({ hours: 3, key: "observationsNow" });
       loadEnergy(); loadScenarios(); loadAlerts(); loadHealth();
       const sig = signature(KEYS);
@@ -87,8 +87,9 @@ function positionPanel(st) {
         ["Fix age", h("span", { class: fr.state === "stale" ? "is-stale" : "", title: fr.state === "na" ? "No age limit for this mode" : freshnessText({ ...fr, basis: "GPS time", reason: "" }) },
           ageSpan(ageRef, fr.state === "na" ? {} : { limitS: fr.limitS, limitSource: fr.limitSource }),
           f.gps_time_utc ? ` (GPS time ${fmtUtc(f.gps_time_utc, { seconds: true })})` : " (receipt time; no GPS timestamp)")],
-        ["Route progress", s.route_distance_m !== null && s.route_distance_m !== undefined
-          ? h("span", null, numCell(s.route_distance_m / 1000, "km", { digits: 1 }), s.route_id ? ` on ${s.route_id}` : "") : textCell(null, "route progress unknown")],
+        ["Route progress", (() => { const rp = routeProgress(); return rp.m !== null
+          ? h("span", null, numCell(rp.m / 1000, "km", { digits: 1 }), ` on ${s.route_id || displayRoute()?.id || "route"}`, rp.source === "projection" ? h("span", { class: "note" }, ` (projected from the fix; cross-track ${fmtNum(Math.abs(rp.crossTrackM ?? 0), 0)} m)`) : "")
+          : textCell(null, rp.offRoute ? "fix is not on the route" : "route progress unknown"); })()],
       ], "tight"),
     ];
   }), { right: positionKindChip() });
@@ -135,15 +136,19 @@ function paintClocks(root) {
 
 function controlStopPanel() {
   const dr = displayRoute();
-  const routes = res("routes");
+  const routes = res("routes"), gj = res("routeGeojson");
   const s = activeState();
-  return panel("Next control stop", withResource(routes, (list) => {
+  return panel("Next control stop", withResource(routes, () => {
     if (!dr || !dr.info) return stateBox("unknown", "NO ROUTE", "GET /api/route lists no route; control stops unavailable.");
-    const stops = [...(dr.info.control_stops || [])].sort((a, b) => a.cumulative_distance_m - b.cumulative_distance_m);
-    const prog = s?.route_distance_m;
+    if (gj.status === "error") return withResource(gj, () => h("span"));
+    const cs = controlStops();
+    const stops = [...cs.stops].sort((a, b) => a.cumulative_distance_m - b.cumulative_distance_m);
+    const prog = routeProgress().m;
     const note = dr.assumed ? h("div", { class: "note warn" }, `No active route in state; showing first listed route "${dr.info.name}".`) : null;
+    if (gj.status !== "ok" && !stops.length) return stateBox("loading", "Loading control stops\u2026", h("code", null, "GET /api/route/{id}/geojson"));
+    if (!stops.length) return [note, stateBox("unknown", "No control stops defined", `Route "${dr.info.name}" has no control_stop waypoints (${cs.source}). The official control-stop list is not yet published; see /api/regulations.`)];
     if (prog === null || prog === undefined) {
-      return [note, stateBox("unknown", "Route progress unknown", `Distance to the next stop cannot be computed: state.route_distance_m is null (vehicle not matched to the route). ${stops.length} control stop(s) are defined on ${dr.info.name}.`)];
+      return [note, stateBox("unknown", "Route progress unknown", `Distance to the next stop cannot be computed: route progress is unavailable (vehicle not matched to the route). ${stops.length} control stop(s) are defined on ${dr.info.name}.`)];
     }
     const next = stops.find((c) => c.cumulative_distance_m > prog);
     if (!next) return [note, stateBox("", "No further control stop", `Progress ${fmtNum(prog / 1000, 1)} km of ${fmtNum(dr.info.total_distance_m / 1000, 1)} km; no control stop ahead.`)];
@@ -151,18 +156,18 @@ function controlStopPanel() {
     return [note,
       h("div", { class: "xl" }, next.name || "Unnamed control stop"),
       kv([
-        ["Distance to go", numCell(rem / 1000, "km", { digits: 1, extra: ["Route distance difference: stop chainage minus route progress", `Route: ${dr.info.name}`] })],
+        ["Distance to go", numCell(rem / 1000, "km", { digits: 1, extra: ["Route distance difference: stop chainage minus route progress", `Route: ${dr.info.name}`, `Stops from ${cs.source}`] })],
         ["Stop chainage", numCell(next.cumulative_distance_m / 1000, "km along route", { digits: 1 })],
         ["Mandatory dwell", next.mandatory_dwell_s !== null && next.mandatory_dwell_s !== undefined ? numCell(next.mandatory_dwell_s / 60, "min", { digits: 0 }) : textCell(null, "dwell not specified")],
         ["Remaining route", numCell((dr.info.total_distance_m - prog) / 1000, "km", { digits: 1 })],
-        ["ETA", h("span", null, textCell(null, "see Route view for ETA at current speed"), " ", h("a", { href: "#/route" }, "open"))],
+        ["ETA", h("span", null, textCell(null, "see Route view for ETA at an assumed speed"), " ", h("a", { href: "#/route" }, "open"))],
       ], "tight")];
   }));
 }
 
 /* ---------------------------------------------------------------- weather */
 
-const WX_ROWS = ["temperature_2m", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover", "precipitation", "relative_humidity_2m", "pressure_msl", "ghi", "dni", "dhi"];
+const WX_ROWS = ["temperature_2m", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover", "precipitation", "precipitation_probability", "relative_humidity_2m", "pressure_msl", "visibility", "ghi", "dni", "dhi"];
 
 function weatherPanel() {
   const fcR = res("forecastNow"), obR = res("observationsNow");
@@ -177,7 +182,7 @@ function weatherPanel() {
     obsStep = past.length ? past[past.length - 1] : null;
   }
   const obsNote = obR.status === "error"
-    ? (obR.error?.kind === "unsupported" ? "No configured provider supports observations (HTTP 501)." : `Observations unavailable: ${obR.error?.message}`)
+    ? (obR.error?.kind === "unsupported" ? `Observations not available (HTTP 501): ${obR.error.message}` : `Observations unavailable: ${obR.error?.message}`)
     : obR.status === "ok" && !obsStep ? "Observation series contains no step at or before the selected time." : null;
   const fcNote = fcR.status === "error" ? `Forecast unavailable: ${fcR.error?.kind === "network" ? "API unreachable" : fcR.error?.message}` : fcR.status === "ok" && !fcStep ? "No forecast step within 90 min of the selected time." : null;
 
@@ -304,11 +309,21 @@ function alertsPanel() {
 
 function sourcesPanel() {
   const r = res("health");
-  return panel("Data sources", withResource(r, (hl) => h("div", { style: { display: "flex", flexWrap: "wrap", gap: "14px", alignItems: "center" } },
-    h("span", null, "API ", chip(String(hl.status).toUpperCase(), hl.status === "ok" ? "ok" : "warn")),
-    hl.providers.length ? hl.providers.map((p) => h("span", { title: p.message || "" }, p.provider, " ", p.reachable ? chip("REACHABLE", "ok") : chip("UNREACHABLE", "crit"),
-      h("span", { class: "faint" }, p.latency_ms !== null && p.latency_ms !== undefined ? ` ${fmtNum(p.latency_ms, 0)} ms` : " latency unknown"), " checked ", ageSpan(p.checked_at_utc)))
-      : h("span", { class: "faint" }, "no providers configured"))));
+  return panel("Data sources and backend capabilities", withResource(r, (hl) => {
+    const caps = Object.entries(hl.capabilities || {});
+    const um = hl.unavailable_modules || {};
+    return [
+      h("div", { style: { display: "flex", flexWrap: "wrap", gap: "14px", alignItems: "center" } },
+        h("span", null, "API ", chip(String(hl.status).toUpperCase(), hl.status === "ok" ? "ok" : "warn")),
+        hl.network_enabled === false ? chip("NETWORK DISABLED - providers serve cache or fail", "warn") : null,
+        hl.providers.length ? hl.providers.map((p) => h("span", { title: p.message || "" }, p.provider, " ", p.reachable ? chip("REACHABLE", "ok") : chip("UNREACHABLE", "crit"),
+          h("span", { class: "faint" }, p.latency_ms !== null && p.latency_ms !== undefined ? ` ${fmtNum(p.latency_ms, 0)} ms` : " latency unknown"), " checked ", ageSpan(p.checked_at_utc)))
+          : h("span", { class: "faint" }, "no providers reported")),
+      caps.length ? h("div", { style: { display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "6px" } }, h("span", { class: "dim" }, "Backend modules:"),
+        caps.map(([k, ok]) => h("span", { title: ok ? "importable" : Object.entries(um).filter(([m]) => m.includes(k)).map(([m, e]) => `${m}: ${e}`).join("\n") || "module unavailable" }, k, " ", ok ? chip("AVAILABLE", "ok") : chip("UNAVAILABLE", "crit")))) : null,
+      Object.keys(hl.provider_errors || {}).length ? h("div", { class: "note warn", style: { marginTop: "4px" } }, "Provider errors: " + Object.entries(hl.provider_errors).map(([k, v]) => `${k}: ${v}`).join(" | ")) : null,
+    ];
+  }));
 }
 
 /* ---------------------------------------------------------- operator form */

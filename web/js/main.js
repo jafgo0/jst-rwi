@@ -91,6 +91,10 @@ function renderBanners() {
     out.push(h("div", { class: "banner sim", role: "alert" }, h("span", null, "SIMULATION"),
       h("small", null, `Position mode is ${s.mode === "historical_replay" ? "HISTORICAL REPLAY" : "ROUTE SIMULATION"}: the vehicle position, local time at the vehicle and everything derived from them are NOT a real vehicle.`)));
   }
+  const hl = res("health").data;
+  if (hl && hl.network_enabled === false) {
+    out.push(h("div", { class: "banner warn", role: "alert" }, h("span", null, "OFFLINE MODE"), h("small", null, "The backend has network access disabled: weather providers serve cache or fail; nothing is fetched live.")));
+  }
   const st = res("state");
   if (st.status === "error") {
     out.push(h("div", { class: "banner err", role: "alert" }, h("span", null, "API ERROR"),

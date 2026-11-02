@@ -350,7 +350,8 @@ def read_named_stops_geojson(
             continue
         props = f.get("properties") or {}
         geom = f.get("geometry") or {}
-        kind = kinds.get(props.get("rwi_kind"))
+        raw_kind = props.get("rwi_kind")
+        kind = kinds.get(raw_kind) if isinstance(raw_kind, str) else None
         if kind is None or geom.get("type") != "Point":
             continue
         pt = _position(geom.get("coordinates"), f"'{path.name}' stop {props.get('name')!r}")

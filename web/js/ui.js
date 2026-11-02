@@ -202,7 +202,7 @@ export function errorPanel(r) {
   const e = r.error;
   const lines = [];
   lines.push(h("div", null, "Endpoint: ", h("code", null, e?.endpoint || r.endpoint || "unknown"), e?.url ? [" ", h("span", { class: "faint" }, e.url)] : null));
-  const kindText = { network: "API unreachable", timeout: "Request timed out", http: "HTTP error", parse: "Unreadable response", position: "Position unavailable (HTTP 409)", unsupported: "Not supported by any configured provider (HTTP 501)", provider: "Provider failure (HTTP 503)" }[e?.kind] || "Error";
+  const kindText = { network: "API unreachable", timeout: "Request timed out", http: "HTTP error", parse: "Unreadable response", position: "Position unavailable (HTTP 409)", unsupported: e?.code === "CapabilityNotImplemented" ? "Feature not available in this backend build (HTTP 501)" : "Not supported by any configured provider (HTTP 501)", provider: "Provider failure (HTTP 503)" }[e?.kind] || "Error";
   lines.push(h("div", null, "Error: ", h("b", null, kindText), e?.message ? " - " + e.message : "", e?.code ? ` [${e.code}]` : ""));
   if (e?.detail) lines.push(h("div", { class: "note" }, "Detail: " + (typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail))));
   lines.push(h("div", null, r.loadedAt !== null

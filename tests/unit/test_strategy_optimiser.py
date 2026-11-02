@@ -14,6 +14,7 @@ import pytest
 from rwi.contracts import VehicleConfig
 from rwi.strategy.scenarios import evaluate_scenario, optimal_constant_speed
 from rwi.strategy.segments import SegmentConditions, segments_from_distance
+from rwi.vehicle.dynamics import CHALLENGER_MAX_STORAGE_WH
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 
@@ -24,7 +25,7 @@ VEHICLE = VehicleConfig(
     rolling_resistance_coefficient=0.005,
     drivetrain_efficiency=0.92,
     auxiliary_power_w=25.0,
-    battery_capacity_wh=5000.0,
+    battery_capacity_wh=CHALLENGER_MAX_STORAGE_WH,  # clause 2.5.2 ceiling: a legal car
     battery_reserve_fraction=0.10,
     battery_round_trip_efficiency=0.95,
     max_legal_speed_kmh=130.0,
@@ -236,7 +237,7 @@ def test_starting_on_the_reserve_with_no_generation_is_infeasible():
     demand, so the same start state is feasible. Both cases are asserted, since
     the difference is exactly the point of the energy constraint.
     """
-    dark = segments_from_distance(400_000.0, segment_count=16)
+    dark = segments_from_distance(300_000.0, segment_count=16)
     at_reserve = optimal_constant_speed(
         vehicle=VEHICLE, start_soc_fraction=0.10, segments=dark, now_utc=NOW
     )

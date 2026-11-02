@@ -53,9 +53,9 @@ export async function loadSolar(force = false) {
     load("solarPos", { endpoint: "GET /api/solar/position", paramsKey: key + "|" + timeKey(), ttlMs: 20000, force },
       () => api.solarPosition({ lat: p.lat, lon: p.lon, elev: p.elev, time: t })),
     load("solarDay", { endpoint: "GET /api/solar/day", paramsKey: key + "|" + date, ttlMs: 600000, force },
-      () => api.solarDay({ lat: p.lat, lon: p.lon, date })),
+      () => api.solarDay({ lat: p.lat, lon: p.lon, date, time: t })),
     load("clearskyDay", { endpoint: "GET /api/solar/clearsky/day", paramsKey: key + "|" + date, ttlMs: 600000, force },
-      () => api.clearskyDay({ lat: p.lat, lon: p.lon, date, stepS: 900 })),
+      () => api.clearskyDay({ lat: p.lat, lon: p.lon, date, time: t, stepS: 900 })),
   ]);
 }
 
@@ -63,8 +63,8 @@ export async function loadForecast({ hours = session.forecastHours, provider = "
   const p = activePoint();
   if (!p) { block(key, NO_POS, "GET /api/weather/forecast"); return; }
   return load(key, { endpoint: "GET /api/weather/forecast", paramsKey: `${posKey(p)}|${hours}|${provider}|${timeKey()}`, ttlMs: 120000, force },
-    () => api.forecast({ lat: p.lat, lon: p.lon, hours, provider: provider || undefined,
-      variables: ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "precipitation", "pressure_msl", "ghi", "dni", "dhi"] }));
+    // No `variables` list: the backend's default set is used so one unsupported variable cannot fail the whole request.
+    () => api.forecast({ lat: p.lat, lon: p.lon, hours, provider: provider || undefined }));
 }
 
 export async function loadObservations({ hours = 24, key = "observations", force = false } = {}) {
@@ -74,16 +74,27 @@ export async function loadObservations({ hours = 24, key = "observations", force
     () => api.observations({ lat: p.lat, lon: p.lon, hours }));
 }
 
+/** Projection of the active fix onto the display route (backend map-matching). */
+export async function loadProgress(force = false) {
+  const dr = displayRoute();
+  const p = activePoint();
+  if (!dr || !p) { block("progress", !p ? NO_POS : "no route available", "GET /api/route/{id}/progress"); return; }
+  return load("progress", { endpoint: `GET /api/route/${dr.id}/progress`, paramsKey: `${dr.id}|${posKey(p)}|${p.lat.toFixed(3)},${p.lon.toFixed(3)}`, ttlMs: 20000, force }, () => api.progress(dr.id));
+}
+
 /** Start distance for route calls: the state's route progress, or the operator-entered value (hypothetical). */
 export function startDistance() {
   const s = activeState();
   if (s?.route_distance_m !== null && s?.route_distance_m !== undefined) return { m: s.route_distance_m, source: "state" };
+  const pr = res("progress").data;
+  if (pr?.projection && pr.projection.is_on_route !== false && Number.isFinite(pr.projection.distance_along_m)) return { m: pr.projection.distance_along_m, source: "projection" };
   const km = parseFloat(session.startDistanceKm);
   if (Number.isFinite(km) && km >= 0) return { m: km * 1000, source: "operator" };
   return { m: null, source: "none" };
 }
 
 export async function loadTrajectory(force = false) {
+  loadProgress();
   const dr = displayRoute();
   if (!dr) { block("trajectory", "no route available from GET /api/route", "GET /api/route/{id}/trajectory"); block("routeWeather", "no route available from GET /api/route", "GET /api/route/{id}/weather"); return; }
   const sd = startDistance();
@@ -109,8 +120,15 @@ export async function loadEnergy(force = false) {
 }
 
 export async function loadScenarios(force = false) {
-  if (!activePoint()) { block("scenarios", NO_POS, "GET /api/strategy/scenarios"); return; }
-  return load("scenarios", { endpoint: "GET /api/strategy/scenarios", paramsKey: `${posKey(activePoint())}|${timeKey()}`, ttlMs: 120000, force }, () => api.scenarios());
+  const p = activePoint();
+  if (!p) { block("scenarios", NO_POS, "GET /api/strategy/scenarios"); return; }
+  const soc = parseFloat(session.startSocPct);
+  const args = { speedKmh: session.speedKmh, startSoc: Number.isFinite(soc) ? Math.min(1, Math.max(0, soc / 100)) : undefined, hours: session.routeHours };
+  return load("scenarios", { endpoint: "GET /api/strategy/scenarios", paramsKey: `${posKey(p)}|${timeKey()}|${args.speedKmh}|${args.startSoc}|${args.hours}`, ttlMs: 120000, force }, () => api.scenarios(args));
+}
+
+export function loadRegulations(force = false) {
+  return load("regulations", { endpoint: "GET /api/regulations", ttlMs: 3600000, force }, () => api.regulations());
 }
 
 /** Nearest step of a WeatherSeries to a time (ms); null if none within tolerance. */

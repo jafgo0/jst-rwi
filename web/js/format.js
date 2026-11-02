@@ -170,7 +170,7 @@ export function fmtDuration(s) {
 /** Age in seconds -> "12 min 03 s old"; negative ages are "in the future". */
 export function fmtAge(s) {
   if (s === null || s === undefined || !Number.isFinite(s)) return DASH;
-  return s < -1 ? `${fmtDuration(-s)} in the future` : `${fmtDuration(Math.max(0, s))} old`;
+  return s < -5 ? `${fmtDuration(-s)} in the future` : `${fmtDuration(Math.max(0, s))} old`;
 }
 
 export function ageSeconds(t, now = nowMs()) {

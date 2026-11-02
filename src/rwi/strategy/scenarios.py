@@ -205,6 +205,13 @@ class SpeedOptimisation(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+SPEED_TOLERANCE_KMH: Final[float] = 1e-9
+"""Allowance on speed-limit comparisons, so that planning to drive at exactly
+the limit is not reported as exceeding it by a floating-point rounding error."""
+
+FALLBACK_SCAN_POINTS: Final[int] = 128
+"""Grid resolution of the optimiser's fallback scan (see `optimal_constant_speed`)."""
+
 MEDIUM_CONFIDENCE_MARGIN_PP: Final[float] = 5.0
 """State-of-charge margin above the reserve, in percentage points, below which a
 recommendation stays at ``"low"`` confidence even if the pessimistic case survives."""
@@ -316,10 +323,21 @@ def _as_violation(
 def _regulatory_speed_violations(
     speed_mps: float, *, posted_limit_kmh: float | None, context: str
 ) -> list[ScenarioConstraintViolation]:
-    """Clause-citing violations for one cruising speed (3.31.6, 3.29.1)."""
+    """Clause-citing violations for one cruising speed (3.31.6, 3.29.1).
+
+    The posted limit is passed with a 1e-9 km/h allowance, matching the
+    tolerance used by the physics-level checks. `rwi.regulations.check_speed`
+    compares exactly, and a km/h -> m/s -> km/h round trip is not exact:
+    `ms_to_kmh(kmh_to_ms(60.0))` is 60.00000000000001. Without the allowance,
+    planning to drive at exactly the posted limit would be reported as a
+    regulatory breach of 1e-14 km/h. The allowance is far below any real
+    speed-holding accuracy and does not change the printed limit.
+    """
+    allowance = SPEED_TOLERANCE_KMH if posted_limit_kmh is not None else 0.0
+    limit = posted_limit_kmh + allowance if posted_limit_kmh is not None else None
     return [
         _as_violation(finding, context=context)
-        for finding in check_speed(speed_mps, posted_limit_kmh=posted_limit_kmh)
+        for finding in check_speed(speed_mps, posted_limit_kmh=limit)
     ]
 
 
@@ -1160,9 +1178,10 @@ def optimal_constant_speed(
         return end - reserve
 
     at_cap = run(cap)
-    if float(at_cap.assumptions["end_energy_unclamped_wh"]) - float(
+    cap_margin_wh = float(at_cap.assumptions["end_energy_unclamped_wh"]) - float(
         at_cap.assumptions["reserve_floor_wh"]
-    ) >= 0.0 and at_cap.feasible:
+    )
+    if cap_margin_wh >= 0.0 and at_cap.feasible:
         return SpeedOptimisation(
             feasible=True,
             speed_kmh=cap,
@@ -1204,35 +1223,96 @@ def optimal_constant_speed(
             ],
         )
 
-    root = float(brentq(margin, min_speed_kmh, cap, xtol=tolerance_kmh, rtol=1e-12))
-    candidate = min(root, cap)
-    result = run(candidate)
-    stepped = 0
-    while not result.feasible and candidate - tolerance_kmh >= min_speed_kmh and stepped < 10:
-        candidate -= tolerance_kmh
+    # The energy constraint brackets a root only when it is what binds inside
+    # the window. When something else binds at the cap - a power limit, the
+    # clause-3.31.6 obstruction rule, a temperature flag - the margin can be
+    # positive at BOTH ends, and calling brentq would raise rather than answer.
+    # Root-find when the bracket exists; otherwise scan (see below).
+    if cap_margin_wh < 0.0 <= min_margin_wh:
+        root = float(brentq(margin, min_speed_kmh, cap, xtol=tolerance_kmh, rtol=1e-12))
+        candidate = min(root, cap)
         result = run(candidate)
-        stepped += 1
-    if not result.feasible:
+        stepped = 0
+        while not result.feasible and candidate - tolerance_kmh >= min_speed_kmh and stepped < 10:
+            candidate -= tolerance_kmh
+            result = run(candidate)
+            stepped += 1
+        if result.feasible:
+            if stepped:
+                notes.append(
+                    f"stepped {stepped} x {tolerance_kmh} km/h below the root to land strictly "
+                    "inside the feasible region"
+                )
+            return SpeedOptimisation(
+                feasible=True,
+                speed_kmh=candidate,
+                speed_cap_kmh=cap,
+                min_speed_kmh=min_speed_kmh,
+                travel_time_s=result.travel_time_s,
+                end_soc_fraction=result.end_soc_fraction,
+                method=(
+                    "scipy.optimize.brentq on the finish-energy margin "
+                    "(monotone constraint => the optimum is the boundary)"
+                ),
+                function_evaluations=calls,
+                scenario=result,
+                notes=[
+                    *notes,
+                    f"The energy constraint is active: at {candidate:.2f} km/h the pack finishes "
+                    f"on the {vehicle.battery_reserve_fraction:.0%} reserve, so this speed has NO "
+                    "energy margin beyond the reserve itself.",
+                ],
+            )
+        notes.append(
+            "The root of the energy constraint was not feasible when re-evaluated, so a "
+            "constraint other than energy is binding; fell back to a bounded scan."
+        )
+
+    # Fallback: a bounded scan on FEASIBILITY, not on the energy margin.
+    # Feasibility need not be monotone in speed (the obstruction rule makes very
+    # low speeds infeasible while the middle of the window is fine), so a grid
+    # scan is used rather than a bisection, then the boundary is refined by
+    # bisection between the highest feasible grid point and the next one up.
+    # It costs FALLBACK_SCAN_POINTS evaluations plus a handful, and it is
+    # reported honestly in `method` so nobody mistakes it for the root find.
+    grid = [
+        min_speed_kmh + (cap - min_speed_kmh) * i / (FALLBACK_SCAN_POINTS - 1)
+        for i in range(FALLBACK_SCAN_POINTS)
+    ]
+    best_index: int | None = None
+    best_result: ScenarioResult | None = None
+    for index, speed in enumerate(grid):
+        probe = run(speed)
+        if probe.feasible:
+            best_index, best_result = index, probe
+    if best_index is None or best_result is None:
         return SpeedOptimisation(
             feasible=False,
             speed_kmh=None,
             speed_cap_kmh=cap,
             min_speed_kmh=min_speed_kmh,
-            method="brentq root of the reserve margin, but the root was not feasible",
+            method=f"bounded {FALLBACK_SCAN_POINTS}-point feasibility scan: no feasible speed",
             function_evaluations=calls,
-            scenario=result,
+            scenario=at_cap,
             notes=[
                 *notes,
-                "The root of the energy constraint was found but the re-evaluated scenario "
-                "still reports a blocking violation; treat the leg as infeasible and inspect "
-                "the violations.",
+                "The energy constraint alone did not decide the leg and no speed on the scan "
+                "grid was feasible; inspect the violations of the returned scenario, because "
+                "something other than energy is blocking every speed in the window.",
             ],
         )
-    if stepped:
-        notes.append(
-            f"stepped {stepped} x {tolerance_kmh} km/h below the root to land strictly inside "
-            "the feasible region"
-        )
+    candidate = grid[best_index]
+    result = best_result
+    if best_index + 1 < len(grid):
+        low, high = candidate, grid[best_index + 1]
+        while high - low > tolerance_kmh:
+            middle = 0.5 * (low + high)
+            probe = run(middle)
+            if probe.feasible:
+                low, result = middle, probe
+            else:
+                high = middle
+        candidate = low
     return SpeedOptimisation(
         feasible=True,
         speed_kmh=candidate,
@@ -1241,16 +1321,16 @@ def optimal_constant_speed(
         travel_time_s=result.travel_time_s,
         end_soc_fraction=result.end_soc_fraction,
         method=(
-            "scipy.optimize.brentq on the finish-energy margin "
-            "(monotone constraint => the optimum is the boundary)"
+            f"bounded {FALLBACK_SCAN_POINTS}-point feasibility scan + bisection "
+            "(the energy constraint did not bracket a root, so another constraint binds)"
         ),
         function_evaluations=calls,
         scenario=result,
         notes=[
             *notes,
-            f"The energy constraint is active: at {candidate:.2f} km/h the pack finishes on the "
-            f"{vehicle.battery_reserve_fraction:.0%} reserve, so this speed has NO energy margin "
-            "beyond the reserve itself.",
+            "A constraint other than the energy reserve is binding, so the fast root-find was "
+            "not applicable and a scan was used. The binding constraint is whatever appears as "
+            "a blocking violation one step above this speed; inspect the scenario's violations.",
         ],
     )
 

@@ -32,7 +32,7 @@ from rwi.strategy.scenarios import (
     weather_aware_profile,
 )
 from rwi.strategy.segments import SegmentConditions, segments_from_distance
-from rwi.vehicle.dynamics import CHALLENGER_MAX_STORAGE_WH
+from rwi.vehicle.dynamics import CHALLENGER_MAX_STORAGE_WH, DEFAULT_VEHICLE
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 START = datetime(2027, 8, 24, 22, 30, tzinfo=UTC)  # 08:00 ACST on a race day
@@ -159,6 +159,100 @@ def test_recommend_never_picks_an_illegal_scenario_even_when_it_is_fastest():
     assert recommendation.recommended_scenario == "legal"
     assert "illegal-and-faster" in recommendation.alternatives
     assert "excluded as infeasible" in recommendation.rationale
+
+
+# ---------------------------------------------------------------------------
+# Regulatory findings, cited by clause
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.science
+def test_speed_above_the_posted_limit_cites_clause_3_31_6():
+    """Clause 3.31.6 (2027 BWSC Event Regulations V1.0): exceeding the posted limit.
+
+    The scenario must be infeasible AND must name the clause, so a strategist
+    can see which regulation the plan would break rather than only that it was
+    rejected.
+    """
+    result = run(target_speed_kmh=120.0, segments=flat_leg(), speed_limit_kmh=110.0)
+    assert result.feasible is False
+    cited = [v for v in result.violations if "3.31.6" in v.constraint]
+    assert cited, [v.constraint for v in result.violations]
+    assert cited[0].severity == "blocking"
+    assert cited[0].constraint.startswith("regulation 3.31.6")
+    assert "120.0 km/h exceeds the posted limit 110 km/h" in cited[0].detail
+    assert "2027 BWSC Event Regulations" in cited[0].detail
+    # The physics-level speed-limit check is kept as well; the clause adds the citation.
+    assert "speed_limit" in blocking(result)
+
+
+@pytest.mark.science
+def test_a_pack_above_the_clause_2_5_2_ceiling_makes_every_scenario_infeasible():
+    """Clause 2.5.2: Challenger energy storage max 11 MJ = 3055.56 Wh."""
+    illegal_car = VEHICLE.model_copy(
+        update={"name": "over-capacity (illegal)", "battery_capacity_wh": 5000.0}
+    )
+    result = evaluate_scenario(
+        name="plenty-of-battery",
+        description="a car that would not pass scrutineering",
+        target_speed_kmh=80.0,
+        vehicle=illegal_car,
+        start_soc_fraction=1.0,
+        segments=flat_leg(),
+        now_utc=NOW,
+    )
+    assert result.feasible is False
+    cited = [v for v in result.violations if "2.5.2" in v.constraint]
+    assert cited
+    assert cited[0].constraint == "regulation 2.5.2"
+    assert cited[0].severity == "blocking"
+    assert "5000 Wh exceeds the challenger limit of 11 MJ (3056 Wh)" in cited[0].detail
+    assert "over-capacity (illegal)" in cited[0].detail
+    # And it can never be recommended, however good its numbers look.
+    legal = run(target_speed_kmh=80.0, segments=flat_leg())
+    recommendation = recommend([result, legal], now_utc=NOW)
+    assert recommendation.recommended_scenario == legal.name
+    assert "regulation 2.5.2" in recommendation.rationale
+
+
+def test_the_shipped_default_vehicle_raises_no_regulatory_finding():
+    result = evaluate_scenario(
+        name="default-vehicle",
+        description="the shipped placeholder, which must at least be legal",
+        target_speed_kmh=80.0,
+        vehicle=DEFAULT_VEHICLE,
+        start_soc_fraction=1.0,
+        segments=flat_leg(),
+        now_utc=NOW,
+    )
+    assert not [v for v in result.violations if v.constraint.startswith("regulation")]
+
+
+def test_a_very_slow_plan_is_warned_about_but_not_blocked():
+    """Clause 3.29.1: a team must be able to maintain 60 km/h on the open road."""
+    result = run(target_speed_kmh=55.0, segments=flat_leg())
+    cited = [v for v in result.violations if "3.29.1" in v.constraint]
+    assert cited
+    assert cited[0].severity == "warning"
+    assert result.feasible is True
+
+
+def test_crawling_where_the_limit_is_high_is_a_blocking_obstruction():
+    """Clause 3.31.6: below 50 km/h where the posted limit is 100 km/h or more."""
+    result = run(target_speed_kmh=45.0, segments=flat_leg(), speed_limit_kmh=110.0)
+    assert result.feasible is False
+    cited = [v for v in result.violations if "3.31.6" in v.constraint]
+    assert cited
+    assert any(v.severity == "blocking" for v in cited)
+    assert "penalisable obstruction" in " ".join(v.detail for v in cited)
+
+
+def test_an_unknown_posted_limit_produces_no_invented_limit_finding():
+    result = run(target_speed_kmh=120.0, segments=flat_leg(1_000.0, generation_w=600.0))
+    # No posted limit was supplied, so no 3.31.6 upper-bound finding may appear.
+    assert not [v for v in result.violations if "3.31.6" in v.constraint]
+    assert result.assumptions["event_class"] == EventClass.CHALLENGER.value
+    assert "2027 BWSC Event Regulations" in str(result.assumptions["regulations_version"])
 
 
 # ---------------------------------------------------------------------------

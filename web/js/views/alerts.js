@@ -52,7 +52,7 @@ function layout() {
   return wrap;
 }
 
-function alertCard(a) {
+export function alertCard(a) {
   const sys = SYSTEM_CATS.has(a.category);
   return h("div", { class: `alert sev-${a.severity}`, style: { marginBottom: "8px" }, title: provenanceTitle(a.provenance) },
     h("h3", null, severityChip(a.severity), chip(a.category.replace(/_/g, " ").toUpperCase(), sys ? "warn" : "info", sys ? "Data-quality / system alert" : "Hazard alert"), sys ? chip("DATA HEALTH", "mute") : null, h("span", null, a.headline)),

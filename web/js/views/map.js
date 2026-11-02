@@ -11,7 +11,7 @@ import {
   DASH, fmtLatLon, fmtNum, fmtUtc, fmtLocal, fmtHeadTail, trueHeadwind, compass, mpsToKnots, VARS, fmtDuration, fixFreshness,
 } from "../format.js";
 import { panel, valueCell, numCell, kindChip, chip, modeChip, positionUnknown, stateBox, ageSpan } from "../ui.js";
-import { res, activeState, activePoint, vehicleTimezone, displayRoute, effectiveTimeMs, signature, session } from "../store.js";
+import { res, activeState, activePoint, vehicleTimezone, displayRoute, effectiveTimeMs, signature, session, controlStops } from "../store.js";
 import { loadRoutes, loadRouteGeojson, loadTrajectory, loadForecast, nearestStep, startDistance as sd } from "../loaders.js";
 
 const KEYS = ["state", "routes", "routeGeojson", "routeWeather", "forecastNow"];
@@ -177,8 +177,8 @@ export function create(root) {
     const lines = (gj?.features || []).filter((f) => f.geometry && /LineString/.test(f.geometry.type));
     map.getSource("route").setData({ type: "FeatureCollection", features: lines });
 
-    // control stops from GET /api/route (contract shape)
-    const stops = (dr?.info?.control_stops || []).filter((c) => c.point).map((c) => ({
+    // control stops from the route GeoJSON markers (or the route list when it carries them)
+    const stops = controlStops().stops.filter((c) => c.point).map((c) => ({
       type: "Feature", geometry: { type: "Point", coordinates: [c.point.longitude_deg, c.point.latitude_deg] }, properties: { name: c.name || "Control stop", dist_km: c.cumulative_distance_m / 1000 },
     }));
     map.getSource("stops").setData({ type: "FeatureCollection", features: stops });

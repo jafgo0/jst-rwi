@@ -70,8 +70,10 @@ function layout(charts) {
 
   const t = tr.data, { tz } = vehicleTimezone();
   const samples = rw.data?.samples || [];
-  const byDist = new Map(samples.map((s) => [Math.round(s.trajectory_point?.distance_m ?? -1), s]));
-  const sampleFor = (p, i) => byDist.get(Math.round(p.distance_m)) || (samples.length === t.points.length ? samples[i] : null);
+  const byDist = new Map(samples.map((s, k) => [Math.round(s.trajectory_point?.distance_m ?? -1), k]));
+  const sampleIdx = (p, i) => (byDist.has(Math.round(p.distance_m)) ? byDist.get(Math.round(p.distance_m)) : samples.length === t.points.length ? i : -1);
+  const sampleFor = (p, i) => { const k = sampleIdx(p, i); return k >= 0 ? samples[k] : null; };
+  const localFromApi = (p, i) => { const k = sampleIdx(p, i); const l = k >= 0 ? rw.data?.local_arrival_times?.[k] : null; return l ? `${l.slice(0, 10)} ${l.slice(11, 16)} (UTC${l.slice(19) || ""})` : null; };
 
   const ass = Object.entries(t.assumptions || {});
   wrap.append(panel("Trajectory summary", h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr" } },
@@ -89,12 +91,12 @@ function layout(charts) {
   const cols = [
     { h: "Dist (km)", cls: "r", cell: (p) => h("span", { class: "num" }, fmtNum(p.distance_m / 1000, 1)) },
     { h: "Position", cell: (p) => h("span", { class: "num faint" }, fmtLatLon(p.point.latitude_deg, p.point.longitude_deg, 3)) },
-    { h: `ETA local (${tz || "tz unknown"})`, title: "Local time in the VEHICLE's current timezone, not necessarily at that route point", cell: (p) => (tz ? fmtLocal(p.eta_utc, tz) : textCell(null, "no timezone")) },
+    { h: "ETA local", title: "Rows with forecast: local time at that route point as computed by the API (UTC offset shown). Rows without: local time in the vehicle's CURRENT timezone (" + (tz || "unknown") + "), marked with *.", cell: (p, i) => { const l = localFromApi(p, i); if (l) return l; return tz ? h("span", { class: "faint", title: "Vehicle's current timezone, not computed at this point" }, fmtLocal(p.eta_utc, tz) + " *") : textCell(null, "no timezone"); } },
     { h: "ETA UTC", cell: (p) => fmtUtc(p.eta_utc) },
     { h: "Speed (km/h)", cls: "r", cell: (p) => numCell(p.speed_mps * 3.6, "km/h", { digits: 0 }) },
     { h: "Grade (%)", cls: "r", cell: (p) => numCell(p.grade * 100, "%", { digits: 1 }) },
     { h: "Waypoint", cell: (p) => (p.waypoint ? h("span", null, p.waypoint.kind === "control_stop" ? chip("STOP", "watch") : "", " ", p.waypoint.name || p.waypoint.kind) : "") },
-    { h: "Temp (°C)", cls: "r", cell: (p, i) => wx(sampleFor(p, i), "temperature_2m") },
+    { h: "Temp (°C)", cls: "r", cell: (p, i) => (sampleFor(p, i) ? wx(sampleFor(p, i), "temperature_2m") : textCell(null, "not sampled", "The API samples a limited number of points inside the forecast horizon")) },
     { h: "Wind (m/s)", cls: "r", cell: (p, i) => wx(sampleFor(p, i), "wind_speed_10m") },
     { h: "Wind from", cell: (p, i) => { const s = sampleFor(p, i); const m = s?.values?.wind_direction_10m; return s ? h("span", null, valueCell(m, { variable: "wind_direction_10m" }), m?.value != null ? " " + compass(m.value) : "") : DASH; } },
     { h: "Head / tail (wind)", title: "Component of the TRUE wind along the direction of travel (computed from forecast wind speed/direction and the heading at that point). HEAD opposes the vehicle, TAIL assists.", cell: (p, i) => { const s = sampleFor(p, i); if (!s) return DASH; const w = s.values?.wind_speed_10m, d = s.values?.wind_direction_10m; const ht = fmtHeadTail(trueHeadwind(w?.value, d?.value, p.heading_deg)); return ht.text === DASH ? textCell(null, "no wind") : h("span", { class: "has-prov", title: "True-wind component along track = speed x cos(wind-from minus heading)\n" + (w ? "Wind: " + w.provenance?.provider + " / " + (w.provenance?.model_name || "") : "") }, ht.label ? chip(ht.label, ht.label === "HEAD" ? "warn" : "ok") : "", " ", numCell(parseFloat(ht.text), "m/s", { digits: 1 })); } },
@@ -107,6 +109,8 @@ function layout(charts) {
   wrap.append(panel("Trajectory and forecast at arrival", [
     h("div", { style: { marginBottom: "6px" } }, kindChip("forecast"), h("span", { class: "note" }, " Weather columns are forecasts valid at each predicted arrival time (not observations). Hover a value for provider, model run and age.")),
     rw.status === "blocked" || (rw.status === "ok" && !samples.length) ? stateBox("unknown", "No route weather", rw.blockedReason || "GET /api/route/{id}/weather returned no samples.") : null,
+    rw.data?.notes?.length ? h("div", { class: "note warn", style: { marginBottom: "6px" } }, "Route weather notes: " + rw.data.notes.join(" | ")) : null,
+    h("div", { class: "note", style: { marginBottom: "6px" } }, "Rows marked \u201cnot sampled\u201d are outside the forecast horizon or were not selected (the API samples a limited number of route points). * = local time in the vehicle's current timezone."),
     table(cols, t.points, { maxHeight: "440px", rowClass: (p) => (p.waypoint?.kind === "control_stop" ? "mark" : "") }),
   ], { footer: rw.data ? h("footer", { class: "prov" }, `Weather: provider ${rw.data.provider}; generated `, ageSpan(rw.data.generated_at_utc), samples[0]?.values?.temperature_2m ? "; model " + (samples[0].values.temperature_2m.provenance?.model_name || DASH) : "") : null }));
 

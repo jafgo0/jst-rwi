@@ -131,7 +131,7 @@ function irradiancePanel(charts) {
       { color: "--series-4", kind: "fcst", text: "Forecast (dashed)" },
       ...(ob.data ? [{ color: "--text", kind: "obs", text: "Observed GHI (solid, markers)" }] : []),
     ]),
-    ob.status === "error" ? h("div", { class: "note warn" }, ob.error?.kind === "unsupported" ? "Observed irradiance: no provider supports observations (HTTP 501), so only the forecast and the model bound are drawn." : `Observed irradiance unavailable: ${ob.error?.message}`) : null,
+    ob.status === "error" ? h("div", { class: "note warn" }, ob.error?.kind === "unsupported" ? `Observed irradiance: observations unavailable (HTTP 501: ${ob.error.message}), so only the forecast and the model bound are drawn.` : `Observed irradiance unavailable: ${ob.error?.message}`) : null,
     d && (d.sunrise_utc || d.sunset_utc) ? h("div", { class: "note" }, "Grey shading = Sun below the horizon (from API sunrise/sunset).") : null,
     lo === null && cs.status === "ok" ? stateBox("unknown", "Clear-sky series is empty", "GET /api/solar/clearsky/day returned no points.") : null]);
   charts.add(chartDiv, { x, series, tz, utc, boundarySec: x.length && nowS >= x[0] && nowS <= x[x.length - 1] ? nowS : null, boundaryLabels: ["PAST", "FUTURE"], bands, yLabel: "Irradiance (W/m²)", height: 260, emptyText: "No irradiance points to plot." });

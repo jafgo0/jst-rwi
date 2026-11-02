@@ -134,7 +134,7 @@ export function chartHost() {
   const list = [];
   return {
     /** Build the chart on the next frame (container must be attached by then). */
-    add(container, spec) { requestAnimationFrame(() => { if (container.isConnected) list.push(makeChart(container, spec)); }); },
+    add(container, spec) { setTimeout(() => { if (container.isConnected) list.push(makeChart(container, spec)); }, 0); },
     destroyAll() { while (list.length) { try { list.pop().destroy(); } catch { /* already gone */ } } },
   };
 }

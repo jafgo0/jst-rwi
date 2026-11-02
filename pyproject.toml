@@ -48,7 +48,11 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ANN"]
 ignore = ["ANN401", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN"]
+# ANN: test functions do not need return annotations.
+# SIM300: asserting `REGULATORY_CONSTANT == pytest.approx(expected)` reads in the
+# natural order for a test whose subject is the constant; flipping it to put the
+# expected value first would obscure what is under test.
+"tests/**" = ["ANN", "SIM300"]
 
 [tool.mypy]
 python_version = "3.12"

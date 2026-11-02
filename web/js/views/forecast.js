@@ -64,7 +64,7 @@ function layout(charts, invalidate) {
   else if (fc.error) status.push(withResource(fc, () => h("span")));
   if (ob.status === "error") status.push(h("div", { class: ob.error?.kind === "unsupported" ? "state unknown" : "state error" },
     h("h3", null, ob.error?.kind === "unsupported" ? "NO OBSERVATIONS AVAILABLE" : "OBSERVATIONS UNAVAILABLE"),
-    ob.error?.kind === "unsupported" ? "No configured provider supports observations (HTTP 501). The charts below show forecast only; nothing here is an observation." : `${ob.error.endpoint}: ${ob.error.message}`));
+    ob.error?.kind === "unsupported" ? `Observations are not available (HTTP 501): ${ob.error.message}. The charts below show forecast only; nothing here is an observation.` : `${ob.error.endpoint}: ${ob.error.message}`));
   wrap.append(...status);
 
   const grid = h("div", { class: "grid g-2" });
@@ -83,9 +83,12 @@ function chartPanel(c, fcData, obData, nowS, tz, utc, charts) {
     maps.push(f.map); meta.push({ ...s, kind: "fcst" });
     if (!s.fcstOnly && obData) { const o = pointsOf(obData, s.v); missing += o.missing; maps.push(o.map); meta.push({ ...s, kind: "obs" }); }
   }
-  const { x, values } = alignMaps(maps);
+  // Drop variables the source did not supply at all (they would be empty legend entries).
+  const keep = maps.map((m) => m.size > 0);
+  const { x, values: allValues } = alignMaps(maps);
+  const values = allValues.filter((_, i) => keep[i]);
   const unit = varUnit(c.vars[0].v);
-  const series = meta.map((m, i) => ({ label: `${VARS[m.v]?.short || m.v} ${m.kind === "obs" ? "observed" : "forecast"}`, unit, color: m.color, kind: m.kind, values: values[i], digits: VARS[m.v]?.digits ?? 1 }));
+  const series = meta.filter((_, i) => keep[i]).map((m, i) => ({ label: `${VARS[m.v]?.short || m.v} ${m.kind === "obs" ? "observed" : "forecast"}`, unit, color: m.color, kind: m.kind, values: values[i], digits: VARS[m.v]?.digits ?? 1 }));
   const div = h("div", { class: "chart" });
   charts.add(div, { x, series, tz, utc, boundarySec: x.length && nowS >= x[0] && nowS <= x[x.length - 1] ? nowS : null, boundaryLabels: obData ? ["OBSERVED", "FORECAST"] : ["PAST", "FUTURE"], yLabel: `${c.title.split(" (")[0]} (${unit})`, height: 190, emptyText: fcData ? "No points for this variable in the forecast." : "No forecast loaded." });
   const legendEntries = [{ color: c.vars[0].color, kind: "fcst", text: "Forecast (dashed)" }, ...(obData ? [{ color: c.vars[0].color, kind: "obs", text: "Observed (solid, markers)" }] : [])];
