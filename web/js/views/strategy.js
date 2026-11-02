@@ -25,9 +25,9 @@ export function create(root) {
   };
   const controls = h("div", { class: "row", style: { marginBottom: "10px" } },
     h("div", { class: "field" }, h("label", null, "Baseline speed (km/h)"), speed),
-    h("div", { class: "field" }, h("label", null, "Start SoC (%) - assumption"), soc),
+    h("div", { class: "field" }, h("label", null, "Start SoC (%) - model input"), soc),
     h("button", { class: "btn primary", onclick: apply }, "Re-evaluate scenarios"),
-    h("span", { class: "note" }, "Both values are operator inputs to the model, not telemetry. Blank SoC uses the backend default (shown as an assumption)."));
+    h("span", { class: "note" }, "Both values are operator inputs to the model, not telemetry. Blank SoC uses the backend default, echoed under Inputs applied by the backend."));
   root.append(h("div", { class: "view-head" }, h("h1", null, "Energy & Strategy"),
     h("span", { class: "sub" }, "Scenario comparison and recommendation. The platform recommends; the strategist decides.")), controls, body);
   let lastSig = "";
@@ -54,12 +54,27 @@ function layout() {
   }, { label: "scenarios", blockedNode: () => positionUnknown("Scenarios are evaluated only from a known position.") });
 }
 
+/** Defaults the backend echoes in `assumptions`: [key, label, formatter]. */
+const ECHO = [
+  ["start_soc_fraction", "Start state of charge", (v) => numCell(v * 100, "%", { digits: 1 })],
+  ["start_distance_m", "Start distance along route", (v) => numCell(v / 1000, "km", { digits: 1 })],
+  ["baseline_speed_kmh", "Baseline speed", (v) => numCell(v, "km/h", { digits: 0 })],
+  ["horizon_hours", "Horizon", (v) => numCell(v, "h", { digits: 1 })],
+  ["posted_limit_kmh", "Posted speed limit", (v) => numCell(v, "km/h", { digits: 0 })],
+  ["uncertainty_fraction", "Irradiance/wind uncertainty", (v) => numCell(v * 100, "%", { digits: 0 })],
+  ["route_id", "Route", (v) => String(v)],
+  ["segment_count", "Segments", (v) => String(v)],
+  ["forecast_points", "Forecast points used", (v) => String(v)],
+  ["generation_points", "Generation points used", (v) => String(v)],
+];
+
 /** Data gaps, regulatory notes, model parameters and assumptions returned with the scenarios. */
 function contextPanel(d) {
   const list = (items, empty) => (items?.length ? h("ul", { class: "plain" }, items.map((t) => h("li", null, t))) : textCell(null, empty));
   const veh = d.vehicle;
-  const ass = Object.entries(d.assumptions || {});
-  return h("div", { class: "grid g-2" },
+  const a = d.assumptions || {};
+  const rest = Object.entries(a).filter(([k]) => !ECHO.some(([e]) => e === k));
+  return h("div", { class: "grid g-3" },
     panel("Data gaps and regulatory notes", [
       h("h3", { style: { margin: "0 0 4px" } }, "Data gaps (what the evaluation could NOT use)"),
       list(d.dataGaps, "the API reported no data gaps (not a guarantee of completeness)"),
@@ -75,9 +90,13 @@ function contextPanel(d) {
         ["Mass / CdA", veh ? h("span", null, numCell(veh.mass_kg, "kg", { digits: 0 }), " ", numCell(veh.drag_area_cda_m2, "m\u00b2", { digits: 3 })) : textCell(null, "not reported")],
         ["Optimum constant speed", d.optimalSpeedKmh != null ? h("span", null, numCell(d.optimalSpeedKmh, "km/h", { digits: 1 }), " ", d.optimalFeasible ? chip("FEASIBLE", "ok") : chip("INFEASIBLE", "crit")) : textCell(null, "optimiser gave no result")],
       ], "tight"),
-      veh && veh.parameter_source !== "measured" ? h("div", { class: "note warn" }, "Vehicle parameters are placeholders: results are illustrative and are not predictions for the team's car.") : null,
-      ass.length ? h("details", { style: { marginTop: "6px" } }, h("summary", null, `Evaluation assumptions (${ass.length})`),
-        h("dl", { class: "kv tight" }, ass.flatMap(([k, v]) => [h("dt", null, k.replace(/_/g, " ")), h("dd", null, typeof v === "object" ? JSON.stringify(v) : String(v))]))) : null,
+      veh && veh.parameter_source !== "measured" ? h("div", { class: "note warn" }, "Vehicle parameters are placeholders: results are illustrative and are not predictions for the team's car.") : null
+    ]),
+    panel("Inputs applied by the backend (echoed)", [
+      h("div", { class: "note", style: { marginBottom: "4px" } }, "Every default the backend applied is echoed in the response; none of these are telemetry or measurements."),
+      kv(ECHO.map(([key, label, fmt]) => [label, key in a ? (a[key] === null ? textCell(null, "none supplied") : fmt(a[key])) : textCell(null, "not echoed by the API")]), "tight"),
+      rest.length ? h("details", { style: { marginTop: "6px" } }, h("summary", null, `Other assumptions (${rest.length})`),
+        h("dl", { class: "kv tight" }, rest.flatMap(([k, v]) => [h("dt", null, k.replace(/_/g, " ")), h("dd", { style: { whiteSpace: "normal" } }, typeof v === "object" ? JSON.stringify(v) : String(v))]))) : null,
     ]));
 }
 

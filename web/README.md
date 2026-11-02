@@ -36,9 +36,10 @@ A classic script that sets `window.RWI_CONFIG`; every key is optional
 
 * `apiBase`: API base URL ("" = same origin; `http://localhost:8000` under file://).
 * `requestTimeoutMs`, `pollStateMs`, `pollSlowMs`.
-* `freshnessDefaultsS`: freshness limits used **only** when the API reports none
-  (mirrors `rwi.config.Settings`: observation 1800 s, forecast 10800 s, GPS 30 s).
-  The UI labels them "UI default limit".
+* `freshnessDefaultsS`: fallback freshness limits used **only** while
+  `GET /api/health` has not been read. Normally the limits come from
+  `freshness_limits_s` in that response (`store.absorbLimits`) and the footer says
+  "(/api/health)"; the fallback is labelled "UI default".
 * `defaultSpeedKmh`: initial value of the operator speed input (not a measurement).
 * `map`: see below.
 
@@ -104,7 +105,7 @@ js/views/*.js     one module per view
 `GET /api/health`, `GET /api/state`, `POST /api/state/position`,
 `POST /api/state/time`, `GET /api/solar/position`, `GET /api/solar/day`,
 `GET /api/solar/clearsky/day`, `GET /api/weather/forecast`,
-`GET /api/weather/observations`, `GET /api/route`, `GET /api/route/{id}/geojson`,
+`GET /api/weather/observable`, `GET /api/weather/observations`, `GET /api/route`, `GET /api/route/{id}/geojson`,
 `GET /api/route/{id}/progress`, `GET /api/route/{id}/trajectory`,
 `GET /api/route/{id}/weather`, `GET /api/energy/forecast`,
 `GET /api/strategy/scenarios`, `GET /api/regulations`, `GET /api/alerts`.
@@ -112,16 +113,23 @@ js/views/*.js     one module per view
 Not called: `/api/solar/clearsky` (single instant), `/api/weather/variables`,
 `/api/energy/array`, `/api/strategy/vehicle`, `/api/route/{id}` (full route).
 
-Shape notes (the code accepts both the documented and the implemented shapes):
-`/api/state` returns `{state, timezone_name, local_time, is_simulated, server_time_utc, ...}`;
-`/api/route` returns counts, so control stops are read from the GeoJSON marker
-features; `/api/route/{id}/weather` wraps the forecast with `local_arrival_times`;
-`/api/solar/day` and `/clearsky/day` take `time` (the UI sends `date` too);
-errors arrive as `{error}`, `{detail:{error}}` or `{detail}`.
+Shapes follow `docs/CONTRACTS.md` section 4 as implemented (`/api/state` is
+`{state, timezone_name, local_time, is_simulated, ...}`; `/api/route` returns counts, so
+control stops come from the route GeoJSON marker features; `/api/route/{id}/weather` is
+`{forecast, local_arrival_times, notes}`; `/api/energy/forecast` is `{estimates, energy,
+array, notes, ...}`). `/api/solar/day` and `/clearsky/day` take `time`; the UI sends
+`date` as well. Errors arrive as `{error}`, `{detail:{error}}` or `{detail}` (`api.extractError`).
 
-Observation requests ask only for variables a station network measures
-(temperature, humidity, dew point, pressure, wind). Asking for irradiance or
-precipitation makes the backend skip BoM and answer 501.
+Observation requests are built from `GET /api/weather/observable`
+(`loaders.loadObservations`): only variables some provider MEASURES are requested. An
+empty map means the platform measures nothing, and no request is made (the UI says so).
+Where the nearest station is too far, the backend answers 503 and the UI shows its message.
+
+Route progress comes from `state.route_distance_m` (the backend projects each fix onto the
+route); `/api/route/{id}/progress` is used for cross-track and as a fallback. The
+trajectory is truncated by the API to the requested horizon and the UI says how many points
+were dropped. Route weather covers at most 12 points per request by design, so other rows
+read "not sampled".
 
 ## Honesty rules and where they are enforced
 
@@ -132,7 +140,7 @@ precipitation makes the backend skip BoM and answer 501.
 | OBSERVED vs FORECAST vs MODEL visually distinct | `format.kindInfo` (vocabulary) + `ui.kindChip` (solid / dashed / dotted / double border plus colour, survives greyscale); `charts.makeChart` (observed = solid with markers, forecast = dashed); `views/command.weatherPanel` keeps observed and forecast in separate columns; `seriesutil.pointsOf` never merges two series |
 | Observed/forecast boundary on charts | `charts.makeChart` `draw` hook (dashed rule at the effective time, labelled both sides; "PAST/FUTURE" when no observations exist) |
 | Clear-sky is a model upper bound, never measured | `format.kindInfo("clear_sky_model")` label "CLEAR-SKY MODEL - UPPER BOUND"; banner in `views/solar.irradiancePanel`; dotted amber filled style in `charts.makeChart` (kind `clear`) with series names containing "MODEL BOUND" |
-| Stale data is marked with its age | `format.freshnessOf` / `freshnessText` (limit from the API when reported, else the labelled UI default; API quality flag `stale` always wins); `ui.valueCell` (STALE chip + wavy underline); `ui.ageSpan` + `ui.startTicker` (live age that flips to STALE with the limit shown); `format.fixFreshness` + `main.renderBanners` (STALE POSITION banner) |
+| Stale data is marked with its age | `format.freshnessOf` / `freshnessText` (limit from `/api/health` `freshness_limits_s` via `store.absorbLimits`, else the labelled UI default only while health is unread; API quality flag `stale` always wins); `ui.valueCell` (STALE chip + wavy underline); `ui.ageSpan` + `ui.startTicker` (live age that flips to STALE with the limit shown); `format.fixFreshness` + `main.renderBanners` (STALE POSITION banner) |
 | Position unknown: say so, no marker, no default | `store.activePoint` (null without a fix), `loaders.*` (`store.block` instead of requesting), `ui.positionUnknown`, `views/map.refresh` (vehicle and accuracy sources are set to an empty collection), `store.vehicleTimezone` (no timezone without a fix) |
 | SIMULATION banner in route_sim / historical_replay | `store.isSimulation` + `main.renderBanners` (rebuilt from state on every render; there is no close control) |
 | Missing values as an explicit dash with a reason | `format.DASH`, `ui.valueCell` (reason from quality flag or "not provided by this source"), `ui.numCell`, `ui.textCell`; `route.js` shows "not sampled" and "grade unknown" (when `grade_known` is false) instead of 0 |
@@ -143,6 +151,8 @@ precipitation makes the backend skip BoM and answer 501.
 | Blocking violation cannot be mistaken for a warning | `views/strategy.scenariosPanel`: solid red BLOCKING chip, red row and left rule, INFEASIBLE chip, blocking count in the row; warnings use a yellow WARNING chip |
 | Regulations cited with clauses; unpublished items shown | `views/strategy.regulationsPanel` and `views/alerts.regulationsNote` from `/api/regulations` (class limits with the clause string the API supplies, "not yet published", "silent on"). The UI never states a limit without data from that endpoint |
 | Data gaps and regulatory notes rendered | `views/strategy.contextPanel` (`data_gaps`, `regulatory_notes`, `human_review_required`) |
+| Defaults the backend applied are shown, not guessed | `views/strategy.contextPanel` "Inputs applied by the backend" renders the echoed `assumptions` (`ECHO` list); `views/command.energyPanel` labels start SoC "MODEL INPUT" |
+| Scenario output is a MODEL, not a simulation | `ui.kindChip` renders the backend's provenance kind; scenarios and the recommendation now arrive as `physical_model` and show a MODEL chip |
 
 ## Placeholders pending backend endpoints
 
@@ -151,8 +161,10 @@ precipitation makes the backend skip BoM and answer 501.
 * **Forecast verification table**: every cell reads "no verification history yet".
 * **Model comparison**: compares providers (from `/api/health`) only; model-level
   comparison inside one provider is not exposed.
-* **Battery state of charge now**: no telemetry endpoint; shown as unavailable.
-  Scenario start SoC is shown as an ASSUMPTION.
+* **Battery state of charge now**: no telemetry endpoint (by design for now); shown as
+  unavailable. Scenario start SoC is shown as a model input echoed by the backend.
+* `/api/alerts` carries weather and data-integrity alerts only (by design); strategy
+  alerts such as "no feasible scenario" appear in Energy & Strategy.
 * **Next-control-stop ETA**: the Command Center gives distance only; ETA is in
   the Route view at an assumed speed.
 
@@ -175,6 +187,11 @@ against a contract-shaped mock kept outside the repository:
   withheld; position loaded from the operator form; SIMULATION banner (route_sim);
   STALE POSITION banner; API unreachable (`?api=` to a dead port): error panels with
   endpoint and error, header chip, banner; observations 501 and 503 states;
+* freshness limits read from `/api/health` (footer shows "(/api/health)"); observation
+  request built from `/api/weather/observable`; a fresh real BoM observation (13 min old
+  at Alice Springs) rendered as OBSERVED and not stale, while a position 232 km from any
+  station produced the backend's 503 message; route progress from state; trajectory
+  truncated at 4 h with the dropped-points note; recommendation chip is MODEL;
 * strategy: four infeasible scenarios with blocking violations, data gaps,
   regulatory notes, assumed-vehicle warning, regulation context; light theme
   persists across reload; layout has no horizontal page overflow at 1280 and 1360.
@@ -186,8 +203,6 @@ Could not verify:
   not observed).
 * Live GPS: no telemetry source. A POSTed fix does not refresh itself, so
   freshness was exercised with a test loop re-posting the fix.
-* A real observed value that is fresh: the nearest BoM data was 31 min old at
-  test time. Fresh observed rendering was only seen against the mock.
 * Mobile/tablet widths (desktop-first; minimum width 1200 px).
 * MapTiler or any other style (only the default demo style was loaded).
 * Any browser other than the Browser pane's Chromium. The pane throttles

@@ -13,7 +13,7 @@ import { loadSolar, loadForecast, loadObservations, loadEnergy, solarDate } from
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
 
-const KEYS = ["state", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy"];
+const KEYS = ["state", "observable", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy"];
 
 export function create(root) {
   const body = h("div");
@@ -114,7 +114,8 @@ function irradiancePanel(charts) {
     { label: "DNI forecast", unit: "W/m²", color: "--series-5", kind: "fcst", values: values[4], digits: 0 },
     { label: "DHI forecast", unit: "W/m²", color: "--series-6", kind: "fcst", values: values[5], digits: 0 },
   ];
-  if (ob.data) series.push({ label: "GHI observed", unit: "W/m²", color: "--text", kind: "obs", values: values[6], digits: 0 });
+  const hasObsGhi = obPts[0].size > 0;
+  if (hasObsGhi) series.push({ label: "GHI observed", unit: "W/m²", color: "--text", kind: "obs", values: values[6], digits: 0 });
 
   const bands = [];
   const d = day.data;
@@ -132,8 +133,9 @@ function irradiancePanel(charts) {
     styleLegend([
       { color: "--series-4", kind: "clear", text: "Clear-sky model bound (GHI, DNI, DHI)" },
       { color: "--series-4", kind: "fcst", text: "Forecast (dashed)" },
-      ...(ob.data ? [{ color: "--text", kind: "obs", text: "Observed GHI (solid, markers)" }] : []),
+      ...(hasObsGhi ? [{ color: "--text", kind: "obs", text: "Observed GHI (solid, markers)" }] : []),
     ]),
+    !hasObsGhi && res("observable").status === "ok" ? h("div", { class: "note warn" }, "Observed irradiance: " + (Object.values(res("observable").data).flat().includes("ghi") ? "the provider returned no GHI observations for this place and time." : "no configured provider measures GHI (not listed by GET /api/weather/observable), so only the forecast and the model bound are drawn.")) : null,
     ob.status === "error" ? h("div", { class: "note warn" }, ob.error?.kind === "unsupported" ? `Observed irradiance: observations unavailable (HTTP 501: ${ob.error.message}), so only the forecast and the model bound are drawn.` : `Observed irradiance unavailable: ${ob.error?.message}`) : null,
     d && (d.sunrise_utc || d.sunset_utc) ? h("div", { class: "note" }, "Grey shading = Sun below the horizon (from API sunrise/sunset).") : null,
     lo === null && cs.status === "ok" ? stateBox("unknown", "Clear-sky series is empty", "GET /api/solar/clearsky/day returned no points.") : null]);

@@ -68,7 +68,7 @@ import { setClockOffset } from "./format.js";
  * @property {string} [local_time] resolved local time (name assumed)
  */
 /** @typedef {{provider:string, reachable:boolean, checked_at_utc:string, latency_ms:(number|null), message:(string|null)}} ProviderHealth */
-/** @typedef {{status:string, version:string, providers:ProviderHealth[], uptime_s:number, server_time_utc?:string, capabilities?:Object<string,boolean>, unavailable_modules?:Object<string,string>, provider_errors?:Object<string,string>, network_enabled?:boolean}} HealthResponse */
+/** @typedef {{status:string, version:string, providers:ProviderHealth[], uptime_s:number, server_time_utc?:string, freshness_limits_s?:{observation:number, forecast:number, gps:number}, capabilities?:Object<string,boolean>, unavailable_modules?:Object<string,string>, provider_errors?:Object<string,string>, network_enabled?:boolean}} HealthResponse */
 /**
  * @typedef {Object} SolarPosition
  * @property {GeoPoint} point @property {string} time_utc
@@ -238,32 +238,6 @@ function extractError(json) {
 /* ---------------------------------------------------------------- normalisers */
 
 /**
- * Pull {code, message, detail} out of the error shapes the backend produces:
- *   {"error": {code, message, detail}}                      (RwiError handler)
- *   {"detail": {"error": {code, message, detail}}}          (501 CapabilityNotImplemented)
- *   {"detail": "text"} / {"detail": [{msg, loc}, ...]}      (FastAPI HTTPException / validation)
- * @returns {{code?:string, message?:string, detail?:any}|null}
- */
-function extractError(json) {
-  if (!json || typeof json !== "object") return null;
-  if (json.error && typeof json.error === "object") return json.error;
-  const d = json.detail;
-  if (d && typeof d === "object" && !Array.isArray(d) && d.error) return d.error;
-  if (typeof d === "string") return { message: d };
-  if (Array.isArray(d)) return { message: d.map((x) => `${(x.loc || []).slice(1).join(".")}: ${x.msg}`).join("; ") };
-  return null;
-}
-
-/* ---------------------------------------------------------------- normalisers */
-
-/** First array found under any of `keys`, or the value itself if it is an array. */
-function arrayFrom(resp, keys) {
-  if (Array.isArray(resp)) return resp;
-  for (const k of keys) if (Array.isArray(resp?.[k])) return resp[k];
-  return null;
-}
-
-/**
  * GET /api/state returns StateResponse (docs/CONTRACTS.md section 4):
  *   {state: ActiveState, effective_time_utc, local_time, timezone_name, utc_offset_hours,
  *    position_available, is_simulated, position_age_s, server_time_utc}
@@ -288,6 +262,8 @@ const iso = (d) => (d instanceof Date ? d.toISOString() : d);
 export const api = {
   /** @returns {Promise<HealthResponse>} */
   health: () => request("/api/health"),
+  /** {provider: [canonical variables it MEASURES]}; {} means the platform measures nothing. */
+  observable: () => request("/api/weather/observable"),
   /** @returns {Promise<ActiveState>} */
   state: async () => normaliseState(await request("/api/state")),
   /** Operator action: set the active position (explicit coordinates only). */
@@ -326,37 +302,29 @@ export const api = {
   trajectory: (id, { speedKmh, startDistanceM, hours }) =>
     request(`/api/route/${encodeURIComponent(id)}/trajectory`, { params: { speed_kmh: speedKmh, start_distance_m: startDistanceM, hours } }),
   /**
-   * Backend returns {forecast: RouteWeatherForecast, local_arrival_times: string[], notes: string[]};
-   * a bare RouteWeatherForecast (CONTRACTS.md) is accepted too.
+   * {forecast: RouteWeatherForecast, local_arrival_times: string[], notes: string[]}, flattened.
+   * At most 12 route points are sampled per request (documented, by design).
    * @returns {Promise<RouteWeatherForecast & {local_arrival_times:string[], notes:string[]}>}
    */
   routeWeather: async (id, { speedKmh, startDistanceM, hours }) => {
     const r = await request(`/api/route/${encodeURIComponent(id)}/weather`, { params: { speed_kmh: speedKmh, start_distance_m: startDistanceM, hours } });
-    const f = r.forecast && r.forecast.samples ? r.forecast : r;
-    return { ...f, local_arrival_times: r.local_arrival_times || [], notes: r.notes || [] };
+    return { ...r.forecast, local_arrival_times: r.local_arrival_times ?? [], notes: r.notes ?? [] };
   },
 
-  /** @returns {Promise<{power:PowerEstimate[], energy:(EnergyEstimate|null), array:(object|null), notes:string[], weatherProvider:(string|null), weatherKind:(string|null)}>} */
+  /** @returns {Promise<{power:PowerEstimate[], energy:(EnergyEstimate|null), array:object, notes:string[], weatherProvider:string, weatherKind:string}>} */
   energyForecast: async ({ hours, speedKmh }) => {
     const r = await request("/api/energy/forecast", { params: { hours, speed_kmh: speedKmh } });
-    const power = arrayFrom(r, ["power", "estimates", "power_estimates", "series", "points"]) || [];
-    const energy = Array.isArray(r) ? (r.find((x) => x && "energy_wh" in x) || null) : (r.energy ?? r.energy_estimate ?? (r.energy_wh !== undefined ? r : null));
-    return {
-      power: power.filter((x) => x && "net_power_w" in x), energy,
-      array: Array.isArray(r) ? null : r.array ?? null, notes: Array.isArray(r) ? [] : r.notes ?? [],
-      weatherProvider: Array.isArray(r) ? null : r.weather_provider ?? null, weatherKind: Array.isArray(r) ? null : r.weather_kind ?? null,
-    };
+    return { power: r.estimates, energy: r.energy ?? null, array: r.array ?? null, notes: r.notes ?? [], weatherProvider: r.weather_provider ?? null, weatherKind: r.weather_kind ?? null };
   },
   /**
-   * GET /api/strategy/scenarios -> ScenarioResponse. Extra fields beyond the contract are
-   * surfaced: data_gaps, regulatory_notes, assumptions, vehicle, alerts, optimum, human_review_required.
+   * GET /api/strategy/scenarios -> ScenarioResponse, with snake_case fields renamed.
+   * `assumptions` echoes every default the backend applied (start_soc_fraction, start_distance_m, ...).
    * @param {{speedKmh?:number, startSoc?:number, hours?:number, startDistanceM?:number}} [p] startSoc is a fraction 0..1
    */
   scenarios: async (p = {}) => {
     const r = await request("/api/strategy/scenarios", { params: { speed_kmh: p.speedKmh, start_soc: p.startSoc, hours: p.hours, start_distance_m: p.startDistanceM } });
-    const scenarios = arrayFrom(r, ["scenarios", "results"]) || [];
     return {
-      scenarios: scenarios.filter((x) => x && "feasible" in x), recommendation: r.recommendation ?? null,
+      scenarios: r.scenarios, recommendation: r.recommendation ?? null,
       dataGaps: r.data_gaps ?? [], regulatoryNotes: r.regulatory_notes ?? [], assumptions: r.assumptions ?? {}, vehicle: r.vehicle ?? null,
       alerts: r.alerts ?? [], optimalSpeedKmh: r.optimal_constant_speed_kmh ?? null, optimalFeasible: r.optimal_is_feasible ?? null,
       humanReviewRequired: r.human_review_required ?? true,
@@ -372,7 +340,7 @@ export const api = {
 export const ENDPOINTS = [
   "GET /api/health", "GET /api/state", "POST /api/state/position", "POST /api/state/time",
   "GET /api/solar/position", "GET /api/solar/day", "GET /api/solar/clearsky/day",
-  "GET /api/weather/forecast", "GET /api/weather/observations",
+  "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations",
   "GET /api/route", "GET /api/route/{id}/geojson", "GET /api/route/{id}/progress", "GET /api/route/{id}/trajectory", "GET /api/route/{id}/weather",
   "GET /api/energy/forecast", "GET /api/strategy/scenarios", "GET /api/regulations", "GET /api/alerts",
 ];

@@ -181,7 +181,7 @@ function weatherPanel() {
     const past = obR.data.steps.filter((x) => toMs(x.valid_time_utc) <= tms + 60000);
     obsStep = past.length ? past[past.length - 1] : null;
   }
-  const obsNote = obR.status === "error"
+  const obsNote = obR.status === "blocked" ? obR.blockedReason : obR.status === "error"
     ? (obR.error?.kind === "unsupported" ? `Observations not available (HTTP 501): ${obR.error.message}` : `Observations unavailable: ${obR.error?.message}`)
     : obR.status === "ok" && !obsStep ? "Observation series contains no step at or before the selected time." : null;
   const fcNote = fcR.status === "error" ? `Forecast unavailable: ${fcR.error?.kind === "network" ? "API unreachable" : fcR.error?.message}` : fcR.status === "ok" && !fcStep ? "No forecast step within 90 min of the selected time." : null;
@@ -255,7 +255,7 @@ function energyPanel() {
     const chosen = d.scenarios.find((x) => x.name === rec?.recommended_scenario) || null;
     const rows = [["Battery state of charge now", textCell(null, "no live battery telemetry endpoint in the API")]];
     if (chosen) {
-      rows.push(["Scenario start SoC", h("span", null, numCell(chosen.start_soc_fraction * 100, "%", { digits: 1, prov: chosen.provenance }), " ", chip("ASSUMPTION", "mute", "Scenario input, not a telemetry reading"))]);
+      rows.push(["Scenario start SoC", h("span", null, numCell(chosen.start_soc_fraction * 100, "%", { digits: 1, prov: chosen.provenance }), " ", chip("MODEL INPUT", "mute", "Start state of charge applied by the backend (echoed in scenario assumptions: " + JSON.stringify(d.assumptions?.start_soc_fraction ?? null) + "). Not a telemetry reading."))]);
       rows.push(["Scenario end SoC", numCell(chosen.end_soc_fraction * 100, "%", { digits: 1, prov: chosen.provenance })]);
       const ne = fmtEnergyWh(chosen.net_energy_wh);
       rows.push(["Scenario net energy", numCell(ne.unit === "kWh" ? chosen.net_energy_wh / 1000 : chosen.net_energy_wh, ne.unit, { digits: ne.unit === "kWh" ? 2 : 0, prov: chosen.provenance })]);

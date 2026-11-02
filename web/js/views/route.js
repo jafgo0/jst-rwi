@@ -78,6 +78,7 @@ function layout(charts) {
   const gradeKnown = t.assumptions?.grade_known !== false;
 
   const ass = Object.entries(t.assumptions || {});
+  if (t.assumptions?.points_beyond_horizon_dropped != null) wrap.append(h("div", { class: "note" }, `Trajectory truncated by the API to a ${t.assumptions.horizon_hours} h horizon: ${t.assumptions.points_beyond_horizon_dropped} later point(s) of the route are not shown.`));
   wrap.append(panel("Trajectory summary", h("div", { class: "grid", style: { gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)" } },
     kv([
       ["Points", `${t.points.length}`],

@@ -51,9 +51,9 @@ window.RWI_CONFIG = {
   },
 
   /*
-   * Freshness limits (seconds) used ONLY when the API does not report its own.
-   * They mirror rwi.config.Settings defaults. Whenever a limit comes from here
-   * the UI says "UI default limit", never presents it as an API setting.
+   * Fallback freshness limits (seconds), used ONLY until GET /api/health has been read.
+   * The backend's own limits (freshness_limits_s) replace these as soon as they arrive;
+   * the footer then says "(/api/health)". While these are in use the UI says "UI default".
    */
   freshnessDefaultsS: {
     observation: 1800,

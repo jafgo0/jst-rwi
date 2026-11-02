@@ -115,7 +115,7 @@ function renderFooter() {
   const m = cfg.map;
   const health = res("health").data;
   const tz = vehicleTimezone();
-  const src = (k) => (limits.source[k] === "api" ? "API" : "UI default");
+  const src = (k) => (limits.source[k] === "api" ? "/api/health" : "UI default fallback (health not loaded)");
   replace(el,
     h("span", null, h("b", null, "Basemap: "), m.providerName, " — ", m.licenceText, m.requiresOsmCredit ? " — © OpenStreetMap contributors" : "",
       " — rendered with MapLibre GL JS 4.7.1"),

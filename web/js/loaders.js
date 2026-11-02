@@ -9,7 +9,6 @@ import { load, block, res, activePoint, activeState, displayRoute, effectiveTime
 import { cfg } from "./settings.js";
 import { localDate, toMs } from "./format.js";
 
-const OBS_VARIABLES = ["temperature_2m", "relative_humidity_2m", "dew_point_2m", "pressure_msl", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"];
 const NO_POS = "position unknown - no request was made for a guessed location";
 
 /** Rounded position key: refetch when the vehicle moves ~2 km or the selected time changes. */
@@ -69,12 +68,29 @@ export async function loadForecast({ hours = session.forecastHours, provider = "
     () => api.forecast({ lat: p.lat, lon: p.lon, hours, provider: provider || undefined }));
 }
 
+export function loadObservable(force = false) {
+  return load("observable", { endpoint: "GET /api/weather/observable", ttlMs: 600000, force }, () => api.observable());
+}
+
+/**
+ * Observations are requested only for variables the backend says a provider MEASURES
+ * (GET /api/weather/observable). {} means the platform measures nothing: no request is made.
+ */
 export async function loadObservations({ hours = 24, key = "observations", force = false } = {}) {
   const p = activePoint();
   if (!p) { block(key, NO_POS, "GET /api/weather/observations"); return; }
-  return load(key, { endpoint: "GET /api/weather/observations", paramsKey: `${posKey(p)}|${hours}`, ttlMs: 120000, force },
-    // Only variables a station network can measure: asking for irradiance/precipitation makes the backend skip BoM entirely.
-    () => api.observations({ lat: p.lat, lon: p.lon, hours, variables: OBS_VARIABLES }));
+  const ob = await loadObservable(force);
+  if (ob.status !== "ok") {
+    block(key, `the list of measurable variables could not be read (${ob.error?.endpoint || "GET /api/weather/observable"}: ${ob.error?.message || "not loaded"}); no observation request was made`, "GET /api/weather/observations");
+    return;
+  }
+  const variables = [...new Set(Object.values(ob.data).flat())].sort();
+  if (!variables.length) {
+    block(key, "no configured provider measures any variable (GET /api/weather/observable returned an empty map), so there are no observations to request", "GET /api/weather/observations");
+    return;
+  }
+  return load(key, { endpoint: "GET /api/weather/observations", paramsKey: `${posKey(p)}|${hours}|${variables.join(",")}`, ttlMs: 120000, force },
+    () => api.observations({ lat: p.lat, lon: p.lon, hours, variables }));
 }
 
 /** Projection of the active fix onto the display route (backend map-matching). */

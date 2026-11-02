@@ -62,6 +62,7 @@ function layout(charts, invalidate) {
   const status = [];
   if (fc.status !== "ok") status.push(withResource(fc, () => h("span"), { label: "forecast" }));
   else if (fc.error) status.push(withResource(fc, () => h("span")));
+  if (ob.status === "blocked") status.push(h("div", { class: "state unknown" }, h("h3", null, "NO OBSERVATIONS REQUESTED"), `${ob.blockedReason}. The charts below show forecast only; nothing here is an observation.`));
   if (ob.status === "error") status.push(h("div", { class: ob.error?.kind === "unsupported" ? "state unknown" : "state error" },
     h("h3", null, ob.error?.kind === "unsupported" ? "NO OBSERVATIONS AVAILABLE" : "OBSERVATIONS UNAVAILABLE"),
     ob.error?.kind === "unsupported" ? `Observations are not available (HTTP 501): ${ob.error.message}. The charts below show forecast only; nothing here is an observation.` : `${ob.error.endpoint}: ${ob.error.message}`));

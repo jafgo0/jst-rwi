@@ -7,7 +7,7 @@
  * show the error AND how old the last successful load is (see ui.withResource).
  * @module store
  */
-import { nowMs, setLimits, validTimezone, toMs } from "./format.js";
+import { nowMs, setLimits, limits, validTimezone, toMs } from "./format.js";
 import { cfg, prefs } from "./settings.js";
 
 /**
@@ -176,14 +176,13 @@ export function displayRoute() {
 /**
  * Control stops of the display route. The route list (GET /api/route) only
  * carries a count in the implemented backend, so the stops come from the route
- * GeoJSON marker features (properties.kind === "control_stop"); a `control_stops`
- * array on the list entry (CONTRACTS.md shape) is used as a fallback.
+ * GeoJSON marker features (properties.kind === "control_stop").
  * @returns {{stops:{name:(string|null), cumulative_distance_m:number, mandatory_dwell_s:(number|null), point:{latitude_deg:number, longitude_deg:number}}[], source:string, declaredCount:(number|null)}}
  */
 export function controlStops() {
   const gj = res("routeGeojson").data;
   const info = displayRoute()?.info || null;
-  const declaredCount = info?.control_stop_count ?? (Array.isArray(info?.control_stops) ? info.control_stops.length : null);
+  const declaredCount = info?.control_stop_count ?? null;
   const fromGj = (gj?.features || [])
     .filter((f) => f.geometry?.type === "Point" && (f.properties?.kind ?? f.properties?.type) === "control_stop")
     .map((f) => ({
@@ -191,23 +190,13 @@ export function controlStops() {
       mandatory_dwell_s: f.properties.mandatory_dwell_s ?? null, point: { latitude_deg: f.geometry.coordinates[1], longitude_deg: f.geometry.coordinates[0] },
     }));
   if (fromGj.length) return { stops: fromGj, source: "route GeoJSON", declaredCount };
-  if (Array.isArray(info?.control_stops) && info.control_stops.length) return { stops: info.control_stops, source: "GET /api/route", declaredCount };
   return { stops: [], source: gj ? "route GeoJSON (no control_stop features)" : "route GeoJSON not loaded", declaredCount };
 }
 
-/** Push API-reported freshness limits into format.js when they appear. */
+/** Push the backend's freshness limits (GET /api/health freshness_limits_s) into format.js. The UI defaults stay only as fallback. */
 export function absorbLimits() {
-  const src = [activeState(), res("health").data];
-  for (const s of src) {
-    const l = s?.freshness_limits ?? s?.freshness ?? s?.limits;
-    if (l && typeof l === "object") {
-      setLimits({
-        observation: l.max_observation_age_s ?? l.observation_s ?? l.observation,
-        forecast: l.max_forecast_age_s ?? l.forecast_s ?? l.forecast,
-        gps: l.max_gps_age_s ?? l.gps_s ?? l.gps,
-      }, "api");
-    }
-  }
+  const l = res("health").data?.freshness_limits_s;
+  if (l && typeof l === "object") setLimits({ observation: l.observation, forecast: l.forecast, gps: l.gps }, "api");
 }
 setLimits(cfg.freshnessDefaultsS, "ui");
 
@@ -241,5 +230,5 @@ export function setSession(patch) {
  * @param {string[]} keys
  */
 export function signature(keys, extra = "") {
-  return keys.map((k) => { const r = res(k); return `${k}:${r.status}:${r.error ? r.error.message : ""}:${r._sig}`; }).join("|") + `|${session.theme}|${session.timeBasis}|${extra}`;
+  return keys.map((k) => { const r = res(k); return `${k}:${r.status}:${r.error ? r.error.message : ""}:${r._sig}`; }).join("|") + `|${session.theme}|${session.timeBasis}|${limits.observation}/${limits.forecast}/${limits.gps}/${limits.source.observation}|${extra}`;
 }
