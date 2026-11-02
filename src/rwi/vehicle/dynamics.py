@@ -243,22 +243,70 @@ Measurement needed to replace each assumption:
     aerodynamic property of a car nobody has tested.
 """
 
+_TESSERACT_2025_SOURCE_NOTES = """\
+PARAMETERS FROM 2025 JUST SOLAR CAR ("Tesseract"), NOT THE 2027 CAR.
+
+Numbers below were read from the team's own repository drive-system at
+3-software/host-software/python/cases/cars/tesseract-2025.yaml on 2026-11-02.
+They describe the car that COMPETED in 2025, not the car being built for 2027,
+and they are kept here only until the team supplies the 2027 car's own
+measurements.
+
+They are the LEAST wrong default available at this moment, which is why the
+earlier generic placeholders were replaced with them. They are still wrong for
+the actual car JST-RWI is being built to support.
+
+Values and their location in the source file:
+  * mass_kg = 269.0  (tesseract-2025.yaml:27, race mass incl. driver)
+  * drag_area_cda_m2 = 0.137  (yaml:30, wind-tunnel figure)
+  * rolling_resistance_coefficient = 0.0017  (yaml:33, analytical only;
+    there is a surface-dependent polynomial in _defaults.yaml:29-32 the team
+    uses in simulation that this single number does not represent)
+  * drivetrain_efficiency = 0.92  (team models it as a speed-dependent map
+    around a Mitsuba direct-drive hub motor, not a constant; the single
+    number stays "assumed" until a measurement replaces it)
+  * auxiliary_power_w = 12.6  (yaml:61 steady_loads_w sums to
+    [2.6, 2.0, 1.0, 2.0, 3.0, 2.0] = 12.6 W)
+  * battery_capacity_wh = 3341.0  (yaml:38-40, 38 cells x 3.2 V x 27.52 Ah =
+    3341 Wh. NOTE: this EXCEEDS the Challenger 2.5.2 regulatory ceiling of
+    3055.56 Wh, so it is a theoretical pack energy from cell datasheet
+    numbers, not usable energy in race configuration. The regulatory ceiling
+    still applies to any 2027 build.)
+
+What this configuration does NOT capture, which the team's own simulator does:
+  * no regenerative-braking model (team's p_output is also brake-free, so
+    this gap is shared);
+  * no speed-dependent drivetrain efficiency map (team has one in
+    consumption/drivetrain_efficiency.py);
+  * no altitude-corrected air density (team's fast kernel has an ISA term;
+    rwi.vehicle.resolve_air_density takes pressure and temperature instead);
+  * no surface-dependent rolling resistance polynomial.
+
+Replace with the 2027 car's own measurements as soon as they exist, change
+parameter_source to "measured" at that point, and remove this notes block.
+"""
+
 DEFAULT_VEHICLE: Final[VehicleConfig] = VehicleConfig(
-    name="GENERIC-CHALLENGER-PLACEHOLDER (assumed, not JU Solar Team)",
-    mass_kg=300.0,
-    drag_area_cda_m2=0.10,
-    rolling_resistance_coefficient=0.005,
+    name="TESSERACT-2025 (JUST team's 2025 car, NOT the 2027 build)",
+    mass_kg=269.0,
+    drag_area_cda_m2=0.137,
+    rolling_resistance_coefficient=0.0017,
     drivetrain_efficiency=0.92,
-    auxiliary_power_w=25.0,
+    auxiliary_power_w=12.6,
     battery_capacity_wh=CHALLENGER_MAX_STORAGE_WH,
     battery_reserve_fraction=0.10,
     battery_round_trip_efficiency=0.95,
     max_legal_speed_kmh=MAX_POSTED_SPEED_KMH_TMG,
     yaw_drag_sensitivity_per_deg=0.0,
     parameter_source="assumed",
-    source_notes=_DEFAULT_VEHICLE_SOURCE_NOTES,
+    source_notes=_TESSERACT_2025_SOURCE_NOTES,
 )
-"""A clearly labelled placeholder vehicle. See ``source_notes`` before using it."""
+"""The 2025 car's measured parameters, used as the LEAST WRONG default.
+
+The battery capacity stays clamped to the regulatory ceiling, not the 2025
+pack's theoretical maximum: using 3341 Wh in the model would silently simulate
+an illegal battery. See the source notes.
+"""
 
 
 # ---------------------------------------------------------------------------

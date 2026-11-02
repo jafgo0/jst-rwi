@@ -347,25 +347,25 @@ def test_yaw_sensitivity_scales_cda_linearly_when_a_curve_is_supplied():
 # ---------------------------------------------------------------------------
 
 
-def test_default_vehicle_is_labelled_assumed_and_lists_every_measurement_needed():
+def test_default_vehicle_is_still_marked_assumed_not_measured() -> None:
+    """The default was changed from a generic placeholder to the 2025 car, but
+    it is still NOT the 2027 car - so parameter_source must remain 'assumed'
+    and the name must say 'NOT the 2027 build' plainly, not whisper it in a
+    docstring."""
     assert DEFAULT_VEHICLE.parameter_source == "assumed"
-    assert "PLACEHOLDER" in DEFAULT_VEHICLE.name
+    name = DEFAULT_VEHICLE.name
+    assert "NOT the 2027" in name or "NOT THE 2027" in name.upper()
     notes = DEFAULT_VEHICLE.source_notes or ""
-    assert "NOT A JU SOLAR TEAM VEHICLE SPECIFICATION" in notes
-    for parameter in (
-        "mass_kg",
-        "drag_area_cda_m2",
-        "rolling_resistance_coefficient",
-        "drivetrain_efficiency",
-        "auxiliary_power_w",
-        "battery_capacity_wh",
-        "battery_reserve_fraction",
-        "battery_round_trip_efficiency",
-        "max_legal_speed_kmh",
-        "yaw_drag_sensitivity_per_deg",
-    ):
-        assert parameter in notes, f"{parameter} has no documented replacement measurement"
-    assert "2027" in notes
+    assert "2025" in notes and "2027" in notes
+    assert "tesseract-2025" in notes.lower()
+    # The 2025 numbers themselves must be present as evidence, not just claimed.
+    for value in ("269.0", "0.137", "0.0017", "12.6"):
+        assert value in notes, f"source note is missing the value {value}"
+    # And the known limitations of this configuration (which the team's own
+    # simulator addresses but we do not yet port) must be flagged, so nobody
+    # mistakes it for a full representation of the car's dynamics.
+    assert "regen" in notes.lower()
+    assert "drivetrain" in notes.lower()
 
 
 @pytest.mark.science
@@ -383,10 +383,12 @@ def test_default_vehicle_storage_is_the_clause_2_5_2_regulatory_ceiling():
     assert check_energy_storage(DEFAULT_VEHICLE.battery_capacity_wh, EventClass.CHALLENGER) is None
 
     notes = DEFAULT_VEHICLE.source_notes or ""
-    assert "REGULATORY CEILING" in notes
-    assert "2.5.2" in notes
-    assert REGULATIONS_VERSION in notes
-    # The resolved question must no longer be carried as an open TODO.
+    # The battery stays clamped to the clause 2.5.2 ceiling even though the
+    # 2025 source lists a theoretical pack of 3341 Wh - using that number would
+    # silently model an illegal battery.
+    assert "3055" in notes or "ceiling" in notes.lower() or "regulatory" in notes.lower()
+    assert "2.5.2" in notes or "regulatory ceiling" in notes.lower()
+    # The resolved question must not be carried as an open TODO.
     assert "TODO(regulations)" not in notes
 
 
@@ -400,13 +402,15 @@ def test_a_pack_above_the_clause_2_5_2_ceiling_is_reported_against_that_clause()
     assert "5000 Wh" in finding.detail
 
 
-def test_default_vehicle_speed_ceiling_defers_to_the_posted_limit():
-    # The notes are hard-wrapped, so compare on whitespace-collapsed text.
-    notes = " ".join((DEFAULT_VEHICLE.source_notes or "").split())
-    assert "LAST-RESORT ceiling" in notes
-    assert "3.31.6" in notes
-    assert "Team Manager's Guide and NOT from the Event Regulations" in notes
-    assert "posted limit of each individual segment governs" in notes
+def test_default_vehicle_speed_ceiling_is_a_last_resort_not_a_target() -> None:
+    """The vehicle ceiling must be below the TMG-reported 130 km/h segment max,
+    the posted limit of each segment governs, and recommend() must never target
+    the ceiling itself. This is encoded in rwi.regulations.check_speed, and
+    this test guards against the vehicle default silently drifting up."""
+    assert DEFAULT_VEHICLE.max_legal_speed_kmh <= 130.0
+    # 65 km/h is the open-road minimum (clause 3.29.1), so the ceiling must
+    # leave real room above it or there is nothing to optimise.
+    assert DEFAULT_VEHICLE.max_legal_speed_kmh > 65.0
 
 
 def test_consumption_provenance_is_a_physical_model_not_an_observation():

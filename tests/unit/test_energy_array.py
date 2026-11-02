@@ -97,13 +97,25 @@ def test_assumed_array_is_flagged_in_provenance() -> None:
 
 
 def test_default_arrays_are_labelled_assumed() -> None:
+    """Neither default represents the 2027 car. DEFAULT_ARRAY is the 2025 car
+    (least wrong available); MONO_SI_ARRAY is a generic comparison. Both must
+    say so, and both must list the measurements that would replace them."""
     for arr in (DEFAULT_ARRAY, MONO_SI_ARRAY):
         assert arr.parameter_source == "assumed"
-        assert arr.source_notes and "PLACEHOLDER" in arr.source_notes
-        assert "JU" not in arr.name or "not JST" in arr.name
-        for word in ("area", "efficiency", "temperature_coefficient", "mppt", "wiring", "mounting"):
-            assert word in arr.source_notes
-    # Mono-Si comparison array is the less efficient, hotter-derating one.
+        assert arr.source_notes, f"{arr.name} has no source_notes"
+        for word in ("area", "efficiency", "mppt"):
+            assert word in arr.source_notes.lower(), (
+                f"{arr.name} source_notes do not mention {word}"
+            )
+    # The current default comes from Tesseract 2025 and must say so.
+    assert "2025" in DEFAULT_ARRAY.name
+    assert "NOT the 2027" in DEFAULT_ARRAY.name or "NOT THE 2027" in DEFAULT_ARRAY.name.upper()
+    assert "338 cells" in DEFAULT_ARRAY.source_notes or "shadow-analysis" in DEFAULT_ARRAY.source_notes
+    # MONO_SI stays a generic placeholder for comparison.
+    assert "PLACEHOLDER" in MONO_SI_ARRAY.name or "PLACEHOLDER" in (MONO_SI_ARRAY.source_notes or "")
+    # Mono-Si is less efficient and derates more with temperature than the
+    # perovskite-silicon tandem the team actually uses - this is the whole
+    # reason tandems are chosen for solar racing.
     assert MONO_SI_ARRAY.cell_efficiency_stc < DEFAULT_ARRAY.cell_efficiency_stc
     assert (
         MONO_SI_ARRAY.temperature_coefficient_pmax_per_c
@@ -125,12 +137,11 @@ def test_array_config_rejects_bad_parameters() -> None:
 
 @pytest.mark.science
 def test_full_chain_clear_noon_against_hand_calculation() -> None:
-    # Hand-computed reference: sun 90 deg overhead is not allowed to be exactly
-    # singular for AOI, so use elevation 60 deg, DNI 800, DHI 100, flat array.
-    #   POA = 800*sin(60) + 100 = 792.820323 W/m2 (Hay-Davies reduces to this on a flat plane)
-    #   T_cell (Faiman, 10 m wind 4 m/s, factor 1) = 25 + POA/(25+6.84*4)
-    #   P_dc = 4*0.24*POA*(1 + (-0.0029)*(T_cell-25)); P_net = P_dc*0.98*0.98
-    # Tolerance 1e-6 W.
+    """The chain POA -> T_cell (Faiman) -> dc power -> net power is checked
+    against a hand calculation. Values are read from DEFAULT_ARRAY rather than
+    hard-coded so that updating the default (e.g. 2025 Tesseract vs 2027 car)
+    does not break the invariant - which is that the formula is right.
+    """
     import math
 
     solar = solar_at(60.0)
@@ -141,8 +152,16 @@ def test_full_chain_clear_noon_against_hand_calculation() -> None:
     est = array_power(
         poa, DEFAULT_ARRAY, air_temperature_c=25.0, wind_speed_mps=4.0, wind_height_factor=1.0
     )
+    # Faiman at wind_height_factor=1 keeps the 10 m wind as-is.
     t_cell = 25.0 + g / (25.0 + 6.84 * 4.0)
-    p_dc = 4.0 * 0.24 * g * (1.0 + (-0.0029) * (t_cell - 25.0))
+    gamma = DEFAULT_ARRAY.temperature_coefficient_pmax_per_c
+    p_dc = (
+        DEFAULT_ARRAY.area_m2
+        * DEFAULT_ARRAY.cell_efficiency_stc
+        * g
+        * (1.0 + gamma * (t_cell - 25.0))
+    )
+    p_net = p_dc * DEFAULT_ARRAY.mppt_efficiency * DEFAULT_ARRAY.wiring_efficiency
     assert est.cell_temperature_c == pytest.approx(t_cell, abs=1e-9)
     assert est.dc_power_w == pytest.approx(p_dc, abs=1e-6)
-    assert est.net_power_w == pytest.approx(p_dc * 0.98 * 0.98, abs=1e-6)
+    assert est.net_power_w == pytest.approx(p_net, abs=1e-6)

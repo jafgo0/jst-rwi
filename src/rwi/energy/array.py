@@ -67,19 +67,51 @@ inland value. Not a measurement. Missing wind biases T_cell by a few degC."""
 # ---------------------------------------------------------------------------
 
 DEFAULT_ARRAY = ArrayConfig(
-    name="PLACEHOLDER generic Challenger-class high-efficiency Si array (ASSUMED, not JST)",
-    area_m2=4.0,
-    cell_efficiency_stc=0.24,
-    temperature_coefficient_pmax_per_c=-0.0029,
+    name="TESSERACT-2025 array (JUST team's 2025 panel, NOT the 2027 build)",
+    area_m2=6.0,
+    cell_efficiency_stc=0.27,
+    temperature_coefficient_pmax_per_c=-0.0024,
     mppt_efficiency=0.98,
     wiring_efficiency=0.98,
     mounting="horizontal",
     surface_tilt_deg=0.0,
     surface_azimuth_deg=None,
-    noct_c=48.0,
+    noct_c=46.0,
     albedo=0.2,
     parameter_source="assumed",
     source_notes=(
+        "PARAMETERS FROM 2025 JUST SOLAR CAR, NOT THE 2027 ARRAY. "
+        "Read from the team's own repository drive-system at "
+        "3-software/host-software/python/cases/cars/tesseract-2025.yaml on 2026-11-02:\n"
+        "  area_m2=6.0 (yaml:46, equal to the Challenger 2.4.2 ceiling)\n"
+        "  cell_efficiency_stc=0.27 (yaml:47, Oxford PV perovskite-silicon tandem)\n"
+        "  temperature_coefficient_pmax_per_c=-0.0024 /degC (yaml:52, a BETTER "
+        "temperature coefficient than monocrystalline Si at -0.0037, which is a "
+        "real advantage of the tandem cell in the Australian desert)\n"
+        "  noct_c=46 (yaml:53)\n"
+        "The 2027 layout is DIFFERENT: 338 cells of 182.3 x 96.3 mm in 36 modules "
+        "arranged in 5 MPPT groups, with left and right MPPT tables that differ at "
+        "module 16 - see 3-software/host-software/shadow-analysis/README.md:62. "
+        "This flat-plane model does not represent that geometry at all. The team's "
+        "shadow-analysis tool will produce an efficiency_matrix (azimuth x zenith x "
+        "cell) that captures per-cell orientation; when it is available, that "
+        "matrix is the right input to this model, not a scalar efficiency. "
+        "mppt_efficiency=0.98 / wiring_efficiency=0.98 are kept as the team's own "
+        "model also uses per-group polynomials rather than a single scalar - "
+        "REPLACE with the team's measured efficiency curves. "
+    ),
+)
+"""Primary configuration, now using the team's 2025 car as the least-wrong default.
+
+The 2027 array will replace this once its measurements exist. Until then this
+is the configuration most representative of hardware JU Solar Team actually
+built and raced, with the explicit caveat that the 2027 panel is a different
+layout (338 cells in 5 MPPT groups) that this flat-plane model cannot describe.
+See ``source_notes`` and ``docs/science/pv.md``.
+"""
+
+# A tag of what we no longer are: a generic Si module, kept for comparison.
+_LEGACY_PLACEHOLDER_NOTES = (
         "ALL VALUES ARE PLACEHOLDERS, not a JU Solar Team specification. "
         "area_m2=4.0: generic Challenger-class order of magnitude (BWSC limits the "
         "solar-cell area by class and cell type - check the current regulations); "
@@ -103,9 +135,9 @@ DEFAULT_ARRAY = ArrayConfig(
         "model; the default 'faiman' model ignores it - MEASURE cell temperature "
         "with sensors on the array to calibrate any thermal model. "
         "albedo=0.2: generic ground reflectance; irrelevant for a flat array."
-    ),
 )
-"""Primary placeholder. See ``source_notes`` for every assumption."""
+"""Legacy generic-Si placeholder notes, kept for comparison with the current
+TESSERACT_2025 default. Not used anywhere live."""
 
 MONO_SI_ARRAY = ArrayConfig(
     name="PLACEHOLDER generic monocrystalline-Si (PERC) array (ASSUMED, not JST)",
