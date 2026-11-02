@@ -22,6 +22,11 @@ _CAPABILITY_MODULES: dict[str, tuple[str, ...]] = {
     "energy": ("rwi.energy.poa", "rwi.energy.array", "rwi.energy.series"),
     "vehicle": ("rwi.vehicle.dynamics",),
     "strategy": ("rwi.strategy.scenarios",),
+    "archive": ("rwi.archive",),
+    "verification": ("rwi.verification",),
+    "ensemble": ("rwi.ensemble",),
+    "fusion": ("rwi.fusion",),
+    "capture": ("rwi.capture",),
 }
 
 

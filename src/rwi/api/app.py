@@ -25,7 +25,16 @@ from pydantic import BaseModel
 from rwi import __version__
 from rwi.api.capability import capability_status, import_errors, require_attr
 from rwi.api.errors import register_error_handlers
-from rwi.api.routers import alerts, energy, route, solar, state, strategy, weather
+from rwi.api.routers import (
+    alerts,
+    energy,
+    forecast_quality,
+    route,
+    solar,
+    state,
+    strategy,
+    weather,
+)
 from rwi.config import Settings, get_settings
 from rwi.contracts import ProviderHealth
 from rwi.core.timebase import utc_now
@@ -134,6 +143,7 @@ def create_app() -> FastAPI:
     app.include_router(route.router)
     app.include_router(energy.router)
     app.include_router(strategy.router)
+    app.include_router(forecast_quality.router)
     app.include_router(alerts.router)
 
     web_dir = Path(__file__).resolve().parents[3] / "web"

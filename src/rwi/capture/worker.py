@@ -1,0 +1,310 @@
+"""The job that builds the verification history.
+
+Nothing in phase 2 works without this. Scores, bias corrections, calibrated
+uncertainty and evidence-based model choice are all functions of a record of
+*what was forecast before the fact* matched against *what was then measured*.
+That record does not exist until something writes it down, every hour, for
+months. This is that something.
+
+Design rules:
+  * one site or model failing must never stop the cycle - partial history is
+    worth far more than none, and a provider outage is not an error in us;
+  * forecasts are captured per named model, not only from the provider's
+    'best_match' blend, because a score for a blend cannot tell the team which
+    model to trust in central Australia;
+  * what was captured and what failed is reported, never swallowed;
+  * nothing here invents data: a failed fetch is a recorded failure.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+from collections.abc import Sequence
+from datetime import datetime, timedelta
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from rwi.capture.sites import DEFAULT_SITES, CaptureSite
+from rwi.config import Settings, get_settings
+from rwi.core.provenance import DataKind
+from rwi.core.timebase import TimeWindow, utc_now
+
+logger = logging.getLogger(__name__)
+
+CAPTURE_VARIABLES: tuple[str, ...] = (
+    "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "pressure_msl",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "wind_gusts_10m",
+    "cloud_cover",
+    "precipitation",
+    "ghi",
+    "dni",
+    "dhi",
+)
+"""What is worth a provider call every hour for nine months.
+
+Chosen for what the race actually needs scored: irradiance (energy), wind
+(drag and stability), cloud (irradiance driver), temperature (array and battery
+efficiency) and precipitation (safety). Pressure and humidity are cheap and
+make the thermodynamic picture checkable.
+"""
+
+CAPTURE_MODELS: tuple[str, ...] = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless")
+"""Named models to capture separately, so their skill can be compared.
+
+These are the globally available models at Australian longitudes. Capturing
+'best_match' as well would archive a blend whose composition can change without
+notice, which cannot be scored meaningfully - so it is excluded on purpose.
+"""
+
+
+class SiteOutcome(BaseModel):
+    """What happened for one site in one cycle."""
+
+    model_config = ConfigDict(frozen=True)
+
+    site_id: str
+    forecast_rows: int = 0
+    observation_rows: int = 0
+    observation_series: int = Field(
+        default=0,
+        description="observation series successfully FETCHED, which is not the same as rows "
+        "written: re-recording a series the archive already holds writes nothing",
+    )
+    models_captured: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
+
+    @property
+    def captured_anything(self) -> bool:
+        """Whether this site contributed to the history this cycle.
+
+        Zero rows written is a success when the archive already held the data:
+        the immutability rule makes re-recording an identical series a no-op.
+        Only a failure to fetch is a failure.
+        """
+        return (
+            self.forecast_rows > 0
+            or self.observation_rows > 0
+            or (self.observation_series > 0 and not self.failures)
+            or bool(self.models_captured)
+        )
+
+
+class CaptureResult(BaseModel):
+    """The outcome of one capture cycle, in full."""
+
+    model_config = ConfigDict(frozen=True)
+
+    started_at_utc: datetime
+    finished_at_utc: datetime
+    outcomes: list[SiteOutcome] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+    @property
+    def duration_s(self) -> float:
+        return (self.finished_at_utc - self.started_at_utc).total_seconds()
+
+    @property
+    def forecast_rows(self) -> int:
+        return sum(o.forecast_rows for o in self.outcomes)
+
+    @property
+    def observation_rows(self) -> int:
+        return sum(o.observation_rows for o in self.outcomes)
+
+    @property
+    def failures(self) -> list[str]:
+        return [f for o in self.outcomes for f in o.failures]
+
+    @property
+    def succeeded(self) -> bool:
+        """True when at least one site captured something.
+
+        A cycle in which every site failed is a failure; one in which a single
+        provider was flaky is not.
+        """
+        return any(o.captured_anything for o in self.outcomes)
+
+    def summary(self) -> str:
+        return (
+            f"captured {self.forecast_rows} forecast and {self.observation_rows} "
+            f"observation rows from {len(self.outcomes)} site(s) in "
+            f"{self.duration_s:.1f} s, {len(self.failures)} failure(s)"
+        )
+
+
+async def _capture_site(
+    *,
+    site: CaptureSite,
+    archive: Any,
+    providers: dict[str, Any],
+    variables: Sequence[str],
+    models: Sequence[str],
+    forecast_hours: float,
+    now: datetime,
+    semaphore: asyncio.Semaphore,
+) -> SiteOutcome:
+    forecast_rows = 0
+    observation_rows = 0
+    observation_series = 0
+    captured: list[str] = []
+    failures: list[str] = []
+    window = TimeWindow(start_utc=now, end_utc=now + timedelta(hours=forecast_hours))
+
+    openmeteo = providers.get("open-meteo")
+    if openmeteo is not None:
+        for model in models:
+            async with semaphore:
+                try:
+                    series = await openmeteo.fetch_forecast(
+                        site.point, window, variables, models=model
+                    )
+                except Exception as exc:
+                    failures.append(f"{site.id}/{model}: {type(exc).__name__}: {exc}")
+                    continue
+            try:
+                forecast_rows += archive.record_series(series)
+                captured.append(model)
+            except Exception as exc:
+                failures.append(f"{site.id}/{model}: archive: {type(exc).__name__}: {exc}")
+
+    # Observations: ask each provider only for what it actually measures, so a
+    # provider is never blamed for lacking a variable it never claimed.
+    observation_window = TimeWindow(start_utc=now - timedelta(hours=6), end_utc=now)
+    for name, provider in providers.items():
+        capabilities = getattr(provider, "capabilities", None)
+        if capabilities is None or not capabilities.supports_observations:
+            continue
+        measurable = [v for v in variables if v in capabilities.variables]
+        if not measurable:
+            continue
+        async with semaphore:
+            try:
+                series = await provider.fetch_observations(
+                    site.point, observation_window, measurable
+                )
+            except Exception as exc:
+                failures.append(f"{site.id}/{name} observations: {type(exc).__name__}: {exc}")
+                continue
+        if series.kind is not DataKind.OBSERVATION:
+            failures.append(
+                f"{site.id}/{name}: provider returned {series.kind.value}, not an observation; "
+                "not archived"
+            )
+            continue
+        observation_series += 1
+        try:
+            observation_rows += archive.record_series(series)
+        except Exception as exc:
+            failures.append(f"{site.id}/{name} observations: archive: {type(exc).__name__}: {exc}")
+
+    return SiteOutcome(
+        site_id=site.id,
+        forecast_rows=forecast_rows,
+        observation_rows=observation_rows,
+        observation_series=observation_series,
+        models_captured=tuple(captured),
+        failures=tuple(failures),
+    )
+
+
+async def capture_once(
+    *,
+    archive: Any,
+    providers: dict[str, Any],
+    sites: Sequence[CaptureSite] = DEFAULT_SITES,
+    variables: Sequence[str] = CAPTURE_VARIABLES,
+    models: Sequence[str] = CAPTURE_MODELS,
+    forecast_hours: float = 48.0,
+    now: datetime | None = None,
+    max_concurrency: int = 3,
+) -> CaptureResult:
+    """Run one capture cycle across every site. Never raises on a partial failure."""
+    started = now or utc_now()
+    semaphore = asyncio.Semaphore(max_concurrency)
+    outcomes = await asyncio.gather(
+        *(
+            _capture_site(
+                site=site,
+                archive=archive,
+                providers=providers,
+                variables=variables,
+                models=models,
+                forecast_hours=forecast_hours,
+                now=started,
+                semaphore=semaphore,
+            )
+            for site in sites
+        )
+    )
+    notes: list[str] = []
+    if not any(o.observation_series for o in outcomes):
+        notes.append(
+            "no observation source answered this cycle: without measurements no forecast can "
+            "ever be scored"
+        )
+    elif not any(o.observation_rows for o in outcomes):
+        notes.append(
+            "observations were fetched but wrote no new rows: the archive already held them "
+            "(this is the immutability rule working, not a failure)"
+        )
+    result = CaptureResult(
+        started_at_utc=started,
+        finished_at_utc=utc_now(),
+        outcomes=list(outcomes),
+        notes=notes,
+    )
+    logger.info("capture cycle: %s", result.summary())
+    for failure in result.failures:
+        logger.warning("capture failure: %s", failure)
+    return result
+
+
+async def run_forever(
+    *,
+    archive: Any,
+    providers: dict[str, Any],
+    settings: Settings | None = None,
+    sites: Sequence[CaptureSite] = DEFAULT_SITES,
+    stop: asyncio.Event | None = None,
+) -> None:
+    """Capture on a fixed interval until stopped.
+
+    Jitter spreads load so that several instances do not hit the provider in
+    the same second. Consecutive total failures back off exponentially and,
+    past a configured limit, the worker stops rather than hammering a provider
+    that is clearly down - a capture gap is recoverable, a rate-limit ban is
+    not.
+    """
+    config = settings or get_settings()
+    stop_event = stop or asyncio.Event()
+    consecutive_failures = 0
+
+    while not stop_event.is_set():
+        result = await capture_once(
+            archive=archive,
+            providers=providers,
+            sites=sites,
+            forecast_hours=config.capture_forecast_hours,
+        )
+        consecutive_failures = 0 if result.succeeded else consecutive_failures + 1
+        if consecutive_failures >= config.capture_max_failures:
+            logger.error(
+                "capture worker stopping after %d consecutive failed cycles; "
+                "the verification history has a gap from now on",
+                consecutive_failures,
+            )
+            return
+        delay = config.capture_interval_s * (2 ** min(consecutive_failures, 5))
+        delay += random.uniform(0, config.capture_jitter_s)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=delay)
+        except TimeoutError:
+            continue

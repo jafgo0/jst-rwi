@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     cache_ttl_forecast_s: float = 900.0
     cache_ttl_observation_s: float = 300.0
 
+    # Forecast archive (ADR 0007). A file, not a service.
+    archive_path: Path = Field(default=Path("data/archive/rwi.sqlite3"))
+    archive_max_bytes: int = 4 * 1024 * 1024 * 1024
+    archive_retention_days: float = 400.0
+
+    # Capture worker: builds the verification history. Off by default, because a
+    # process that silently makes provider calls on a metered connection in the
+    # outback must be switched on deliberately.
+    capture_enabled: bool = False
+    capture_interval_s: float = 3600.0
+    capture_forecast_hours: float = 48.0
+    capture_jitter_s: float = 60.0
+    capture_max_failures: int = 10
+
     # Operations
     log_level: str = "INFO"
     allow_network: bool = True

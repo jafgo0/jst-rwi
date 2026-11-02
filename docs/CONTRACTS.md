@@ -117,6 +117,80 @@ def compare_scenarios(...) -> list[ScenarioResult]
 def recommend(results: Sequence[ScenarioResult], ...) -> Recommendation
 ```
 
+## 3b. Phase 2 modules — forecast intelligence
+
+New ownership (same rules: own your paths, never edit `contracts.py`, never run
+git or install packages).
+
+| Area | Owner | Paths (exclusive) |
+|---|---|---|
+| SQLite forecast/observation archive | archive | `src/rwi/archive/**`, `tests/unit/test_archive_*.py`, `docs/science/archive.md` |
+| Forecast verification and scoring | verification | `src/rwi/verification/**`, `tests/unit/test_verification_*.py`, `docs/science/verification.md` |
+| Ensembles and uncertainty | ensemble | `src/rwi/ensemble/**`, `tests/unit/test_ensemble_*.py`, `docs/science/ensemble.md` |
+| Multi-model comparison | fusion | `src/rwi/fusion/**`, `tests/unit/test_fusion_*.py`, `docs/science/fusion.md` |
+| Capture worker, API, integration | integrator | `src/rwi/capture/**`, `src/rwi/api/**` |
+
+### `rwi.archive` — implements the `ForecastArchive` protocol
+```python
+class SqliteArchive:                       # ForecastArchive
+    def __init__(self, path: Path | str, *, read_only: bool = False) -> None
+    def record_series(self, series: WeatherSeries) -> int        # rows written
+    def pairs(*, variable, period=None, provider=None, model_name=None,
+              max_separation_m=50_000.0, max_time_offset_s=1800.0
+              ) -> list[ForecastObservationPair]
+    def coverage(self) -> dict[str, object]
+    def prune(self, *, older_than_utc: datetime, dry_run: bool = False) -> int
+    def close(self) -> None
+def open_archive(settings) -> SqliteArchive
+```
+Hard requirements: a recorded forecast is immutable (a later run for the same
+valid time is a new row); full provenance stored with every record; a pair is
+only produced when the forecast was recorded **before** its valid time;
+WAL mode; schema version in `PRAGMA user_version`; a corrupt or missing archive
+degrades to "verification unavailable", never breaks a weather request.
+
+### `rwi.verification`
+```python
+def score_pairs(pairs: Sequence[ForecastObservationPair], *, variable: str,
+                unit: str, lead_time_buckets_s: Sequence[tuple[float, float]] | None = None,
+                now: datetime | None = None) -> list[VerificationScore]
+def verify(archive, *, variables, period=None, providers=None) -> VerificationReport
+def persistence_baseline(pairs) -> float | None
+def bias_correction(scores, *, variable, provider, model_name, lead_time_s) -> float | None
+def apply_bias_correction(series: WeatherSeries, scores) -> WeatherSeries
+```
+Hard requirements: MAE, RMSE and bias computed per variable **and lead-time
+bucket**; skill stated against the persistence baseline; `sample_count` on
+every score; wind direction scored with circular differences, never linear;
+a bias correction is returned only where `is_meaningful` holds.
+
+### `rwi.ensemble`
+```python
+def summarise(forecast: EnsembleForecast, *, variable: str,
+              percentiles: Sequence[int] = (10, 25, 50, 75, 90)) -> list[EnsembleSummary]
+def probability_above(forecast, *, variable, threshold, valid_time_utc) -> float
+def attach_uncertainty(series: WeatherSeries, summaries) -> WeatherSeries
+def spread_skill_note(summary) -> str
+```
+Hard requirements: percentiles from the members that actually ran; a
+member-frequency is labelled as such and never as a calibrated probability;
+circular statistics for wind direction; `attach_uncertainty` must not alter any
+value, only attach `Uncertainty`.
+
+### `rwi.fusion`
+```python
+def compare_models(series_by_model: dict[str, WeatherSeries], *, variable: str,
+                   significance_thresholds: dict[str, float] | None = None
+                   ) -> ModelComparison
+def disagreements(series_by_model, *, variable, threshold) -> list[ModelDisagreement]
+def preferred_model(scores: Sequence[VerificationScore], *, variable,
+                    lead_time_s) -> tuple[str | None, str]
+```
+Hard requirements: `preferred_model` returns `None` with a reason unless a
+score `is_meaningful` and beats persistence; disagreement thresholds are
+declared per variable with their justification; no model is ever called "best"
+without a score behind it.
+
 ## 4. HTTP API (owned by the integrator; the dashboard codes against this)
 
 All responses are JSON; every numeric payload carries `provenance`.

@@ -25,7 +25,7 @@ from typing import Literal, Protocol, Self, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rwi.core.geo import GeoPoint
-from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag
+from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag, Uncertainty
 from rwi.core.timebase import TimeWindow, ensure_utc
 from rwi.core.wind import RelativeWind
 
@@ -703,15 +703,274 @@ class Alert(BaseModel):
     provenance: Provenance
 
 
+
+
+# ---------------------------------------------------------------------------
+# Forecast verification, ensembles and model comparison (phase 2)
+#
+# These exist because the platform currently has no way to answer "how good is
+# this forecast?". Without stored forecast/observation pairs there is no bias
+# correction, no calibrated uncertainty and no evidence-based model choice -
+# only claims. Everything below is built around one rule: a score is only ever
+# computed from a forecast that was recorded BEFORE its valid time, so no
+# future information can leak into the evaluation.
+# ---------------------------------------------------------------------------
+
+
+class ArchiveRecordKind(StrEnum):
+    FORECAST = "forecast"
+    OBSERVATION = "observation"
+
+
+class ForecastObservationPair(BaseModel):
+    """One forecast matched to the measurement it was predicting.
+
+    The unit of verification. ``lead_time_s`` is valid time minus the model's
+    initialisation time, which is what forecast skill actually degrades with -
+    not the time since we happened to download it.
+    """
+
+    model_config = ConfigDict(frozen=True, protected_namespaces=())
+
+    variable: str
+    valid_time_utc: datetime
+    forecast_value: float
+    observed_value: float
+    lead_time_s: float = Field(ge=0.0)
+    provider: str
+    model_name: str | None = None
+    forecast_point: GeoPoint
+    observation_point: GeoPoint
+    separation_m: float = Field(
+        ge=0.0, description="distance between the forecast grid point and the measuring station"
+    )
+    time_offset_s: float = Field(
+        description="observation time minus forecast valid time; non-zero means a tolerance match"
+    )
+    forecast_recorded_at_utc: datetime = Field(
+        description="when the forecast was archived; must precede valid_time_utc"
+    )
+
+    @model_validator(mode="after")
+    def _no_future_leakage(self) -> Self:
+        if ensure_utc(self.forecast_recorded_at_utc) > ensure_utc(self.valid_time_utc):
+            raise ValueError(
+                "forecast was recorded after its own valid time "
+                f"({self.forecast_recorded_at_utc.isoformat()} > "
+                f"{self.valid_time_utc.isoformat()}): this is not a forecast of that instant "
+                "and must not be scored as one"
+            )
+        return self
+
+    @property
+    def error(self) -> float:
+        """Forecast minus observation. Positive means the forecast was too high."""
+        return self.forecast_value - self.observed_value
+
+
+class VerificationScore(BaseModel):
+    """Measured skill of one model, for one variable, over one lead-time bucket.
+
+    Deterministic scores only. ``sample_count`` is reported with every score
+    because an MAE over three pairs is not evidence of anything, and the UI must
+    be able to say so.
+    """
+
+    model_config = ConfigDict(frozen=True, protected_namespaces=())
+
+    variable: str
+    provider: str
+    model_name: str | None
+    lead_time_bucket_s: tuple[float, float] = Field(
+        description="half-open [lower, upper) lead-time range the score covers"
+    )
+    sample_count: int = Field(ge=0)
+    mean_absolute_error: float | None
+    root_mean_square_error: float | None
+    bias: float | None = Field(default=None, description="mean forecast minus mean observation")
+    mean_observed: float | None = None
+    mean_forecast: float | None = None
+    persistence_mae: float | None = Field(
+        default=None, description="MAE of the trivial 'nothing changes' baseline"
+    )
+    skill_vs_persistence: float | None = Field(
+        default=None,
+        description="1 - MAE/persistence_MAE; positive means better than the trivial baseline, "
+        "negative means worse. A model that cannot beat persistence has not earned its place.",
+    )
+    unit: str
+    period: TimeWindow | None = None
+    provenance: Provenance
+
+    @property
+    def is_meaningful(self) -> bool:
+        """Whether there are enough pairs for the score to mean anything.
+
+        Thirty is a convention, not a theorem; it is stated so the UI can show
+        a score as provisional rather than silently implying confidence.
+        """
+        return self.sample_count >= 30
+
+
+class VerificationReport(BaseModel):
+    """All scores computed in one evaluation, with its coverage."""
+
+    model_config = ConfigDict(frozen=True)
+
+    scores: list[VerificationScore]
+    computed_at_utc: datetime
+    period: TimeWindow | None
+    pair_count: int = Field(ge=0)
+    variables: tuple[str, ...] = ()
+    notes: list[str] = Field(default_factory=list)
+
+    @property
+    def has_evidence(self) -> bool:
+        return any(score.is_meaningful for score in self.scores)
+
+
+class EnsembleSummary(BaseModel):
+    """Distribution of an ensemble at one time and place, for one variable.
+
+    This is the platform's only honest source of forecast uncertainty today:
+    the spread of members that were actually run, rather than an error bar
+    invented after the fact.
+    """
+
+    model_config = ConfigDict(frozen=True, protected_namespaces=())
+
+    variable: str
+    valid_time_utc: datetime
+    point: GeoPoint
+    unit: str
+    member_count: int = Field(ge=1)
+    mean: float
+    median: float
+    minimum: float
+    maximum: float
+    standard_deviation: float = Field(ge=0.0)
+    percentiles: dict[str, float] = Field(
+        description="keyed by percentile as a string, e.g. {'10': ..., '90': ...}"
+    )
+    provider: str
+    model_name: str | None
+    provenance: Provenance
+
+    def as_uncertainty(
+        self, *, lower_percentile: str = "10", upper_percentile: str = "90"
+    ) -> Uncertainty:
+        """Ensemble spread expressed as the platform's uncertainty type."""
+        lower = self.percentiles.get(lower_percentile)
+        upper = self.percentiles.get(upper_percentile)
+        probability: float | None = None
+        if lower is not None and upper is not None:
+            probability = (float(upper_percentile) - float(lower_percentile)) / 100.0
+        return Uncertainty(
+            standard_deviation=self.standard_deviation,
+            lower=lower,
+            upper=upper,
+            interval_probability=probability,
+            method=(
+                f"ensemble_spread ({self.member_count} members, "
+                f"{self.model_name or self.provider})"
+            ),
+        )
+
+    # Deliberately no probability_above() here. A summary holds statistics, not
+    # the members, so it cannot compute a member frequency: that lives in
+    # rwi.ensemble.probability_above(forecast, ...), which has the members. A
+    # method that always raised would be a trap for the next engineer.
+
+
+class ModelDisagreement(BaseModel):
+    """How far apart the available models are at one time and place.
+
+    Disagreement is information: it is the cheapest available signal that a
+    forecast should not be acted on without a margin.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    variable: str
+    valid_time_utc: datetime
+    point: GeoPoint
+    unit: str
+    values_by_model: dict[str, float]
+    spread: float = Field(ge=0.0, description="max minus min across models")
+    standard_deviation: float = Field(ge=0.0)
+    mean: float
+    median: float
+    is_significant: bool = Field(
+        description="spread exceeds the variable's configured significance threshold"
+    )
+    threshold: float
+    provenance: Provenance
+
+    @property
+    def model_count(self) -> int:
+        return len(self.values_by_model)
+
+
+class ModelComparison(BaseModel):
+    """Several models for the same point and period, side by side."""
+
+    model_config = ConfigDict(frozen=True)
+
+    point: GeoPoint
+    variable: str
+    generated_at_utc: datetime
+    series_by_model: dict[str, list[tuple[datetime, float]]]
+    disagreements: list[ModelDisagreement] = Field(default_factory=list)
+    preferred_model: str | None = Field(
+        default=None,
+        description="model with the best verified skill for this variable, when evidence exists; "
+        "None means no model has earned preference yet",
+    )
+    preference_basis: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+@runtime_checkable
+class ForecastArchive(Protocol):
+    """Durable store of forecasts and observations, for verification.
+
+    Implementations must preserve the original provenance of everything they
+    store, must never overwrite a recorded forecast with a later revision of
+    the same valid time (that would erase the evidence), and must be able to
+    answer which pairs exist without loading the whole archive.
+    """
+
+    def record_series(self, series: WeatherSeries) -> int: ...
+
+    def pairs(
+        self,
+        *,
+        variable: str,
+        period: TimeWindow | None = None,
+        provider: str | None = None,
+        model_name: str | None = None,
+        max_separation_m: float = 50_000.0,
+        max_time_offset_s: float = 1800.0,
+    ) -> list[ForecastObservationPair]: ...
+
+    def coverage(self) -> dict[str, object]: ...
+
+
 __all__ = [
     "Alert",
     "AlertCategory",
     "AlertSeverity",
+    "ArchiveRecordKind",
     "ArrayConfig",
     "ConsumptionEstimate",
     "EnergyEstimate",
     "EnsembleForecast",
+    "EnsembleSummary",
+    "ForecastArchive",
+    "ForecastObservationPair",
     "IrradianceComponents",
+    "ModelComparison",
+    "ModelDisagreement",
     "POAIrradiance",
     "ParameterSource",
     "PowerEstimate",
@@ -730,6 +989,8 @@ __all__ = [
     "Trajectory",
     "TrajectoryPoint",
     "VehicleConfig",
+    "VerificationReport",
+    "VerificationScore",
     "WaypointKind",
     "WeatherProvider",
     "WeatherSeries",
