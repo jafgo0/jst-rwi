@@ -9,7 +9,8 @@ import { h, replace } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, VARS, varLabel, varUnit, toMs, fmtDuration } from "../format.js";
 import { panel, kindChip, chip, withResource, positionUnknown, stateBox, valueCell, textCell, ageSpan, table } from "../ui.js";
 import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, setSession, signature, notify } from "../store.js";
-import { loadForecast, loadObservations, nearestStep } from "../loaders.js";
+import { loadForecast, loadObservations, nearestStep, loadArchive, loadVerification, loadEnsemble, loadModels } from "../loaders.js";
+import { qualityState, qualitySignature, verificationPanel, ensemblePanel, modelsPanel } from "./forecastquality.js";
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
 
@@ -45,8 +46,9 @@ export function create(root) {
     update() {
       syncProviders();
       loadForecast({ hours: session.forecastHours, provider: session.provider }); loadObservations({ hours: 24 });
+      loadArchive(); loadVerification({ days: qualityState.days }); loadEnsemble({ variable: qualityState.ensembleVariable, hours: session.forecastHours }); loadModels({ variable: qualityState.modelVariable, hours: session.forecastHours });
       for (const p of cmpState.providers) loadForecast({ hours: session.forecastHours, provider: p, key: "cmp:" + p });
-      const sig = signature(["state", "forecast", "observations", "health", ...cmpState.providers.map((p) => "cmp:" + p)], cmpState.variable + cmpState.providers.join());
+      const sig = signature(["state", "forecast", "observations", "observable", "health", "archive", "verification", "ensemble", "models", ...cmpState.providers.map((p) => "cmp:" + p)], cmpState.variable + cmpState.providers.join() + qualitySignature());
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
       replace(body, layout(charts, () => { lastSig = ""; }));
@@ -72,7 +74,7 @@ function layout(charts, invalidate) {
   const nowS = effectiveTimeMs() / 1000;
   const { tz } = vehicleTimezone(); const utc = session.timeBasis === "utc";
   for (const c of CHARTS) grid.append(chartPanel(c, fc.data, ob.data, nowS, tz, utc, charts));
-  wrap.append(grid, comparePanel(charts, invalidate), verificationPanel());
+  wrap.append(grid, ensemblePanel(charts), modelsPanel(charts), verificationPanel(), comparePanel(charts, invalidate));
   return wrap;
 }
 
@@ -102,7 +104,7 @@ function comparePanel(charts, invalidate) {
   const box = h("div");
   if (providers.length < 2) {
     box.append(stateBox("", "Model comparison needs two or more providers", `GET /api/health lists ${providers.length} provider(s). A comparison against a single source would not be a comparison. Model-level comparison (e.g. ECMWF vs GFS inside one provider) is not exposed by the current API.`));
-    return panel("Model comparison", box);
+    return panel("Provider comparison", box);
   }
   const chosen = cmpState.providers;
   const chips = h("div", { class: "row", style: { marginBottom: "8px" } }, providers.map((p) => {
@@ -111,7 +113,7 @@ function comparePanel(charts, invalidate) {
     return h("label", { style: { display: "flex", gap: "4px", marginRight: "12px" } }, cb, p);
   }), h("div", { class: "field" }, h("label", null, "Variable"), h("select", { class: "ctl", onchange: (e) => { cmpState.variable = e.target.value; invalidate(); notify(); } }, CMP_VARS.map((v) => h("option", { value: v, selected: v === cmpState.variable ? "" : null }, varLabel(v))))));
   box.append(chips);
-  if (!chosen.length) { box.append(h("div", { class: "note" }, "Tick two or more providers to request their forecasts side by side.")); return panel("Model comparison", box); }
+  if (!chosen.length) { box.append(h("div", { class: "note" }, "Tick two or more providers to request their forecasts side by side.")); return panel("Provider comparison", box); }
 
   const rows = chosen.map((p) => ({ p, r: res("cmp:" + p) }));
   const ok = rows.filter((x) => x.r.data);
@@ -134,17 +136,7 @@ function comparePanel(charts, invalidate) {
       series: ok.map((m, i) => ({ label: m.p, unit: varUnit(cmpState.variable), color: palette[i % 4], kind: "fcst", values: values[i], digits: VARS[cmpState.variable].digits })) });
     box.append(div, h("div", { class: "note" }, "All lines are forecasts from different sources; none is a reference truth. Differences show spread, not error."));
   }
-  return panel("Model comparison", box);
-}
-
-function verificationPanel() {
-  const vars = ["temperature_2m", "wind_speed_10m", "cloud_cover", "ghi"];
-  return panel("Forecast verification", [
-    stateBox("", "No verification history yet", "Accuracy statistics (bias, MAE, RMSE by lead time) need forecasts that were archived and later compared with observations. No such archive exists yet, so no accuracy number is shown or implied."),
-    h("div", { class: "tbl-wrap", style: { marginTop: "8px" } }, h("table", { class: "t" },
-      h("thead", null, h("tr", null, ["Variable", "Bias", "MAE", "RMSE", "Samples", "Lead times"].map((t) => h("th", null, t)))),
-      h("tbody", null, vars.map((v) => h("tr", null, h("td", null, varLabel(v)), [1, 2, 3, 4, 5].map(() => h("td", null, textCell(null, "no verification history yet")))))))),
-  ]);
+  return panel("Provider comparison", box);
 }
 
 void toMs;

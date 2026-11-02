@@ -59,9 +59,30 @@ make the thermodynamic picture checkable.
 CAPTURE_MODELS: tuple[str, ...] = ("ecmwf_ifs025", "gfs_seamless", "icon_seamless")
 """Named models to capture separately, so their skill can be compared.
 
-These are the globally available models at Australian longitudes. Capturing
-'best_match' as well would archive a blend whose composition can change without
-notice, which cannot be scored meaningfully - so it is excluded on purpose.
+'best_match' is excluded on purpose: it is a blend whose composition can change
+without notice, so a score computed from it would not describe any model that
+exists.
+
+KNOWN LIMITATION, measured on 2026-11-02 against a real capture of 3,600
+forecast values: only ``ecmwf_ifs025`` reports a model initialisation time.
+``gfs_seamless`` and ``icon_seamless`` do not, and the archive cannot score a
+forecast whose run time is unknown, because lead time is undefined without it.
+In that capture, 2,352 of 3,600 values (65 %) were dropped as
+``dropped_no_init_time``.
+
+The likely cause is that a "seamless" model is itself a stitched blend of
+several runs (global, regional and local), so no single initialisation time
+exists - the same reason 'best_match' is excluded.
+
+The likely fix is to capture the single-run variants (``gfs_global``,
+``icon_global``, ``ecmwf_aifs025_single``) instead. That is a HYPOTHESIS, not a
+verified fact: the probe to confirm which of them report a run time could not
+be completed because Open-Meteo was returning HTTP 503 for every request. Do
+not change this tuple until the probe has actually run; capturing a model that
+also lacks a run time would waste storage for months before anyone noticed.
+
+The seamless models remain useful for ``rwi.fusion`` model comparison, which
+needs no lead time, so capturing them is not wasted - only unverifiable.
 """
 
 
@@ -267,6 +288,38 @@ async def capture_once(
     return result
 
 
+def enforce_retention(archive: Any, settings: Settings | None = None) -> int:
+    """Apply ADR 0007's retention policy. Returns the number of rows removed.
+
+    The archive implements `prune` but calls it for nobody, so without this the
+    size limit in Settings is a number that documents an intention rather than
+    enforcing one. Pruning only happens once the archive is actually over
+    `archive_max_bytes`: deleting history that costs nothing to keep would
+    throw away evidence for no reason.
+
+    Never raises. A retention failure must not end a capture run - the worst
+    case is an archive that keeps growing, which is recoverable, while a
+    crashed worker loses history that cannot be recovered at all.
+    """
+    config = settings or get_settings()
+    try:
+        cutoff = utc_now() - timedelta(days=config.archive_retention_days)
+        removed = archive.prune(
+            older_than_utc=cutoff, only_above_bytes=config.archive_max_bytes
+        )
+    except Exception as exc:
+        logger.warning("retention pass failed, archive keeps growing: %s", exc)
+        return 0
+    if removed:
+        logger.info(
+            "retention: removed %d row(s) older than %s (archive was above %d bytes)",
+            removed,
+            cutoff.date().isoformat(),
+            config.archive_max_bytes,
+        )
+    return removed
+
+
 async def run_forever(
     *,
     archive: Any,
@@ -294,6 +347,7 @@ async def run_forever(
             sites=sites,
             forecast_hours=config.capture_forecast_hours,
         )
+        enforce_retention(archive, config)
         consecutive_failures = 0 if result.succeeded else consecutive_failures + 1
         if consecutive_failures >= config.capture_max_failures:
             logger.error(

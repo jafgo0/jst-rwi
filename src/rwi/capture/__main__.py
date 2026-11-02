@@ -16,7 +16,7 @@ import logging
 import sys
 
 from rwi.capture.sites import DEFAULT_SITES, sites_from_ids
-from rwi.capture.worker import CAPTURE_MODELS, capture_once, run_forever
+from rwi.capture.worker import CAPTURE_MODELS, capture_once, enforce_retention, run_forever
 from rwi.config import get_settings
 
 
@@ -39,6 +39,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="named forecast models to capture separately",
     )
     parser.add_argument("--hours", type=float, default=None, help="forecast horizon to archive")
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="apply the retention policy after the cycle (ADR 0007)",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -65,6 +70,9 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"note: {note}")
             for failure in result.failures:
                 print(f"failure: {failure}")
+            if args.prune:
+                removed = enforce_retention(archive, settings)
+                print(f"retention: {removed} row(s) removed")
             return 0 if result.succeeded else 1
         await run_forever(archive=archive, providers=providers, settings=settings, sites=sites)
         return 0

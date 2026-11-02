@@ -117,3 +117,6 @@ details > summary { cursor: pointer; color: var(--text-dim); }
 /* light theme: darker fills need light text */
 :root[data-theme="light"] .chip.stale,
 :root[data-theme="light"] .chip.warn { color: #ffffff; }
+
+/* verification cells below the sample threshold */
+.provisional { outline: 1px dashed var(--warn); outline-offset: 2px; padding: 2px 4px; opacity: 0.9; }

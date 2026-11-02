@@ -273,3 +273,53 @@ def test_the_blended_model_is_not_captured() -> None:
 
     assert "best_match" not in CAPTURE_MODELS
     assert len(CAPTURE_MODELS) >= 2
+
+
+class PruningArchive(FakeArchive):
+    """Records how retention was asked for, without implementing a database."""
+
+    def __init__(self, *, removed: int = 0, fail: bool = False) -> None:
+        super().__init__()
+        self.removed = removed
+        self.fail = fail
+        self.calls: list[dict[str, Any]] = []
+
+    def prune(self, *, older_than_utc: Any, only_above_bytes: Any = None) -> int:
+        self.calls.append(
+            {"older_than_utc": older_than_utc, "only_above_bytes": only_above_bytes}
+        )
+        if self.fail:
+            raise RuntimeError("disk is unhappy")
+        return self.removed
+
+
+def test_retention_passes_the_configured_limits() -> None:
+    """ADR 0007's size limit is only a policy if something enforces it."""
+    from rwi.capture import enforce_retention
+    from rwi.config import get_settings
+
+    archive = PruningArchive(removed=17)
+    settings = get_settings()
+    assert enforce_retention(archive, settings) == 17
+    call = archive.calls[0]
+    assert call["only_above_bytes"] == settings.archive_max_bytes
+    age_days = (datetime.now(UTC) - call["older_than_utc"]).days
+    assert age_days == pytest.approx(settings.archive_retention_days, abs=1)
+
+
+def test_a_retention_failure_never_ends_a_capture_run() -> None:
+    """An archive that keeps growing is recoverable; a crashed worker loses
+    history that cannot be recovered at all."""
+    from rwi.capture import enforce_retention
+
+    assert enforce_retention(PruningArchive(fail=True)) == 0
+
+
+def test_retention_is_not_requested_below_the_size_limit() -> None:
+    """Deleting history that costs nothing to keep would discard evidence for
+    no reason, so the size gate is always passed down."""
+    from rwi.capture import enforce_retention
+
+    archive = PruningArchive()
+    enforce_retention(archive)
+    assert archive.calls[0]["only_above_bytes"] is not None

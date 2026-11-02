@@ -63,6 +63,38 @@ composition can change without notice, so a skill score computed from it would
 not describe any model that exists, and it could not tell the team which model
 to trust in central Australia — which is the question verification is for.
 
+### The model-run-time problem (measured 2026-11-02)
+
+A real capture of 3,600 forecast values across the three models above produced
+**zero scoreable pairs**, for a reason worth recording:
+
+| Model | Reports a model run time? | Values captured |
+|---|---|---|
+| `ecmwf_ifs025` | yes | 1,200 |
+| `gfs_seamless` | **no** | 1,200 |
+| `icon_seamless` | **no** | 1,200 |
+
+The archive refuses to build a pair from a forecast whose initialisation time
+is unknown, and it is right to: lead time is *valid time minus run time*, so
+without a run time the single most important dimension of forecast skill is
+undefined. In that capture 2,352 of 3,600 values (65 %) were dropped as
+`dropped_no_init_time`.
+
+The likely cause is that a "seamless" model is a stitched blend of several runs
+at different resolutions, so no single initialisation time exists — the same
+reason `best_match` is excluded from capture entirely.
+
+The likely fix is to capture the single-run variants instead (`gfs_global`,
+`icon_global`, `ecmwf_aifs025_single`). **This is a hypothesis.** The probe to
+confirm which of them actually report a run time could not be completed:
+Open-Meteo returned HTTP 503 for every request at the time. It must be run
+before the capture model list is changed, because switching to another model
+that also lacks a run time would silently waste months of storage.
+
+Separately, the seamless models are still useful to `rwi.fusion`, which
+compares models at the same valid time and needs no lead time at all. So
+capturing them is unverifiable, not useless.
+
 ## Design rules
 
 1. **Partial failure never costs a cycle.** One model, one provider or one site
@@ -125,7 +157,9 @@ the retention policy keeps bounded.
 | Observation-kind refusal | tested |
 | `run_forever` backoff and stop | implemented, not validated (no long run yet) |
 | CLI entry point | implemented, not validated |
-| Forecast capture against a live provider | **not started** — blocked by the Open-Meteo outage on 2026-11-02; observation capture is verified against real BoM data |
+| Forecast capture against a live provider | tested — 3,600 forecast values captured from 3 models at 2 sites on 2026-11-02, 0 failures |
+| Model run times from non-ECMWF models | **researching** — see "The model-run-time problem"; 65 % of captured values are currently unscoreable |
+| Retention enforcement (`enforce_retention`) | tested |
 | Continuous operation over weeks | not started |
 
 Nothing here is "validated against real data" in the sense that matters: the

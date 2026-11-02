@@ -7,6 +7,7 @@ from rwi.capture.worker import (
     CaptureResult,
     SiteOutcome,
     capture_once,
+    enforce_retention,
     run_forever,
 )
 
@@ -19,6 +20,7 @@ __all__ = [
     "CaptureSite",
     "SiteOutcome",
     "capture_once",
+    "enforce_retention",
     "run_forever",
     "sites_from_ids",
 ]

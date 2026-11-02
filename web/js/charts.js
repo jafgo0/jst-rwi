@@ -19,12 +19,12 @@ export function cssVar(name) {
 /**
  * @typedef {Object} ChartSeries
  * @property {string} label @property {string} unit @property {string} color CSS var name like "--series-1" or a colour
- * @property {"obs"|"fcst"|"clear"|"model"} kind @property {(number|null)[]} values @property {number} [digits] @property {string} [scale]
+ * @property {"obs"|"fcst"|"clear"|"model"|"edge"} kind @property {(number|null)[]} values @property {number} [digits] @property {string} [scale]
  */
 /**
  * @param {HTMLElement} container
  * @param {{ x:number[], series:ChartSeries[], height?:number, tz?:(string|null), utc?:boolean,
- *   xMode?:"time"|"distance", boundarySec?:(number|null), boundaryLabels?:[string,string], bands?:[number,number][],
+ *   xMode?:"time"|"distance", boundarySec?:(number|null), boundaryLabels?:[string,string], bands?:[number,number,string?][], fans?:{upper:number,lower:number}[],
  *   yLabel?:string, y2Label?:string, xLabel?:string, emptyText?:string }} spec
  * @returns {{destroy:()=>void}}
  */
@@ -60,7 +60,7 @@ export function makeChart(container, spec) {
       label: s.label + (s.unit ? ` (${s.unit})` : ""),
       scale: s.scale || "y",
       stroke: col,
-      width: s.kind === "model" ? 1.2 : 2,
+      width: s.kind === "model" ? 1.2 : s.kind === "edge" ? 0.8 : 2,
       spanGaps: true,
       points: s.kind === "obs" ? { show: true, size: 4, fill: col, stroke: col } : { show: false },
       value: (u, v) => (v === null || v === undefined ? DASH : `${fmtNum(v, s.digits ?? 1)} ${s.unit}`),
@@ -74,9 +74,9 @@ export function makeChart(container, spec) {
     drawClear: [(u) => {
       const { ctx } = u; const { left, top, width, height } = u.bbox;
       ctx.save();
-      for (const [a, b] of spec.bands || []) {
+      for (const [a, b, c] of spec.bands || []) {
         const x0 = Math.max(left, u.valToPos(a, "x", true)), x1 = Math.min(left + width, u.valToPos(b, "x", true));
-        if (x1 > x0) { ctx.fillStyle = "rgba(120,130,150,0.16)"; ctx.fillRect(x0, top, x1 - x0, height); }
+        if (x1 > x0) { ctx.fillStyle = c || "rgba(120,130,150,0.16)"; ctx.fillRect(x0, top, x1 - x0, height); }
       }
       if (spec.boundarySec !== null && spec.boundarySec !== undefined) {
         const bx = u.valToPos(spec.boundarySec, "x", true);
@@ -110,6 +110,9 @@ export function makeChart(container, spec) {
     legend: { live: true },
   };
   if (!isDist && tz) opts.tzDate = (ts) => U.tzDate(new Date(ts * 1000), tz);
+
+  // Fan / uncertainty bands between two series (indices into spec.series), e.g. ensemble P10 to P90.
+  if (spec.fans?.length) opts.bands = spec.fans.map((f) => ({ series: [f.upper + 1, f.lower + 1], fill: (spec.series[f.upper].color.startsWith("--") ? cssVar(spec.series[f.upper].color) : spec.series[f.upper].color) + "33" }));
 
   const data = [spec.x, ...spec.series.map((s) => s.values)];
   const u = new U(opts, data, container);

@@ -202,14 +202,14 @@ export function errorPanel(r) {
   const e = r.error;
   const lines = [];
   lines.push(h("div", null, "Endpoint: ", h("code", null, e?.endpoint || r.endpoint || "unknown"), e?.url ? [" ", h("span", { class: "faint" }, e.url)] : null));
-  const kindText = { network: "API unreachable", timeout: "Request timed out", http: "HTTP error", parse: "Unreadable response", position: "Position unavailable (HTTP 409)", unsupported: e?.code === "CapabilityNotImplemented" ? "Feature not available in this backend build (HTTP 501)" : "Not supported by any configured provider (HTTP 501)", provider: "Provider failure (HTTP 503)" }[e?.kind] || "Error";
+  const kindText = { network: "API unreachable", timeout: "Request timed out", http: e?.status >= 500 ? `Backend error (HTTP ${e.status})${e.code ? "" : ", no error body returned"}` : "HTTP error", parse: "Unreadable response", position: "Position unavailable (HTTP 409)", unsupported: e?.code === "CapabilityNotImplemented" ? "Feature not available in this backend build (HTTP 501)" : "Not supported by any configured provider (HTTP 501)", provider: "Provider failure (HTTP 503)" }[e?.kind] || "Error";
   lines.push(h("div", null, "Error: ", h("b", null, kindText), e?.message ? " - " + e.message : "", e?.code ? ` [${e.code}]` : ""));
   if (e?.detail) lines.push(h("div", { class: "note" }, "Detail: " + (typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail))));
   lines.push(h("div", null, r.loadedAt !== null
     ? ["Last successful load: ", fmtUtc(r.loadedAt, { seconds: true }), " (", ageSpan(r.loadedAt), ")"]
     : "Nothing has been loaded successfully from this endpoint."));
   const cls = e?.kind === "unsupported" || e?.kind === "position" ? "state unknown" : "state error";
-  return h("div", { class: cls, role: "alert" }, h("h3", null, e?.kind === "unsupported" ? "NOT AVAILABLE" : e?.kind === "position" ? "POSITION UNAVAILABLE" : "DATA UNAVAILABLE"), lines);
+  return h("div", { class: cls, role: "alert" }, h("h3", null, e?.kind === "unsupported" ? "NOT AVAILABLE" : e?.kind === "position" ? "POSITION UNAVAILABLE" : e?.kind === "provider" ? "PROVIDER UNAVAILABLE" : e?.kind === "http" && e.status >= 500 ? "BACKEND ERROR" : "DATA UNAVAILABLE"), lines);
 }
 
 /**
