@@ -956,19 +956,184 @@ class ForecastArchive(Protocol):
     def coverage(self) -> dict[str, object]: ...
 
 
+# ---------------------------------------------------------------------------
+# Satellite cloud intelligence (phase 5)
+#
+# Cloud shading is the fastest way for a solar car to lose power, and a weather
+# model on a 9-25 km grid updated every 6 hours cannot see an individual cloud
+# band arriving in twenty minutes. Geostationary imagery at 0.5 km every 10
+# minutes can.
+#
+# Two honesty constraints shape every type below. First, a satellite-derived
+# irradiance is a RETRIEVAL, not a measurement: nothing on the ground measured
+# it, so it is never DataKind.OBSERVATION. Second, we have no ground truth for
+# irradiance at all, so no retrieval or nowcast here can be validated - and the
+# types carry that statement rather than leaving it to a footnote.
+# ---------------------------------------------------------------------------
+
+
+class SatelliteTile(BaseModel):
+    """One tile of one band at one scan time, as published by the provider."""
+
+    model_config = ConfigDict(frozen=True)
+
+    satellite: str
+    band: str = Field(description="instrument channel, e.g. 'C03' (0.64 um visible)")
+    tile_id: str
+    slot_time_utc: datetime = Field(description="nominal scan start time")
+    key: str = Field(description="object key or URL at the source")
+    size_bytes: int | None = None
+    published_at_utc: datetime | None = Field(
+        default=None, description="when the file appeared; slot time plus latency"
+    )
+
+    @property
+    def latency_s(self) -> float | None:
+        if self.published_at_utc is None:
+            return None
+        return (self.published_at_utc - self.slot_time_utc).total_seconds()
+
+
+class GeoGrid(BaseModel):
+    """A georeferenced raster subset: the common currency of this module."""
+
+    model_config = ConfigDict(frozen=True)
+
+    latitudes: list[float] = Field(description="row centres, degrees north")
+    longitudes: list[float] = Field(description="column centres, degrees east")
+    shape: tuple[int, int]
+    resolution_km: float
+    bounds: tuple[float, float, float, float] = Field(
+        description="(min_lat, min_lon, max_lat, max_lon)"
+    )
+
+    @property
+    def pixel_count(self) -> int:
+        return self.shape[0] * self.shape[1]
+
+
+class SatelliteScene(BaseModel):
+    """One decoded, geolocated image subset over a region of interest.
+
+    The pixel values live outside this model (a numpy array), because a
+    thousand-by-thousand grid does not belong in a pydantic object or in JSON.
+    This carries what must travel with them.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    satellite: str
+    band: str
+    slot_time_utc: datetime
+    grid: GeoGrid
+    quantity: Literal["reflectance", "brightness_temperature", "cloud_index"]
+    unit: str
+    solar_zenith_range_deg: tuple[float, float] | None = Field(
+        default=None,
+        description="min and max solar zenith over the scene; a visible-band product "
+        "is meaningless at night and the caller must be able to tell",
+    )
+    provenance: Provenance
+
+    @property
+    def is_usable_visible(self) -> bool:
+        """Whether a visible-band product can mean anything for this scene.
+
+        Reflectance needs sunlight. Past about 80 degrees zenith the signal
+        degrades badly, and after sunset there is nothing to reflect.
+        """
+        if self.quantity == "brightness_temperature":
+            return True
+        if self.solar_zenith_range_deg is None:
+            return False
+        return self.solar_zenith_range_deg[0] < 80.0
+
+
+class CloudMotion(BaseModel):
+    """Estimated advection of the cloud field between two scenes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    from_time_utc: datetime
+    to_time_utc: datetime
+    u_east_m_s: float
+    v_north_m_s: float
+    speed_m_s: float = Field(ge=0.0)
+    direction_to_deg: float = Field(
+        ge=0.0, le=360.0, description="direction the cloud field moves TOWARDS"
+    )
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="correlation peak quality; low means the field changed shape"
+    )
+    method: str
+    provenance: Provenance
+
+    @property
+    def interval_s(self) -> float:
+        return (self.to_time_utc - self.from_time_utc).total_seconds()
+
+
+class IrradianceNowcast(BaseModel):
+    """Short-term irradiance outlook for one point, from satellite imagery.
+
+    `kind` is never OBSERVATION. A satellite retrieval is a model applied to
+    radiances; the only thing measured is what the instrument saw from orbit.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    point: GeoPoint
+    issued_at_utc: datetime
+    valid_times_utc: list[datetime]
+    ghi_w_m2: list[float]
+    clear_sky_ghi_w_m2: list[float] = Field(
+        description="the physical upper bound at the same times, for comparison"
+    )
+    clear_sky_index: list[float] = Field(
+        description="ghi / clear-sky ghi, the quantity the satellite actually constrains"
+    )
+    horizon_s: float
+    motion: CloudMotion | None
+    method: str
+    kind: DataKind = DataKind.DERIVED
+    validation_status: str = Field(
+        default=(
+            "NOT VALIDATED: no ground-truth irradiance measurement exists for this "
+            "platform, so the error of this nowcast is unknown"
+        ),
+        description="stated on the object so a consumer cannot omit it",
+    )
+    limitations: list[str] = Field(default_factory=list)
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def _never_an_observation(self) -> Self:
+        if self.kind is DataKind.OBSERVATION:
+            raise ValueError(
+                "a satellite irradiance retrieval is not an observation: nothing on the "
+                "ground measured it"
+            )
+        if not (len(self.valid_times_utc) == len(self.ghi_w_m2) == len(self.clear_sky_index)):
+            raise ValueError("valid_times_utc, ghi_w_m2 and clear_sky_index must align")
+        return self
+
+
 __all__ = [
     "Alert",
     "AlertCategory",
     "AlertSeverity",
     "ArchiveRecordKind",
     "ArrayConfig",
+    "CloudMotion",
     "ConsumptionEstimate",
     "EnergyEstimate",
     "EnsembleForecast",
     "EnsembleSummary",
     "ForecastArchive",
     "ForecastObservationPair",
+    "GeoGrid",
     "IrradianceComponents",
+    "IrradianceNowcast",
     "ModelComparison",
     "ModelDisagreement",
     "POAIrradiance",
@@ -982,6 +1147,8 @@ __all__ = [
     "RouteWaypoint",
     "RouteWeatherForecast",
     "RouteWeatherSample",
+    "SatelliteScene",
+    "SatelliteTile",
     "ScenarioConstraintViolation",
     "ScenarioResult",
     "SolarDayEvents",

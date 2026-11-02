@@ -191,6 +191,71 @@ score `is_meaningful` and beats persistence; disagreement thresholds are
 declared per variable with their justification; no model is ever called "best"
 without a score behind it.
 
+## 3c. Phase 5 modules — satellite cloud intelligence
+
+| Area | Owner | Paths (exclusive) |
+|---|---|---|
+| Tile discovery, decode, geolocation | satellite-ingest | `src/rwi/satellite/source.py`, `tiles.py`, `geo.py`, `scene.py`, `tests/unit/test_satellite_source*.py`, `test_satellite_geo*.py`, `docs/science/satellite.md` |
+| Cloud index and irradiance retrieval | satellite-irradiance | `src/rwi/satellite/cloudindex.py`, `retrieval.py`, `tests/unit/test_satellite_cloudindex*.py`, `docs/science/satellite-irradiance.md` |
+| Cloud motion and advection nowcast | satellite-nowcast | `src/rwi/satellite/motion.py`, `nowcast.py`, `tests/unit/test_satellite_motion*.py`, `test_satellite_nowcast*.py`, `docs/science/nowcasting.md` |
+| `__init__.py`, API, integration | integrator | `src/rwi/satellite/__init__.py`, `src/rwi/api/**` |
+
+### Verified source facts (probed 2026-11-02, do not re-derive)
+
+* Bucket `https://noaa-himawari9.s3.amazonaws.com/`, anonymous HTTPS, S3 REST
+  listing (`?list-type=2&prefix=...&delimiter=/&max-keys=...`). No credentials,
+  no boto3.
+* Product `AHI-L2-FLDK-ISatSS/YYYY/MM/DD/HHMM/`, file names like
+  `OR_HFD-005-B11-M1C03-T044_GH9_s20263061740000_c20263061749130.nc`
+  (`M1C03` = band, `T044` = tile, `s…` = scan start, `c…` = created).
+* **88 tiles x 16 bands per 10-minute slot.** Each tile is 2–5 MB. The full
+  disk per slot is ~616 MB and the L2 full-disk cloud mask alone is 352 MB —
+  which is why tiles exist and why this product was chosen: a race connection
+  in the outback cannot pull hundreds of megabytes every ten minutes.
+* Cadence 10 min; latency ~14 min (slot 17:50Z created 18:04Z).
+* netCDF4 is installed. Each tile has variables `x`, `y` (microradian),
+  `Sectorized_CMI` (int16 with `scale_factor`/`add_offset`) and
+  `fixedgrid_projection`.
+* Projection attributes: `grid_mapping_name=geostationary`,
+  `longitude_of_projection_origin=140.7`, `semi_major=6378137.0`,
+  `semi_minor=6356752.31414`, `perspective_point_height=35785831.0`,
+  `sweep_angle_axis=y`. pyproj is installed and can invert this directly.
+* Tile attributes: `tile_row_offset`, `tile_column_offset`,
+  `product_tile_width=2200`, `product_tile_height=2200`,
+  `number_product_tiles=88`, `source_spatial_resolution=0.5` (km).
+
+### Required public API
+
+```python
+# rwi.satellite.source / tiles / geo / scene
+def list_slots(*, day: date, product: str = "AHI-L2-FLDK-ISatSS") -> list[datetime]
+def list_tiles(slot_time_utc: datetime, *, band: str = "C03") -> list[SatelliteTile]
+def latest_slot(*, now: datetime | None = None, band: str = "C03") -> datetime | None
+def tiles_covering(bounds, slot_time_utc, *, band="C03") -> list[SatelliteTile]
+async def fetch_tile(tile: SatelliteTile, *, cache_dir: Path) -> Path
+def decode_tile(path: Path) -> tuple[np.ndarray, GeoGrid, dict]
+def subset(values, grid, bounds) -> tuple[np.ndarray, GeoGrid]
+def load_scene(bounds, slot_time_utc, *, band="C03", cache_dir) -> tuple[np.ndarray, SatelliteScene]
+
+# rwi.satellite.cloudindex / retrieval
+def cloud_index(reflectance, *, clear_sky_reflectance, max_reflectance) -> np.ndarray
+def clear_sky_index(cloud_index) -> np.ndarray
+def retrieve_ghi(scene, values, point, *, solar_position, clear_sky_ghi) -> Measured
+def retrieve_field(scene, values, *, clear_sky_ghi_field) -> np.ndarray
+
+# rwi.satellite.motion / nowcast
+def estimate_motion(earlier, later, grid, *, earlier_time, later_time) -> CloudMotion
+def advect(values, grid, motion, *, seconds) -> np.ndarray
+def nowcast_point(point, scenes, values, *, horizon_s, step_s, clear_sky) -> IrradianceNowcast
+```
+
+Hard requirements for all three: a satellite retrieval is never
+`DataKind.OBSERVATION`; a visible-band product is meaningless at night and must
+refuse rather than return a number (`SatelliteScene.is_usable_visible`); every
+nowcast carries its `validation_status`, and nothing may claim validation
+because there is no ground-truth irradiance anywhere in this platform; downloads
+are cached and a cache hit keeps the original retrieval time.
+
 ## 4. HTTP API (owned by the integrator; the dashboard codes against this)
 
 All responses are JSON; every numeric payload carries `provenance`.
