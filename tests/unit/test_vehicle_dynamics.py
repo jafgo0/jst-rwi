@@ -14,7 +14,7 @@ import pytest
 from rwi.contracts import VehicleConfig
 from rwi.core.units import GRAVITY_M_S2, STANDARD_PRESSURE_PA, air_density_kg_m3
 from rwi.core.wind import relative_wind
-from rwi.regulations import REGULATIONS_VERSION, EventClass, check_energy_storage
+from rwi.regulations import EventClass, check_energy_storage
 from rwi.vehicle.dynamics import (
     CHALLENGER_MAX_STORAGE_WH,
     DEFAULT_VEHICLE,

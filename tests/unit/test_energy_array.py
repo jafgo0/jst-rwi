@@ -110,9 +110,11 @@ def test_default_arrays_are_labelled_assumed() -> None:
     # The current default comes from Tesseract 2025 and must say so.
     assert "2025" in DEFAULT_ARRAY.name
     assert "NOT the 2027" in DEFAULT_ARRAY.name or "NOT THE 2027" in DEFAULT_ARRAY.name.upper()
-    assert "338 cells" in DEFAULT_ARRAY.source_notes or "shadow-analysis" in DEFAULT_ARRAY.source_notes
+    notes = DEFAULT_ARRAY.source_notes or ""
+    assert "338 cells" in notes or "shadow-analysis" in notes
     # MONO_SI stays a generic placeholder for comparison.
-    assert "PLACEHOLDER" in MONO_SI_ARRAY.name or "PLACEHOLDER" in (MONO_SI_ARRAY.source_notes or "")
+    mono_notes = MONO_SI_ARRAY.source_notes or ""
+    assert "PLACEHOLDER" in MONO_SI_ARRAY.name or "PLACEHOLDER" in mono_notes
     # Mono-Si is less efficient and derates more with temperature than the
     # perovskite-silicon tandem the team actually uses - this is the whole
     # reason tandems are chosen for solar racing.
