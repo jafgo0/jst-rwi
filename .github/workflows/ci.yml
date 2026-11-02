@@ -33,13 +33,21 @@ jobs:
         run: .venv/bin/mypy src/rwi
 
       - name: Tests
-        # Network tests are excluded: CI must not depend on an external weather
-        # provider being up, and a provider outage is not a code regression.
-        env:
-          RWI_ALLOW_NETWORK: "false"
+        # Network-marked tests are excluded: CI must not depend on an external
+        # weather provider being up, and a provider outage is not a code
+        # regression.
+        #
+        # Do NOT set RWI_ALLOW_NETWORK=false here. It looks like a safety belt
+        # but it is not: the provider base checks that flag and refuses *before*
+        # respx can serve a mocked response, so the adapter tests stop
+        # exercising the code they exist to test and fail with
+        # ProviderUnavailableError. Three tests failed that way on the first CI
+        # run. What actually prevents stray real requests is respx itself: a
+        # mocked test raises on any request it did not register, and anything
+        # that genuinely calls out is marked `network` and deselected above.
+        # The offline refusal has its own dedicated tests, which set the flag
+        # themselves.
         run: .venv/bin/pytest tests -q -m "not network" --durations=10
 
       - name: Scientific reference tests
-        env:
-          RWI_ALLOW_NETWORK: "false"
         run: .venv/bin/pytest tests -q -m "science" --durations=0
