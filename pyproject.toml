@@ -18,6 +18,11 @@ dependencies = [
   "pandas>=2.2",
   "scipy>=1.14",
   "pvlib>=0.11",
+  # Reads the Himawari netCDF4/HDF5 tiles. pvlib happens to pull h5py in today,
+  # but depending on a transitive dependency for a module's core reader is how
+  # you get a mystery failure the day an upstream package drops it. We import
+  # it, so we declare it.
+  "h5py>=3.11",
   "pyproj>=3.7",
   "timezonefinder>=6.5",
   "gpxpy>=1.6",

@@ -212,8 +212,31 @@ without a score behind it.
   disk per slot is ~616 MB and the L2 full-disk cloud mask alone is 352 MB —
   which is why tiles exist and why this product was chosen: a race connection
   in the outback cannot pull hundreds of megabytes every ten minutes.
-* Cadence 10 min; latency ~14 min (slot 17:50Z created 18:04Z).
-* netCDF4 is installed. Each tile has variables `x`, `y` (microradian),
+* Cadence 10 min. Two different latencies, and the distinction matters: the
+  product's own creation stamp (`c…`) is 9-11 min after scan start, while the
+  object becomes listable in the bucket about 14 min after. Slots are also
+  sometimes missing entirely (02:40, 05:40 and 14:40Z on the day probed), so a
+  consumer must handle a gap rather than wait.
+* **The same folder also holds a second product.** `HR3` rapid-scan files
+  appear every 2.5 min in their own minute folders, and that sector is over
+  JAPAN, not Australia. A naive day listing returns ~550 "slots" of which only
+  144 are full-disk. Keep only the multiples of 10 minutes.
+* **Listing truncation is real**, not theoretical: a slot holds 1,408 objects
+  and page 1 stops mid-band. Narrow the prefix by band (one 88-object page) or
+  paginate properly.
+* **Timestamps are day-of-year**: `s20263060300000` is 2026-11-02, not March 6.
+* **There is no `_FillValue`.** Pixels looking at space hold noise integers up
+  to about 100, so they read as dark ocean unless masked by geometry. A
+  retrieval that trusts them will report cloud over empty space.
+* **The producer's own `tile_center_longitude` is wrong for T044**, off by
+  180 degrees (the latitude is fine). Derive geolocation from the projection,
+  not from that attribute.
+* **The race route needs three tiles of 88**: T059 (Darwin to north of Tennant
+  Creek), T069 (Tennant Creek, Alice Springs, Coober Pedy) and T078 (Port
+  Augusta to Adelaide). Darwin is only ~45 km from the T058/T059 boundary, so a
+  box with a 50 km margin there also needs T058.
+* Tiles are netCDF-4, i.e. HDF5, and are read with `h5py` (declared directly
+  in pyproject). Each tile has variables `x`, `y` (microradian),
   `Sectorized_CMI` (int16 with `scale_factor`/`add_offset`) and
   `fixedgrid_projection`.
 * Projection attributes: `grid_mapping_name=geostationary`,

@@ -76,6 +76,29 @@ by a real capture on 2026-11-02:
 Katherine is captured anyway: its forecasts still feed model comparison and the
 route view, and it is a control stop the vehicle must visit.
 
+## Satellite imagery: what it costs to run
+
+Measured on 2026-11-02 for the three C03 tiles the race route needs
+(T059, T069, T078):
+
+| | |
+|---|---|
+| Per 10-minute slot, sun up | 11.8-15.5 MB |
+| Per slot, at night | ~8.7 MB |
+| Average rate | ~0.2 Mbit/s |
+| Race day (08:00-17:00 ACST, 54 slots) | **~0.8 GB** |
+| Only the tile the car is in | ~5 MB/slot, **~0.26 GB/day** |
+
+**Verdict: feasible from a support car if the data plan allows about 1 GB a
+day.** Following only the car's own tile cuts it to a quarter, at the cost of
+losing sight of weather approaching from outside that tile.
+
+Not verified: file sizes in August (cloudier scenes compress worse, so expect
+more), and the real link speed on the Stuart Highway. The Team Manager's Guide
+warns that cellular coverage is poor over large stretches, so assume the
+imagery is unavailable for hours at a time and that the platform must degrade
+to the numerical forecast — which it does.
+
 ## What still cannot be verified at all
 
 **Irradiance.** No configured provider measures GHI, DNI or DHI, so the

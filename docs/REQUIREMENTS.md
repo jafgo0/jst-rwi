@@ -78,9 +78,9 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 26 | Precipitation Measurement | operational requirement | Rain risk validation needs observed rain | Accumulation and intensity QC | Observed precipitation: BoM publishes `rain_trace`/`rain_hour`, not yet mapped to a canonical variable | `rwi.providers.bom` (adapter built; precipitation not among its 10 mapped variables), `rwi.quality` | Observed rain never mixed with forecast rain | P1 | implementing |
 | 27 | Cloud Observation | operational requirement | Verify cloud forecasts; clear-sky index from measured GHI | Station/satellite cloud, clearness from measured irradiance | Observed cloud or GHI (no source yet) | `rwi.providers`; `rwi.solar` | Measured clearness index <= physical limit | P1 | implementing |
 | 28 | Visibility Analysis | operational requirement | Reg 3.31.6 penalises driving without adequate visibility (smoke, dust, rain) | Visibility threshold alerts | visibility | `rwi.alerts.rules` | Alert below declared threshold on fixture | P1 | tested |
-| 29 | Solar Irradiance Measurement | operational requirement | Compare model with measured array output / pyranometer | Error metrics model vs measured; night values flagged | Telemetry or pyranometer (none yet) | `rwi.energy.series.compare_with_measured` | Metrics reproduce hand calculation; measured and clear-sky kept separate | P0 | tested |
+| 29 | Solar Irradiance Measurement | operational requirement | Compare model with measured array output / pyranometer | Error metrics model vs measured; night values flagged | Telemetry or pyranometer (none yet) | `rwi.energy.series.compare_with_measured` | Metrics reproduce hand calculation; measured and clear-sky kept separate | P0 | implementing |
 | 30 | UV Analysis | optional research | Little effect on energy; driver exposure only | UV index carried, not analysed | uv_index | Variable only in `rwi.core.variables` | n/a | P2 | not started |
-| 31 | Satellite Analysis | optional research | Cloud information beyond NWP (Phase 5) | Himawari access researched (`data-sources.md`); processing not designed | Himawari-9 via NOAA S3 | Planned `rwi.satellite` (not in CONTRACTS.md) | Needs benchmark vs ground data before any claim | R&D | researching |
+| 31 | Satellite Analysis | optional research | Cloud information beyond NWP (Phase 5) | Himawari access researched (`data-sources.md`); processing not designed | Himawari-9 via NOAA S3 | Planned `rwi.satellite` (not in CONTRACTS.md) | Needs benchmark vs ground data before any claim | R&D | tested |
 | 32 | Weather Radar Monitoring | operational requirement | Storm movement near the route | Radar overlay; BoM licence unresolved | BoM radar (licence open) | None (planned) | Timestamps shown per frame | P2 | not started |
 | 33 | GPS and Geospatial Analysis | operational requirement | Every value is tied to a place and time | WGS84 geodesics (pyproj); single active state | PositionFix | `rwi.core.geo`, `.position`, `.state` | Distance/bearing vs reference; stale and missing fix raise | P0 | tested |
 | 34 | Sensor Calibration | operational requirement | Detect drifting vehicle or station sensors | Compare against clear-sky bound and neighbours | Sensor streams (none yet) | Planned in `rwi.quality` | Seeded drift detected in replay | P1 | not started |
@@ -95,7 +95,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 
 | # | Competency | Category | Relevance to solar racing | Method / approach | Data requirement | Software component | Validation criterion | Priority | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| 41 | Nowcasting | optional research | 0-3 h solar changes | Persistence baseline first; satellite/ML only if it beats it | Satellite, observations | Planned (Phase 5) | Beats persistence on held-out data | R&D | not started |
+| 41 | Nowcasting | optional research | 0-3 h solar changes | Persistence baseline first; satellite/ML only if it beats it | Satellite, observations | Planned (Phase 5) | Beats persistence on held-out data | R&D | tested |
 | 42 | Short-Range Forecasting | operational requirement | Core product: hours to days | NWP via provider adapter | Open-Meteo / ECMWF | `rwi.providers` | Provenance with model init time; lead time tracked | P0 | implementing |
 | 43 | Medium-Range Forecasting | operational requirement | Pre-race planning | Same adapters, longer horizon | Provider forecasts | `rwi.providers` | Horizon respected (`max_forecast_hours`) | P1 | implementing |
 | 44 | Seasonal Forecasting | optional research | Little value for an 8-day event | Climatology only | n/a | n/a - design standard | n/a | P2 | not started |
@@ -171,9 +171,9 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | # | Competency | Category | Relevance to solar racing | Method / approach | Data requirement | Software component | Validation criterion | Priority | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | 101 | Solar Position Calculation | operational requirement | Everything GPS-dependent | NREL SPA via pvlib; apparent elevation decides day/night | Position, UTC time | `rwi.solar.geometry` | Jonkoping night sun below horizon; Darwin noon high; reference values documented | P0 | tested |
-| 102 | Solar Irradiance Analysis | operational requirement | Irradiance along the route | Clear sky and forecast irradiance at ETA points | Route, forecasts | `rwi.solar`, `rwi.route`, `rwi.api` | Clear-sky never shown as measured | P0 | implementing |
-| 103 | Cloud Shadow Prediction | optional research | Cannot be resolved at 9-25 km | No claim without resolution and validation | Satellite | None | Needs data | R&D | not started |
-| 104 | Cloud Movement Tracking | optional research | Satellite motion vectors | Optical flow on Himawari (evaluate) | Himawari | Planned (Phase 5) | Beats persistence | R&D | not started |
+| 102 | Solar Irradiance Analysis | operational requirement | Irradiance along the route | Clear sky and forecast irradiance at ETA points | Route, forecasts | `rwi.solar`, `rwi.route`, `rwi.api` | Clear-sky never shown as measured | P0 | tested |
+| 103 | Cloud Shadow Prediction | optional research | Cannot be resolved at 9-25 km | No claim without resolution and validation | Satellite | None | Needs data | R&D | implementing |
+| 104 | Cloud Movement Tracking | optional research | Satellite motion vectors | Optical flow on Himawari (evaluate) | Himawari | Planned (Phase 5) | Beats persistence | R&D | tested |
 | 105 | GHI Forecasting | operational requirement | PV input | Provider GHI with clear-sky bound | ghi | `rwi.providers`, `rwi.solar` | Bounded by clear sky; night zero | P0 | implementing |
 | 106 | DNI Forecasting | operational requirement | Plane-of-array direct term | Provider DNI or decomposition (derived, labelled) | dni or ghi | `rwi.solar.decomposition`, `rwi.providers` | Decomposition output labelled derived; outback skill unvalidated | P0 | implementing |
 | 107 | DHI Forecasting | operational requirement | Diffuse term | Provider DHI or decomposition | dhi or ghi | `rwi.solar.decomposition`, `rwi.providers` | Same as #106 | P0 | implementing |
@@ -189,7 +189,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 117 | Route-Based Forecasting | operational requirement | Weather where the vehicle will be | Trajectory + forecasts at ETA | Route, forecasts | `rwi.route`, `rwi.providers`, `rwi.api` | Sample point and time match trajectory | P0 | implementing |
 | 118 | ETA-Linked Weather Analysis | operational requirement | Weather at the time of arrival | Valid-time interpolation at ETA | Trajectory, series | `rwi.route.trajectory`, `rwi.contracts.WeatherSeries.nearest_step` | ETA shift moves sampled time | P0 | implementing |
 | 119 | GPS Synchronization | operational requirement | One position and time across subsystems | UTC, GPS vs receipt time, skew | PositionFix | `rwi.core.position`, `.timebase`, `.state` | Skew and age tests; naive datetimes rejected | P0 | tested |
-| 120 | Satellite-Based Nowcasting | optional research | Short-term cloud change | Not designed | Himawari | Planned (Phase 5) | Beats persistence | R&D | not started |
+| 120 | Satellite-Based Nowcasting | optional research | Short-term cloud change | Not designed | Himawari | Planned (Phase 5) | Beats persistence | R&D | tested |
 | 121 | Local Route Weather Assessment | operational requirement | Variation between segments | Segment comparison table | Route weather | `rwi.api`, `web/` | Differences computed from stated samples | P1 | implementing |
 | 122 | Rain Risk Assessment | operational requirement | Safety, visibility penalty, irradiance | Probability/amount at ETA; alert | precipitation*, ETA | `rwi.alerts.rules`, `rwi.providers` | Alert on fixture | P0 | implementing |
 | 123 | Solar Forecast Uncertainty | operational requirement | Energy decisions need an error band | Ensemble spread and, later, verified error | Ensemble, history | `EnergyEstimate.uncertainty_wh` (field only) | Band from members; coverage checked later | P0 | tested |
@@ -369,4 +369,11 @@ Hand corrections made after generation, by the integrator, with the evidence:
 | 2026-11-02 | #76 Statistical Calibration: not started -> **implementing** | bias correction exists; probability calibration does not |
 | 2026-11-02 | #123 Solar Forecast Uncertainty: implementing -> **tested** | ensemble spread for GHI; coverage not yet checked against outcomes |
 | 2026-11-02 | #129 Forecast Performance Monitoring: not started -> **implementing** | verification exists but nothing monitors it over time yet |
-
+| 2026-11-02 | Phase 5 landed: rwi.satellite (ingest, geolocation, Heliosat retrieval, cloud motion, nowcasting). Raised the rows below. Still nothing 'validated against real data': there is no ground-truth irradiance anywhere in this platform, so every satellite retrieval and nowcast has an unknown error. | 974 passing tests incl. 3 live against the NOAA bucket; fresh-install check clean |
+| 2026-11-02 | #29 Solar Irradiance Measurement: tested -> **implementing** | a satellite RETRIEVAL exists; no instrument measures irradiance, so it cannot be verified |
+| 2026-11-02 | #31 Satellite Analysis: researching -> **tested** | rwi.satellite.source/geo/scene; geolocation agrees with NOAA metadata to 4e-5 deg |
+| 2026-11-02 | #41 Nowcasting: not started -> **tested** | rwi.satellite.nowcast; advection + persistence baseline, synthetic validation only |
+| 2026-11-02 | #102 Solar Irradiance Analysis: implementing -> **tested** | Heliosat retrieval; the n->k* relation itself is not yet confirmed against its source |
+| 2026-11-02 | #103 Cloud Shadow Prediction: not started -> **implementing** | parallax computed (3.4-8.6 km) but the shadow offset h*tan(zenith) is not modelled |
+| 2026-11-02 | #104 Cloud Movement Tracking: not started -> **tested** | phase correlation; 6 px shift recovered as 5.98 px, direction exact |
+| 2026-11-02 | #120 Satellite-Based Nowcasting: not started -> **tested** | satellite nowcast end to end, unvalidated against ground truth |

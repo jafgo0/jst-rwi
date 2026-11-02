@@ -179,9 +179,7 @@ class GeostationaryProjection:
         scale = MICRORADIAN * self.perspective_point_height_m
         return np.asarray(metres, dtype=np.float64) / scale
 
-    def scan_to_latlon(
-        self, x_urad: ArrayLike, y_urad: ArrayLike
-    ) -> tuple[FloatArray, FloatArray]:
+    def scan_to_latlon(self, x_urad: ArrayLike, y_urad: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Scan angles (microradian) -> ``(lat, lon)`` degrees; NaN where the line of
         sight misses the Earth."""
         x, y = np.broadcast_arrays(
@@ -328,9 +326,7 @@ class FullGridGeometry:
     def y_to_row(self, y_urad: ArrayLike) -> FloatArray:
         return (np.asarray(y_urad, dtype=np.float64) - self.y_offset_urad) / self.y_scale_urad
 
-    def pixel_to_latlon(
-        self, row: ArrayLike, col: ArrayLike
-    ) -> tuple[FloatArray, FloatArray]:
+    def pixel_to_latlon(self, row: ArrayLike, col: ArrayLike) -> tuple[FloatArray, FloatArray]:
         """Full-disk pixel (row, col; fractional allowed, centres on integers) ->
         ``(lat, lon)`` degrees, NaN off the Earth's disk."""
         return self.projection.scan_to_latlon(self.col_to_x(col), self.row_to_y(row))

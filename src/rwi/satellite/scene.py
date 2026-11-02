@@ -159,7 +159,7 @@ def read_native_tile(
     touched). The returned values are float32 with NaN for off-disk pixels and for
     the file's declared fill values - never raw ``int16`` posing as reflectance.
     """
-    import h5py  # deferred; hard dependency of pvlib, see tiles.read_attrs
+    import h5py  # deferred import; declared in pyproject, see tiles.read_attrs
 
     path = Path(path)
     parsed = parse_tile_key(path.name)
@@ -181,7 +181,7 @@ def read_native_tile(
             y_raw = np.asarray(ds["y"][:], dtype=np.int64)
         except (KeyError, IndexError) as exc:
             raise SatelliteDataError(f"{path.name} lacks expected variable {exc}") from exc
-        if x_raw.size < 2 or y_raw.size < 2:
+        if x_raw.size < 1 or y_raw.size < 1:
             raise SatelliteDataError(f"{path.name}: degenerate x/y axes")
         if not (np.all(np.diff(x_raw) == 1) and np.all(np.diff(y_raw) == 1)):
             raise SatelliteDataError(f"{path.name}: x/y are not consecutive full-disk indices")
@@ -316,9 +316,7 @@ def _native_step_deg(geometry: FullGridGeometry, lat: float, lon: float) -> floa
     return math.sqrt(ns_deg * ew_ground) if ew_ground > 0 else ns_deg
 
 
-def _regular_axes(
-    bounds: Bounds, step_deg: float, lon0: float
-) -> tuple[FloatArray, FloatArray]:
+def _regular_axes(bounds: Bounds, step_deg: float, lon0: float) -> tuple[FloatArray, FloatArray]:
     min_lat, min_lon, max_lat, max_lon = bounds
     west = float(wrap_longitude(min_lon, lon0))
     span = max_lon - min_lon
@@ -336,9 +334,7 @@ def _regular_axes(
     return lats.astype(np.float64), lons.astype(np.float64)
 
 
-def _bilinear(
-    tiles: Sequence[NativeTile], row: FloatArray, col: FloatArray
-) -> NDArray[np.float32]:
+def _bilinear(tiles: Sequence[NativeTile], row: FloatArray, col: FloatArray) -> NDArray[np.float32]:
     """Sample the mosaic of ``tiles`` at fractional full-disk (row, col).
 
     NaN where the point is off the disk, outside the supplied windows, or any of the
@@ -421,8 +417,9 @@ def _grid_and_values(
         # tile_bounds is padded; trim back to the part that is actually on the disk
         bounds = (bounds[0] + 0.25, bounds[1] + 0.25, bounds[2] - 0.25, bounds[3] - 0.25)
     min_lat, min_lon, max_lat, max_lon = bounds
-    centre_lat, centre_lon = (min_lat + max_lat) / 2.0, float(
-        wrap_longitude((min_lon + (max_lon - min_lon) % 360.0 / 2.0), 0.0)
+    centre_lat, centre_lon = (
+        (min_lat + max_lat) / 2.0,
+        float(wrap_longitude((min_lon + (max_lon - min_lon) % 360.0 / 2.0), 0.0)),
     )
     step = resolution_deg
     if step is None:

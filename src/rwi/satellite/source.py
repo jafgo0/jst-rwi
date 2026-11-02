@@ -176,8 +176,13 @@ def _list_objects(
     delimiter: str | None,
     settings: Settings,
     max_keys: int = 1000,
+    first_page_only: bool = False,
 ) -> _Listing:
-    """Complete listing under ``prefix``, following every continuation token."""
+    """Complete listing under ``prefix``, following every continuation token.
+
+    ``first_page_only`` is for existence probes (``max_keys=1``): the result is by
+    construction not complete and must not be used as a listing.
+    """
     _require_network(settings, f"list s3://{prefix}")
     keys: list[tuple[str, int, datetime | None]] = []
     prefixes: list[str] = []
@@ -199,7 +204,7 @@ def _list_objects(
             chunk, truncated, token = _parse_listing(response.content)
             keys.extend(chunk.keys)
             prefixes.extend(chunk.prefixes)
-            if not truncated:
+            if not truncated or first_page_only:
                 return _Listing(keys, prefixes, page)
             if not token:
                 raise ProviderUnavailableError(
@@ -311,8 +316,10 @@ def list_tiles(
     if tiles:
         return tiles
 
-    probe = _list_objects(folder + f"OR_{FULL_DISK_SCAN}-", delimiter=None, settings=settings,
-                          max_keys=1)  # fmt: skip
+    probe = _list_objects(
+        folder + f"OR_{FULL_DISK_SCAN}-", delimiter=None, settings=settings,
+        max_keys=1, first_page_only=True,
+    )  # fmt: skip
     if not probe.keys:
         return []
     wide = _list_objects(folder + f"OR_{FULL_DISK_SCAN}-", delimiter=None, settings=settings)
@@ -345,9 +352,7 @@ def latest_slot(
     for back in range(lookback_hours + 1):
         h = hour - timedelta(hours=back)
         # prefix '.../DD/HH' + delimiter '/' -> the minute folders of that hour only
-        listing = _list_objects(
-            f"{product}/{h:%Y/%m/%d/%H}", delimiter="/", settings=settings
-        )
+        listing = _list_objects(f"{product}/{h:%Y/%m/%d/%H}", delimiter="/", settings=settings)
         for folder in listing.prefixes:
             slot = _slot_from_folder(folder)
             if slot and slot <= reference and _is_full_disk_slot(slot) and slot not in seen:
@@ -468,11 +473,11 @@ async def _download(url: str, dest_tmp: Path, settings: Settings, expected: int 
                     fh.flush()
                     os.fsync(fh.fileno())
                 declared = response.headers.get("content-length")
-                want = int(declared) if declared is not None else expected
-                if want is not None and written != want:
-                    raise ProviderUnavailableError(
-                        f"short download of {url}: got {written} of {want} bytes"
-                    )
+                for want in (int(declared) if declared is not None else None, expected):
+                    if want is not None and written != want:
+                        raise ProviderUnavailableError(
+                            f"short download of {url}: got {written} of {want} bytes"
+                        )
                 return written
         except TileNotFoundError:
             raise

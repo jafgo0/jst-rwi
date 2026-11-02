@@ -210,9 +210,12 @@ def parse_tile_key(key: str) -> ParsedKey | None:
 def read_attrs(node: Any) -> Mapping[str, Any]:
     """Attributes of an HDF5 group/dataset as plain Python values.
 
-    The tiles are NetCDF-4 files, i.e. HDF5. They are read with ``h5py`` (a hard
-    dependency of ``pvlib``, hence always installed) rather than ``netCDF4``, which
-    this project does not declare. ``h5py`` returns ``bytes`` for strings and
+    The tiles are NetCDF-4 files, i.e. HDF5. They are read with ``h5py``, which
+    this project declares directly in pyproject rather than relying on ``pvlib``
+    to pull it in: depending on a transitive dependency for a module's core
+    reader is how you get a mystery failure the day upstream drops it.
+    ``netCDF4`` would also work and is not required. ``h5py`` returns ``bytes``
+    for strings and
     one-element arrays for scalars; both are normalised, and reference-typed
     attributes (the HDF5 dimension-scale bookkeeping) are skipped.
     """
