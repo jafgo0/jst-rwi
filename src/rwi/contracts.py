@@ -526,6 +526,16 @@ class ArrayConfig(BaseModel):
     )
     noct_c: float = Field(default=48.0, description="nominal operating cell temperature")
     albedo: float = Field(default=0.2, ge=0.0, le=1.0)
+    angular_response: object | None = Field(
+        default=None,
+        description=(
+            "Optional per-cell angular response (AngularResponseTable) that captures "
+            "how each cell sees the sun as the vehicle heading rotates the panel. "
+            "None keeps the flat-plane behaviour the rest of this module assumes. "
+            "Typed as `object` to avoid a hard import of numpy from the contracts "
+            "layer; the energy model does isinstance-check at use."
+        ),
+    )
     parameter_source: ParameterSource = "assumed"
     source_notes: str | None = None
 

@@ -240,12 +240,55 @@ def array_power(
         )
         model_name = cell_temperature_model
 
-    dc = dc_power_w(g, array, t_cell)
+    # Per-cell angular response. When array.angular_response is an
+    # AngularResponseTable it maps (sun azimuth in the vehicle frame, sun
+    # zenith) to a mean cell response in [0, 1]; multiplying the DC power by it
+    # replaces the implicit flat-plane assumption. None keeps the current
+    # behaviour unchanged - which is why none of the existing tests shift.
+    #
+    # The sun angles come from the POA itself: `aoi_deg` is the angle of
+    # incidence on the surface (used as a zenith equivalent when the surface
+    # is horizontal, which is what every current ArrayConfig is), and the
+    # surface azimuth plus the vehicle heading give the sun's azimuth in the
+    # vehicle frame. Full vehicle-relative geometry will arrive together with
+    # a measured response matrix; until then this is enough to exercise the
+    # path and keep the integration honest.
+    angular_factor = 1.0
+    angular_source = None
+    response = array.angular_response
+    if response is not None:
+        from rwi.energy.angular import AngularResponseTable
+
+        if isinstance(response, AngularResponseTable):
+            # Vehicle-frame azimuth is 0 for an identity response, so this
+            # path is a no-op until a measured matrix arrives.
+            angular_factor = response.mean_response(
+                azimuth_deg=poa.surface_azimuth_deg,
+                zenith_deg=min(poa.aoi_deg, 89.999),
+            )
+            angular_source = response.source
+            notes.append(
+                f"angular response applied: {response.name} ({response.source}), "
+                f"factor {angular_factor:.4f}"
+            )
+        else:
+            notes.append(
+                "array.angular_response is set but is not an AngularResponseTable; "
+                "ignored - this would be a lie to apply blindly"
+            )
+
+    dc_pre_angular = dc_power_w(g, array, t_cell)
+    dc = dc_pre_angular * angular_factor
     net = dc * array.mppt_efficiency * array.wiring_efficiency
     eff = net / (g * array.area_m2) if g > 0.0 else 0.0
 
     if array.parameter_source != "measured":
         notes.append(f"array parameters are '{array.parameter_source}', not measured")
+    if angular_source != "measured":
+        notes.append(
+            "no per-cell angular geometry (team's shadow-analysis matrix "
+            "would replace this)"
+        )
     notes.append(
         "vehicle-array thermal behaviour unvalidated; "
         "no shading/AOI-reflection/MPPT dynamics"
