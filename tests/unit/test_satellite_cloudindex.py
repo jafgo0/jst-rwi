@@ -59,6 +59,7 @@ def _scene(
     slot: datetime = SLOT_DAY,
     quantity: str = "reflectance",
     zenith_range: tuple[float, float] | None = (30.0, 32.0),
+    sun_normalised: bool | None = True,
 ) -> SatelliteScene:
     prov = Provenance(
         provider="noaa-himawari9",
@@ -75,6 +76,7 @@ def _scene(
         quantity=quantity,  # type: ignore[arg-type]
         unit="1",
         solar_zenith_range_deg=zenith_range,
+        sun_normalised=sun_normalised,
         provenance=prov,
     )
 
@@ -635,3 +637,62 @@ def test_the_raw_index_is_still_unclamped_so_bad_references_stay_visible() -> No
     # And too little contrast is refused outright rather than amplified.
     refused = cloud_index(np.array([0.9]), clear_sky_reflectance=0.1, max_reflectance=0.12)
     assert np.isnan(refused[0])
+
+
+# ------------------------------------------------------- the reflectance convention
+
+
+def test_an_undeclared_reflectance_convention_is_refused_not_assumed() -> None:
+    """The bias that would never be caught.
+
+    A Level-2 reflectance factor is usually NOT divided by cos(solar zenith),
+    while the cloud index assumes it is. Guessing either way puts a
+    sun-angle-dependent error into every retrieval: largest at dawn and dusk,
+    zero at midday, invisible to these tests. With no ground-truth irradiance
+    in this platform it would never surface. So it is refused.
+    """
+    import numpy as np
+
+    from rwi.satellite.retrieval import RetrievalStatus, retrieve_ghi_detailed
+
+    scene = _scene(sun_normalised=None)
+    pt, sp, cs = _day_inputs()
+    result = retrieve_ghi_detailed(
+        scene,
+        np.full(scene.grid.shape, 0.4),
+        pt,
+        solar_position=sp,
+        clear_sky_ghi=cs,
+        clear_sky_reflectance=0.1,
+        max_reflectance=0.8,
+    )
+    assert result.status is RetrievalStatus.MISSING_REFERENCE
+    assert "sun-normalised" in result.reason
+    assert result.measured.value is None
+
+
+def test_a_non_normalised_scene_is_normalised_before_the_cloud_index() -> None:
+    """Declaring False is workable: the retrieval divides by cos(zenith) itself."""
+    import numpy as np
+
+    from rwi.satellite.retrieval import RetrievalStatus, retrieve_ghi_detailed
+
+    pt, sp, cs = _day_inputs()
+    args = {
+        "solar_position": sp,
+        "clear_sky_ghi": cs,
+        "clear_sky_reflectance": 0.1,
+        "max_reflectance": 0.8,
+    }
+    values = np.full(_grid().shape, 0.4)
+    normalised = retrieve_ghi_detailed(_scene(sun_normalised=True), values, pt, **args)
+    raw = retrieve_ghi_detailed(_scene(sun_normalised=False), values, pt, **args)
+
+    assert normalised.status is RetrievalStatus.OK
+    assert raw.status is RetrievalStatus.OK
+    # Dividing by cos(zenith) raises the reflectance, so the pixel looks
+    # cloudier and the retrieved irradiance must be LOWER. If these two ever
+    # come out equal, the normalisation silently stopped happening.
+    assert raw.measured.value is not None
+    assert normalised.measured.value is not None
+    assert raw.measured.value < normalised.measured.value

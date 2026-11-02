@@ -47,6 +47,7 @@ from rwi.satellite.cloudindex import (
     clear_sky_index,
     clip_clear_sky_index,
     cloud_index,
+    normalise_reflectance_by_sun,
 )
 
 __all__ = [
@@ -149,6 +150,21 @@ def _scene_gate(scene: SatelliteScene) -> tuple[RetrievalStatus, str] | None:
             "the scene holds brightness temperature (infrared); this Heliosat retrieval needs "
             "visible reflectance or a cloud index",
         )
+    if scene.quantity == "reflectance" and scene.sun_normalised is None:
+        # Integrator note. A Level-2 reflectance factor is usually NOT divided
+        # by cos(solar zenith), while the Heliosat cloud index assumes it is.
+        # Guessing either way puts a sun-angle-dependent bias into every
+        # retrieval: it grows through the morning and evening, vanishes at
+        # midday, and is invisible to this module's tests. With no ground-truth
+        # irradiance anywhere in this platform it would never surface at all.
+        # So an undeclared convention is refused, not defaulted.
+        return (
+            RetrievalStatus.MISSING_REFERENCE,
+            "the scene does not declare whether its reflectance is sun-normalised "
+            "(SatelliteScene.sun_normalised is None). Refusing rather than assuming: "
+            "the wrong assumption biases every retrieval by a factor that depends on "
+            "the solar zenith angle",
+        )
     if not scene.is_usable_visible:
         zr = scene.solar_zenith_range_deg
         why = (
@@ -213,10 +229,25 @@ def _to_index(
     values: np.ndarray,
     clear_sky_reflectance: np.ndarray | float | None,
     max_reflectance: np.ndarray | float | None,
+    solar_zenith_deg: np.ndarray | float | None = None,
 ) -> tuple[np.ndarray | None, str]:
-    """Cloud index from the pixel values, or (None, reason) when references are missing."""
+    """Cloud index from the pixel values, or (None, reason) when it cannot be formed.
+
+    When the scene declares ``sun_normalised=False`` the reflectance factor is
+    divided by cos(solar zenith) here, before the cloud index is formed. That
+    conversion needs a zenith, so a scene that needs it and has none is refused
+    rather than retrieved from under the wrong convention.
+    """
     if scene.quantity == "cloud_index":
         return values, ""
+    if scene.quantity == "reflectance" and scene.sun_normalised is False:
+        if solar_zenith_deg is None:
+            return None, (
+                "the scene holds a reflectance factor that is NOT sun-normalised, and no "
+                "solar zenith was supplied to normalise it. The cloud index assumes a "
+                "sun-normalised reflectance, so proceeding would bias the retrieval"
+            )
+        values = normalise_reflectance_by_sun(values, solar_zenith_deg)
     if clear_sky_reflectance is None or max_reflectance is None:
         missing = [
             name
@@ -339,7 +370,9 @@ def retrieve_ghi_detailed(
                       "point lies more than one pixel outside the scene grid")
     row, col = pixel
 
-    n_field, why = _to_index(scene, values, clear_sky_reflectance, max_reflectance)
+    n_field, why = _to_index(
+        scene, values, clear_sky_reflectance, max_reflectance, solar_zenith_deg=zen
+    )
     if n_field is None:
         return refuse(RetrievalStatus.MISSING_REFERENCE, why)
     n = float(n_field[row, col])
@@ -465,7 +498,13 @@ def retrieve_field_detailed(
                 "supplied to say which pixels are usable",
             )
 
-    n, why = _to_index(scene, values, clear_sky_reflectance, max_reflectance)
+    n, why = _to_index(
+        scene,
+        values,
+        clear_sky_reflectance,
+        max_reflectance,
+        solar_zenith_deg=solar_zenith_deg_field,
+    )
     if n is None:
         return refuse(RetrievalStatus.MISSING_REFERENCE, why)
 

@@ -1015,6 +1015,16 @@ class GeoGrid(BaseModel):
 class SatelliteScene(BaseModel):
     """One decoded, geolocated image subset over a region of interest.
 
+    ``sun_normalised`` is on this type rather than left to documentation for a
+    specific reason. A Level-2 reflectance factor is usually NOT divided by
+    cos(solar zenith), while the Heliosat cloud index assumes it is. Wire those
+    two together with the convention undeclared and every retrieved irradiance
+    carries a sun-angle-dependent bias that grows through the morning and
+    evening, is invisible at midday, and would be caught by neither module's
+    own tests. With no ground-truth irradiance anywhere in this platform, it
+    would never be caught at all. So the producer must state it and the
+    consumer must check it.
+
     The pixel values live outside this model (a numpy array), because a
     thousand-by-thousand grid does not belong in a pydantic object or in JSON.
     This carries what must travel with them.
@@ -1032,6 +1042,14 @@ class SatelliteScene(BaseModel):
         default=None,
         description="min and max solar zenith over the scene; a visible-band product "
         "is meaningless at night and the caller must be able to tell",
+    )
+    sun_normalised: bool | None = Field(
+        default=None,
+        description=(
+            "whether a reflectance has already been divided by cos(solar zenith). "
+            "None means the producer did not declare it, which a retrieval must treat "
+            "as an error rather than a default"
+        ),
     )
     provenance: Provenance
 
