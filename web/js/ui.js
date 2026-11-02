@@ -107,7 +107,7 @@ export function valueCell(m, o = {}) {
   const { text, unit } = fmtVar(variable, m.value, o.digits);
   const stale = f.state === "stale";
   if (stale) cls.push("stale");
-  const qcBad = q && !["ok", "interpolated", "unvalidated"].includes(q);
+  const qcBad = q && !["ok", "interpolated", "unvalidated", "stale"].includes(q); // "stale" is already shown by the STALE chip
   return h("span", { class: cls.join(" "), title },
     h("span", { class: "n" }, text), unit ? h("span", { class: "u" }, o.unitOverride ?? unit) : null,
     stale ? h("span", { class: "flag chip stale", title: freshnessText(f) }, o.compactStale ? "STALE" : `STALE ${fmtDuration(f.ageS)}`) : null,

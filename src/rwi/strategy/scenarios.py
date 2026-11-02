@@ -230,7 +230,7 @@ def _provenance(dataset: str, notes: str, now_utc: datetime | None) -> Provenanc
     return Provenance(
         provider="rwi",
         dataset=dataset,
-        kind=DataKind.SIMULATION,
+        kind=DataKind.PHYSICAL_MODEL,
         retrieved_at_utc=now_utc if now_utc is not None else utc_now(),
         model_name="quasi-static longitudinal consumption + Wh energy accumulator",
         model_version="1",

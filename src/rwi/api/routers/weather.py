@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from rwi.api.capability import require_attr
 from rwi.api.deps import LatQuery, LonQuery, resolve_point
 from rwi.config import Settings, get_settings
-from rwi.contracts import WeatherSeries
+from rwi.contracts import ProviderCapabilities, WeatherSeries
 from rwi.core.provenance import DataKind
 from rwi.core.state import StateStore, get_state_store
 from rwi.core.timebase import TimeWindow, utc_now
@@ -133,6 +133,39 @@ async def read_observations(
         provider=provider,
         kind=DataKind.OBSERVATION,
     )
+
+
+@router.get("/providers", response_model=list[ProviderCapabilities])
+async def read_provider_capabilities(settings: SettingsDep) -> Any:
+    """What each configured provider can actually deliver.
+
+    The dashboard needs this to build an observation request that can succeed:
+    only a provider with `supports_observations` and the variable in its
+    `variables` set will ever return a measurement, and asking for more produces
+    a 501 rather than a quiet substitution.
+    """
+    available: Any = require_attr(
+        "rwi.providers.registry", "available_providers", capability="weather providers"
+    )
+    return [provider.capabilities for provider in available(settings).values()]
+
+
+@router.get("/observable")
+async def read_observable_variables(settings: SettingsDep) -> dict[str, list[str]]:
+    """Canonical variables that at least one provider MEASURES, per provider.
+
+    An empty list for every provider is a truthful answer meaning the platform
+    currently measures nothing.
+    """
+    available: Any = require_attr(
+        "rwi.providers.registry", "available_providers", capability="weather providers"
+    )
+    out: dict[str, list[str]] = {}
+    for name, provider in available(settings).items():
+        capabilities = provider.capabilities
+        if capabilities.supports_observations:
+            out[name] = sorted(capabilities.variables)
+    return out
 
 
 @router.get("/variables")

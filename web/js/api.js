@@ -237,6 +237,25 @@ function extractError(json) {
 
 /* ---------------------------------------------------------------- normalisers */
 
+/**
+ * Pull {code, message, detail} out of the error shapes the backend produces:
+ *   {"error": {code, message, detail}}                      (RwiError handler)
+ *   {"detail": {"error": {code, message, detail}}}          (501 CapabilityNotImplemented)
+ *   {"detail": "text"} / {"detail": [{msg, loc}, ...]}      (FastAPI HTTPException / validation)
+ * @returns {{code?:string, message?:string, detail?:any}|null}
+ */
+function extractError(json) {
+  if (!json || typeof json !== "object") return null;
+  if (json.error && typeof json.error === "object") return json.error;
+  const d = json.detail;
+  if (d && typeof d === "object" && !Array.isArray(d) && d.error) return d.error;
+  if (typeof d === "string") return { message: d };
+  if (Array.isArray(d)) return { message: d.map((x) => `${(x.loc || []).slice(1).join(".")}: ${x.msg}`).join("; ") };
+  return null;
+}
+
+/* ---------------------------------------------------------------- normalisers */
+
 /** First array found under any of `keys`, or the value itself if it is an array. */
 function arrayFrom(resp, keys) {
   if (Array.isArray(resp)) return resp;
@@ -245,26 +264,20 @@ function arrayFrom(resp, keys) {
 }
 
 /**
- * GET /api/state returns StateResponse:
+ * GET /api/state returns StateResponse (docs/CONTRACTS.md section 4):
  *   {state: ActiveState, effective_time_utc, local_time, timezone_name, utc_offset_hours,
  *    position_available, is_simulated, position_age_s, server_time_utc}
- * (docs/CONTRACTS.md only says "ActiveState + resolved local time + timezone", so a flat
- * ActiveState with timezone/local_time fields is accepted too.) The result is the flat
- * ActiveState plus the extras.
- * @returns {ActiveState & {timezone:(string|null), local_time:(string|null), is_simulated:boolean, position_available:boolean, server_time_utc:(string|null), effective_time_utc:(string|null)}}
+ * Flattened here to the ActiveState fields plus the extras; `timezone_name` is exposed as `timezone`.
+ * @returns {ActiveState & {timezone:(string|null), local_time:(string|null), is_simulated:boolean, position_available:boolean, server_time_utc:(string|null), effective_time_utc:(string|null), utc_offset_hours:(number|null), position_age_s:(number|null)}}
  */
 function normaliseState(r) {
-  const base = r && r.state && typeof r.state === "object" && "mode" in r.state ? r.state : r;
-  const ext = r;
-  const tz = ext.timezone_name ?? ext.timezone ?? ext.tz ?? ext.local?.timezone_name ?? null;
-  const lt = ext.local_time ?? ext.local_time_iso ?? ext.local?.time ?? null;
-  const st = ext.server_time_utc ?? null;
+  const st = r.server_time_utc ?? null;
   if (st) { const t = Date.parse(st); if (Number.isFinite(t)) setClockOffset(t - Date.now()); }
   return {
-    ...base, timezone: tz, local_time: lt,
-    is_simulated: Boolean(ext.is_simulated), position_available: ext.position_available ?? Boolean(base.fix),
-    server_time_utc: st, effective_time_utc: ext.effective_time_utc ?? null, utc_offset_hours: ext.utc_offset_hours ?? null,
-    position_age_s: ext.position_age_s ?? null,
+    ...r.state, timezone: r.timezone_name ?? null, local_time: r.local_time ?? null,
+    is_simulated: Boolean(r.is_simulated), position_available: Boolean(r.position_available),
+    server_time_utc: st, effective_time_utc: r.effective_time_utc ?? null, utc_offset_hours: r.utc_offset_hours ?? null,
+    position_age_s: r.position_age_s ?? null,
   };
 }
 
@@ -290,8 +303,7 @@ export const api = {
   solarDay: ({ lat, lon, date, time }) => request("/api/solar/day", { params: { lat, lon, date, time: iso(time) } }),
   /** @returns {Promise<IrradianceComponents[]>} */
   clearskyDay: async ({ lat, lon, date, time, stepS }) => {
-    const r = await request("/api/solar/clearsky/day", { params: { lat, lon, date, time: iso(time), step_s: stepS } });
-    return arrayFrom(r, ["series", "points", "items", "irradiance"]) || [];
+    return request("/api/solar/clearsky/day", { params: { lat, lon, date, time: iso(time), step_s: stepS } });
   },
 
   /** @returns {Promise<WeatherSeries>} */
@@ -301,7 +313,7 @@ export const api = {
   observations: ({ lat, lon, hours, variables }) => request("/api/weather/observations", { params: { lat, lon, hours, variables: variables?.join(",") } }),
 
   /** @returns {Promise<RouteInfo[]>} */
-  routes: async () => arrayFrom(await request("/api/route"), ["routes", "items"]) || [],
+  routes: () => request("/api/route"),
   /** GeoJSON FeatureCollection: LineString + waypoint Point features. */
   routeGeojson: (id) => request(`/api/route/${encodeURIComponent(id)}/geojson`),
   /**
@@ -353,7 +365,7 @@ export const api = {
   /** GET /api/regulations: verified BWSC 2027 limits and what is not yet published. */
   regulations: () => request("/api/regulations"),
   /** @returns {Promise<Alert[]>} */
-  alerts: async () => arrayFrom(await request("/api/alerts"), ["alerts", "items"]) || [],
+  alerts: () => request("/api/alerts"),
 };
 
 /** Every endpoint this UI calls (documentation / footer / README check). */

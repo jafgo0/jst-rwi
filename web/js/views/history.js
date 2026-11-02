@@ -48,6 +48,7 @@ function layout() {
         ["Version", hl.version],
         ["Server uptime", h("span", null, fmtDuration(hl.uptime_s), h("span", { class: "note" }, "  (process uptime, not recording time)"))],
         ["Providers", hl.providers.length ? hl.providers.map((p) => p.provider).join(", ") : "none reported"],
+        ["Backend modules", Object.keys(hl.capabilities || {}).length ? Object.entries(hl.capabilities).map(([k, ok]) => `${k}: ${ok ? "available" : "UNAVAILABLE"}`).join(", ") : "not reported"],
         ["Health sampled", res("health").loadedAt !== null ? ageSpan(res("health").loadedAt) : "-"],
       ], "tight"),
       h("div", { class: "note", style: { marginTop: "8px" } }, "Archive data (e.g. Open-Meteo historical archive) is configured in the backend settings but no endpoint exposes it to the dashboard yet."),

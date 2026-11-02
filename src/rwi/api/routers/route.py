@@ -191,9 +191,24 @@ async def read_trajectory(
     hours: Annotated[float, Query(gt=0.0, le=240.0)] = 24.0,
 ) -> Any:
     route = repo.get(route_id)
-    return _build_trajectory(
+    trajectory = _build_trajectory(
         route, speed_kmh=speed_kmh, start_distance_m=start_distance_m, hours=hours, store=store
     )
+    # build_trajectory runs to the end of the route; the caller asked for a
+    # horizon, so cut it there. The first point is always kept so that a short
+    # horizon still returns a usable position rather than an empty list.
+    horizon = trajectory.points[0].eta_utc + timedelta(hours=hours) if trajectory.points else None
+    if horizon is not None:
+        within = [p for p in trajectory.points if p.eta_utc <= horizon]
+        kept = within or trajectory.points[:1]
+        if len(kept) != len(trajectory.points):
+            assumptions = dict(trajectory.assumptions)
+            assumptions["horizon_hours"] = hours
+            assumptions["points_beyond_horizon_dropped"] = len(trajectory.points) - len(kept)
+            trajectory = trajectory.model_copy(
+                update={"points": kept, "assumptions": assumptions}
+            )
+    return trajectory
 
 
 class RouteWeatherResponse(BaseModel):

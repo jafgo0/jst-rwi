@@ -124,8 +124,15 @@ All responses are JSON; every numeric payload carries `provenance`.
 409 for "position unavailable" and 503 for provider failure.
 
 ```
-GET  /api/health                      -> {status, version, providers:[ProviderHealth], uptime_s}
-GET  /api/state                       -> ActiveState + resolved local time + timezone
+GET  /api/health                      -> {status, version, server_time_utc, uptime_s,
+                                          capabilities, unavailable_modules, providers,
+                                          provider_errors, network_enabled,
+                                          freshness_limits_s:{observation,forecast,gps}}
+GET  /api/regulations                 -> verified BWSC 2027 limits with clause numbers,
+                                         plus not_yet_published and silent_in_regulations
+GET  /api/state                       -> {state: ActiveState, effective_time_utc, local_time,
+                                          timezone_name, utc_offset_hours, position_available,
+                                          is_simulated, position_age_s, server_time_utc}
 POST /api/state/position              {mode, latitude_deg, longitude_deg, elevation_m?, heading_deg?, source?}
 POST /api/state/time                  {selected_time_utc|null}
 GET  /api/solar/position?lat&lon&elev&time        -> SolarPosition
@@ -133,13 +140,40 @@ GET  /api/solar/day?lat&lon&date                  -> SolarDayEvents
 GET  /api/solar/clearsky?lat&lon&time             -> IrradianceComponents
 GET  /api/solar/clearsky/day?lat&lon&date&step_s  -> [IrradianceComponents]
 GET  /api/weather/forecast?lat&lon&hours&variables&provider -> WeatherSeries
-GET  /api/weather/observations?lat&lon&hours                -> WeatherSeries (or 501 if unsupported)
-GET  /api/route                       -> [{id, name, total_distance_m, control_stops}]
+GET  /api/weather/observations?lat&lon&hours&variables      -> WeatherSeries, or 501 when no
+                                         configured provider MEASURES the requested variables
+                                         (never a forecast in their place), or 503 when the
+                                         nearest station is too far away
+GET  /api/weather/providers            -> [ProviderCapabilities]
+GET  /api/weather/observable           -> {provider: [variables it measures]}
+GET  /api/weather/variables            -> the canonical registry with units and ranges
+GET  /api/route                       -> [RouteSummary: {id, name, total_distance_m,
+                                          waypoint_count, control_stop_count,
+                                          source_description, provenance_label}]
+                                          (counts only; the stops themselves come from
+                                           /api/route/{id} or /{id}/geojson)
 GET  /api/route/{id}/geojson          -> GeoJSON LineString + waypoint features
-GET  /api/route/{id}/trajectory?speed_kmh&start_distance_m&hours -> Trajectory
-GET  /api/route/{id}/weather?speed_kmh&start_distance_m&hours    -> RouteWeatherForecast
-GET  /api/energy/forecast?hours&speed_kmh                        -> [PowerEstimate] + EnergyEstimate
-GET  /api/strategy/scenarios?...                                 -> [ScenarioResult] + Recommendation
+GET  /api/route/{id}                   -> Route
+GET  /api/route/{id}/progress          -> {projection, distance_remaining_m, next waypoint
+                                           and next control stop with distances}
+GET  /api/route/{id}/trajectory?speed_kmh&start_distance_m&hours -> Trajectory, truncated to
+                                         the horizon (assumptions record what was dropped)
+GET  /api/route/{id}/weather?speed_kmh&start_distance_m&hours    -> {forecast:
+                                         RouteWeatherForecast, local_arrival_times, notes};
+                                         at most 12 sampled points per request, by design, to
+                                         respect provider rate limits - trajectory rows beyond
+                                         those points legitimately have no weather
+GET  /api/energy/array                 -> ArrayConfig in use (parameter_source says if measured)
+GET  /api/energy/forecast?hours&heading_deg&provider -> {estimates:[PowerEstimate], energy:
+                                         EnergyEstimate|null, array, notes, weather_provider,
+                                         weather_kind, weather_retrieved_at_utc}
+GET  /api/strategy/vehicle             -> VehicleConfig in use
+GET  /api/strategy/scenarios?route_id&speed_kmh&start_soc&hours&start_distance_m&
+     posted_limit_kmh&uncertainty      -> {scenarios, recommendation,
+                                         optimal_constant_speed_kmh, optimal_is_feasible,
+                                         vehicle, alerts, assumptions (echoes every default
+                                         applied), data_gaps, regulatory_notes,
+                                         human_review_required}
 GET  /api/alerts                      -> [Alert]
 ```
 
@@ -160,6 +194,17 @@ GET  /api/alerts                      -> [Alert]
 4. **`ArrayConfig` has no soiling, glass-reflection, mismatch or Faiman u0/u1
    fields** in phase 1. They live as documented module constants in
    `rwi.energy` until there is measured data to fit them.
+
+### 4c. Known API limitations, by design
+
+* `/api/alerts` carries weather and data-integrity alerts only. Strategy alerts
+  (for example "no feasible scenario") need the scenario inputs and therefore
+  arrive inside the `/api/strategy/scenarios` response.
+* There is no battery, telemetry, archive or forecast-verification endpoint:
+  those subsystems do not exist yet, and the History view says so rather than
+  showing an empty chart.
+* Route weather samples at most 12 points per request. Denser sampling would
+  need a provider plan that permits it.
 
 ## 5. Definition of done for every module
 

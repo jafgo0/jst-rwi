@@ -107,10 +107,39 @@ async def set_position(request: PositionRequest, store: StoreDep) -> StateRespon
         fix_quality=request.fix_quality or default_quality,
     )
     await store.update_fix(fix, heading_deg=request.heading_deg)
-    if request.route_id is not None:
-        current = store.state
-        await store.replace(current.model_copy(update={"route_id": request.route_id}))
+    route_id = request.route_id or store.state.route_id
+    updates: dict[str, Any] = {}
+    if route_id is not None:
+        updates["route_id"] = route_id
+        progress = _project_progress(route_id, fix)
+        if progress is not None:
+            updates["route_distance_m"] = progress
+    if updates:
+        await store.replace(store.state.model_copy(update=updates))
     return _describe(store)
+
+
+def _project_progress(route_id: str, fix: PositionFix) -> float | None:
+    """Distance along the active route for a new fix, or None if unobtainable.
+
+    Keeping progress in the authoritative state means every consumer agrees on
+    where the vehicle is along the route. Failure is silent on purpose: a
+    missing route or an absent route module must not stop a position update,
+    and the caller can still read progress from /api/route/{id}/progress.
+    """
+    try:
+        from rwi.api.capability import require_attr
+        from rwi.api.deps import get_route_repository
+
+        project = require_attr(
+            "rwi.route.geometry", "project_onto_route", capability="route projection"
+        )
+        route = get_route_repository().all().get(route_id)
+        if route is None:
+            return None
+        return float(project(route, fix.point).distance_along_m)
+    except Exception:
+        return None
 
 
 @router.post("/time", response_model=StateResponse)

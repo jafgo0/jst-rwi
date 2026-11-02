@@ -45,6 +45,7 @@ class HealthResponse(BaseModel):
     providers: list[ProviderHealth]
     provider_errors: dict[str, str]
     network_enabled: bool
+    freshness_limits_s: dict[str, float]
 
 
 health_router = APIRouter(tags=["health"])
@@ -78,6 +79,13 @@ async def health(settings: SettingsDep) -> Any:
         providers=providers,
         provider_errors=errors,
         network_enabled=settings.allow_network,
+        # The UI must mark data stale at the same limits the backend uses;
+        # hardcoding them in the dashboard would let the two drift apart.
+        freshness_limits_s={
+            "observation": settings.max_observation_age_s,
+            "forecast": settings.max_forecast_age_s,
+            "gps": settings.max_gps_age_s,
+        },
     )
 
 

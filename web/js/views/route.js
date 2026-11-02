@@ -43,6 +43,7 @@ export function create(root) {
       const sd = startDistance();
       start.disabled = sd.source === "state";
       if (sd.source === "state") start.value = String(Math.round(sd.m / 100) / 10);
+      start.placeholder = sd.source === "projection" ? `projected ${Math.round(sd.m / 100) / 10}` : "km";
       const sig = signature(KEYS, session.speedKmh + "|" + session.routeHours + "|" + sd.source + sd.m);
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
@@ -73,10 +74,11 @@ function layout(charts) {
   const byDist = new Map(samples.map((s, k) => [Math.round(s.trajectory_point?.distance_m ?? -1), k]));
   const sampleIdx = (p, i) => (byDist.has(Math.round(p.distance_m)) ? byDist.get(Math.round(p.distance_m)) : samples.length === t.points.length ? i : -1);
   const sampleFor = (p, i) => { const k = sampleIdx(p, i); return k >= 0 ? samples[k] : null; };
-  const localFromApi = (p, i) => { const k = sampleIdx(p, i); const l = k >= 0 ? rw.data?.local_arrival_times?.[k] : null; return l ? `${l.slice(0, 10)} ${l.slice(11, 16)} (UTC${l.slice(19) || ""})` : null; };
+  const localFromApi = (p, i) => { const k = sampleIdx(p, i); const l = k >= 0 ? rw.data?.local_arrival_times?.[k] : null; if (!l) return null; const off = (/([+-]\d\d:\d\d|Z)$/.exec(l) || [])[1] || ""; return `${l.slice(0, 10)} ${l.slice(11, 16)} (UTC${off === "Z" ? "+00:00" : off})`; };
+  const gradeKnown = t.assumptions?.grade_known !== false;
 
   const ass = Object.entries(t.assumptions || {});
-  wrap.append(panel("Trajectory summary", h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr" } },
+  wrap.append(panel("Trajectory summary", h("div", { class: "grid", style: { gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)" } },
     kv([
       ["Points", `${t.points.length}`],
       ["Start", t.points.length ? h("span", null, fmtNum(t.points[0].distance_m / 1000, 1) + " km, ", fmtUtc(t.points[0].eta_utc)) : DASH],
@@ -84,7 +86,10 @@ function layout(charts) {
       ["Generated", ageSpan(t.generated_at_utc)],
       ["Speed", h("span", null, numCell(session.speedKmh, "km/h", { digits: 0 }), " ", chip("OPERATOR PARAMETER", "mute", "Assumed speed passed to the API; not a measurement or a recommendation"))],
     ], "tight"),
-    kv(ass.length ? ass.map(([k, v]) => [k.replace(/_/g, " "), String(v)]) : [["Assumptions", textCell(null, "API reported none")]], "tight")),
+    h("div", null,
+      (() => { const w = ass.filter(([k, v]) => v === false && /(enforced|known|verified|applied)$/.test(k)); return w.length ? h("div", { class: "note warn", style: { marginBottom: "4px" } }, "Not applied / not known: " + w.map(([k]) => k.replace(/_/g, " ")).join("; ")) : null; })(),
+      ass.length ? h("details", null, h("summary", null, `Trajectory assumptions reported by the API (${ass.length})`),
+        kv(ass.map(([k, v]) => [k.replace(/_/g, " "), h("span", { style: { whiteSpace: "normal" } }, String(v))]), "tight")) : textCell(null, "API reported no assumptions"))),
     { footer: provFooter(t.provenance), right: [kindChip(t.provenance?.kind || "derived")] }));
 
   // ---- table
@@ -94,7 +99,7 @@ function layout(charts) {
     { h: "ETA local", title: "Rows with forecast: local time at that route point as computed by the API (UTC offset shown). Rows without: local time in the vehicle's CURRENT timezone (" + (tz || "unknown") + "), marked with *.", cell: (p, i) => { const l = localFromApi(p, i); if (l) return l; return tz ? h("span", { class: "faint", title: "Vehicle's current timezone, not computed at this point" }, fmtLocal(p.eta_utc, tz) + " *") : textCell(null, "no timezone"); } },
     { h: "ETA UTC", cell: (p) => fmtUtc(p.eta_utc) },
     { h: "Speed (km/h)", cls: "r", cell: (p) => numCell(p.speed_mps * 3.6, "km/h", { digits: 0 }) },
-    { h: "Grade (%)", cls: "r", cell: (p) => numCell(p.grade * 100, "%", { digits: 1 }) },
+    { h: "Grade (%)", cls: "r", title: "Road gradient. Shown as unknown when the API says grade_known = false (0.0 would mean flat, which is not known).", cell: (p) => (gradeKnown ? numCell(p.grade * 100, "%", { digits: 1 }) : textCell(null, "unknown")) },
     { h: "Waypoint", cell: (p) => (p.waypoint ? h("span", null, p.waypoint.kind === "control_stop" ? chip("STOP", "watch") : "", " ", p.waypoint.name || p.waypoint.kind) : "") },
     { h: "Temp (°C)", cls: "r", cell: (p, i) => (sampleFor(p, i) ? wx(sampleFor(p, i), "temperature_2m") : textCell(null, "not sampled", "The API samples a limited number of points inside the forecast horizon")) },
     { h: "Wind (m/s)", cls: "r", cell: (p, i) => wx(sampleFor(p, i), "wind_speed_10m") },

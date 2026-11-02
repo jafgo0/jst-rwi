@@ -242,3 +242,51 @@ def test_health_is_degraded_when_a_module_is_missing(
     body = client.get("/api/health").json()
     assert body["status"] == "degraded"
     assert not any(body["capabilities"].values())
+
+
+def test_health_publishes_the_freshness_limits_the_ui_must_use(client: TestClient) -> None:
+    """The dashboard marks data stale; if it hardcoded the limits they would
+    drift away from the backend's. So the backend publishes them."""
+    limits = client.get("/api/health").json()["freshness_limits_s"]
+    assert set(limits) == {"observation", "forecast", "gps"}
+    assert all(isinstance(v, (int, float)) and v > 0 for v in limits.values())
+    # An observation may never be considered fresh for longer than a forecast.
+    assert limits["observation"] <= limits["forecast"]
+    assert limits["gps"] < limits["observation"]
+
+
+def test_observable_variables_are_advertised_rather_than_guessed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A client must be able to ask what is MEASURED, instead of requesting a
+    variable and discovering by 501 that nobody measures it."""
+
+    class _Capabilities:
+        supports_observations = True
+        variables = frozenset({"temperature_2m", "wind_speed_10m"})
+
+    class _Measuring:
+        capabilities = _Capabilities()
+
+    class _ModelOnly:
+        class capabilities:
+            supports_observations = False
+            variables = frozenset({"ghi"})
+
+    import types
+
+    stub = types.ModuleType("rwi.providers.registry")
+    stub.available_providers = lambda _settings: {  # type: ignore[attr-defined]
+        "measuring": _Measuring(),
+        "model-only": _ModelOnly(),
+    }
+    real_import = capability._try_import
+
+    def _patched(module_name: str) -> Any:
+        return stub if module_name == "rwi.providers.registry" else real_import(module_name)
+
+    monkeypatch.setattr(capability, "_try_import", _patched)
+    body = client.get("/api/weather/observable").json()
+    # A provider that only models anything is absent, not listed with an empty set.
+    assert set(body) == {"measuring"}
+    assert body["measuring"] == ["temperature_2m", "wind_speed_10m"]
