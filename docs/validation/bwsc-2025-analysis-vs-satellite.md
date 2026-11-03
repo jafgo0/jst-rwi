@@ -104,6 +104,28 @@ absolute bias at any one point reaches 15-25 W/m^2.
   expose a stable scriptable URL; a one-off manual CSV download is the
   honest next step.
 
+## A fourth product worth adding: MERRA-2
+
+NASA's own reanalysis is MERRA-2 (GEOS-5 model, GMAO data assimilation),
+independent of ECMWF. The relevant collection is
+``C1276812851-GES_DISC`` (``M2T1NXRAD``, 1-hourly, 0.625 x 0.5 deg) and
+the variable is ``SWGDN`` (surface incoming shortwave flux). Found via
+the NASA Earthdata CMR MCP server at ``https://cmr.earthdata.nasa.gov/mcp/v1``.
+
+Access requires a NASA Earthdata login (free account at
+urs.earthdata.nasa.gov) and the ``earthaccess`` Python library:
+
+```bash
+# one-time setup on this machine
+pip install earthaccess
+python -c "import earthaccess; earthaccess.login(persist=True)"
+# then this script's _merra2_hourly_ghi helper can be filled in
+```
+
+Adding MERRA-2 would turn the triangulation into a quadrilateral and
+isolate whether the ECMWF-POWER mean agreement at Alice Springs is
+really a model bias or just two gridded products agreeing by chance.
+
 ## What is now in the repo
 
 `scripts/validation/bwsc_2025_analysis_vs_satellite.py` runs the whole
