@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
+from rwi.api.array_config import get_active_array
 from rwi.api.capability import require_attr
 from rwi.contracts import IrradianceComponents, SolarPosition, WeatherSeries
 from rwi.core.geo import GeoPoint
@@ -141,7 +142,7 @@ def power_estimates_from_forecast(
     than hiding them.
     """
     power_series: Any = require_attr("rwi.energy.series", "power_series", capability="PV model")
-    default_array: Any = require_attr("rwi.energy.array", "DEFAULT_ARRAY", capability="PV model")
+    default_array: Any = get_active_array()
     chosen = array if array is not None else default_array
 
     times = [step.valid_time_utc for step in series.steps]
@@ -276,7 +277,7 @@ def power_estimates_along_trajectory(
     the generation estimate follows the vehicle rather than a fixed location.
     """
     power_series: Any = require_attr("rwi.energy.series", "power_series", capability="PV model")
-    default_array: Any = require_attr("rwi.energy.array", "DEFAULT_ARRAY", capability="PV model")
+    default_array: Any = get_active_array()
     chosen = array if array is not None else default_array
 
     notes: list[str] = []

@@ -6,8 +6,9 @@ from datetime import timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from rwi.api.array_config import get_active_array
 from rwi.api.capability import require_attr
 from rwi.api.deps import LatQuery, LonQuery, resolve_point
 from rwi.api.integration import (
@@ -39,11 +40,79 @@ class EnergyForecastResponse(BaseModel):
     weather_retrieved_at_utc: Any
 
 
-@router.get("/array")
-async def read_array_config() -> ArrayConfig:
-    """The array parameters in use. `parameter_source` says whether they are
-    measured or assumed - the UI must show that."""
-    return require_attr("rwi.energy.array", "DEFAULT_ARRAY", capability="PV model")
+class ArrayConfigResponse(BaseModel):
+    """ArrayConfig fields plus a safe summary of the angular response matrix.
+
+    The matrix itself is 180 x 45 x N floats and does not belong in a JSON
+    payload the dashboard polls. The summary tells a consumer whether per-cell
+    geometry is applied, how it was obtained, and what its range is.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    area_m2: float
+    cell_efficiency_stc: float
+    temperature_coefficient_pmax_per_c: float
+    mppt_efficiency: float
+    wiring_efficiency: float
+    mounting: str
+    surface_tilt_deg: float
+    surface_azimuth_deg: float | None
+    noct_c: float
+    albedo: float
+    parameter_source: str
+    source_notes: str | None
+    angular_response: dict[str, Any] | None = Field(
+        description="None if no per-cell geometry is applied (flat-plane model). "
+        "Otherwise: {name, source, cell_count, mean, min, max, notes}."
+    )
+
+
+def _summarise_angular(response: Any) -> dict[str, Any] | None:
+    if response is None:
+        return None
+    from rwi.energy.angular import AngularResponseTable
+
+    if not isinstance(response, AngularResponseTable):
+        return {"name": "unknown", "source": "unknown",
+                "note": "non-AngularResponseTable value ignored by the model"}
+    arr = response.values
+    return {
+        "name": response.name,
+        "source": response.source,
+        "is_measured": response.is_measured,
+        "cell_count": response.cell_count,
+        "shape": list(arr.shape),
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "notes": response.notes,
+    }
+
+
+@router.get("/array", response_model=ArrayConfigResponse)
+async def read_array_config() -> Any:
+    """The array parameters in use. ``parameter_source`` says whether they are
+    measured or assumed; ``angular_response`` summarises the per-cell matrix
+    if one is configured, without shipping the whole 180x45xN array."""
+    array = get_active_array()
+    return ArrayConfigResponse(
+        name=array.name,
+        area_m2=array.area_m2,
+        cell_efficiency_stc=array.cell_efficiency_stc,
+        temperature_coefficient_pmax_per_c=array.temperature_coefficient_pmax_per_c,
+        mppt_efficiency=array.mppt_efficiency,
+        wiring_efficiency=array.wiring_efficiency,
+        mounting=array.mounting,
+        surface_tilt_deg=array.surface_tilt_deg,
+        surface_azimuth_deg=array.surface_azimuth_deg,
+        noct_c=array.noct_c,
+        albedo=array.albedo,
+        parameter_source=array.parameter_source,
+        source_notes=array.source_notes,
+        angular_response=_summarise_angular(array.angular_response),
+    )
 
 
 @router.get("/forecast", response_model=EnergyForecastResponse)
@@ -80,7 +149,7 @@ async def read_energy_forecast(
     return EnergyForecastResponse(
         estimates=estimates,
         energy=energy,
-        array=require_attr("rwi.energy.array", "DEFAULT_ARRAY", capability="PV model"),
+        array=get_active_array(),
         notes=notes,
         weather_provider=series.provider,
         weather_kind=series.kind,

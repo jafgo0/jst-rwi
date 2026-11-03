@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     #: refuses to attach a bad elevation. The known Adelaide approach
     #: disagreement is about 2 km, which 3000 m clears.
     team_elevation_max_match_m: float = 3000.0
+
+    # Per-cell angular response matrix from the team's shadow-analysis.
+    # Points at a local copy of their efficiency_matrix.mat; leaving it at
+    # None means DEFAULT_ARRAY stays flat-plane (which overestimates DC power
+    # by ~2.5x at full sun on a cambered vehicle body, see
+    # docs/validation/first-pv-validation.md).
+    team_shadow_matrix: Path | None = None
     cache_ttl_forecast_s: float = 900.0
     cache_ttl_observation_s: float = 300.0
 
