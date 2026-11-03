@@ -26,6 +26,10 @@ dependencies = [
   "pyproj>=3.7",
   "timezonefinder>=6.5",
   "gpxpy>=1.6",
+  # NASA Earthdata (CMR search, EDL authentication, HTTPS and S3 downloads).
+  # Used by scripts/validation/ to pull MERRA-2 and SatCORPS Himawari-9
+  # cloud/radiation granules; no runtime path imports it.
+  "earthaccess>=0.19",
 ]
 
 [project.optional-dependencies]
