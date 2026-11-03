@@ -1296,7 +1296,7 @@ class TelemetryReader(Protocol):
 
     source: TelemetrySource
 
-    async def stream(self) -> AsyncIterator[VehicleTelemetrySample]: ...
+    def stream(self) -> AsyncIterator[VehicleTelemetrySample]: ...
 
     async def gaps_so_far(self) -> list[TelemetryGap]:
         """Gaps the reader has detected up to now."""

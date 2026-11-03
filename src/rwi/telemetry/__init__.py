@@ -20,6 +20,11 @@ reads a stream, applies freshness and quality rules, and feeds StateStore;
 that way a bug in a reader cannot silently drive the car on screen.
 """
 
+from rwi.telemetry.coordinator import (
+    CoordinatorStats,
+    TelemetryCoordinator,
+    run_once,
+)
 from rwi.telemetry.csv_replay import CsvReplayReader, ReplayConfig, ReplayError
 from rwi.telemetry.frames import (
     KNOWN_FRAMES,
@@ -33,9 +38,12 @@ __all__ = [
     "KNOWN_FRAMES",
     "UNMAPPED",
     "ColumnMap",
+    "CoordinatorStats",
     "CsvReplayReader",
     "FrameSpec",
     "ReplayConfig",
     "ReplayError",
     "SignalKind",
+    "TelemetryCoordinator",
+    "run_once",
 ]
