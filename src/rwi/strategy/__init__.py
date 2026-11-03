@@ -11,6 +11,7 @@ from __future__ import annotations
 from rwi.strategy.scenarios import (
     MEDIUM_CONFIDENCE_MARGIN_PP,
     SAFETY_NOTES,
+    ScenarioEnsembleResult,
     ScenarioSensitivity,
     ScenarioSpec,
     SpeedOptimisation,
@@ -19,6 +20,7 @@ from rwi.strategy.scenarios import (
     evaluate_scenario,
     optimal_constant_speed,
     recommend,
+    scenario_cvar,
     scenario_sensitivity,
     standard_candidates,
     weather_aware_profile,
@@ -36,6 +38,7 @@ from rwi.strategy.segments import (
 __all__ = [
     "MEDIUM_CONFIDENCE_MARGIN_PP",
     "SAFETY_NOTES",
+    "ScenarioEnsembleResult",
     "ScenarioSensitivity",
     "ScenarioSpec",
     "SegmentConditions",
@@ -48,6 +51,7 @@ __all__ = [
     "recommend",
     "scale_generation",
     "scale_wind",
+    "scenario_cvar",
     "scenario_sensitivity",
     "segments_from_distance",
     "segments_from_trajectory",

@@ -93,6 +93,7 @@ from rwi.vehicle.battery import (
 from rwi.vehicle.dynamics import RegenerationPolicy, consumption
 
 __all__ = [
+    "ScenarioEnsembleResult",
     "ScenarioSensitivity",
     "ScenarioSpec",
     "SpeedOptimisation",
@@ -101,6 +102,7 @@ __all__ = [
     "evaluate_scenario",
     "optimal_constant_speed",
     "recommend",
+    "scenario_cvar",
     "scenario_sensitivity",
     "standard_candidates",
     "weather_aware_profile",
@@ -181,6 +183,43 @@ class ScenarioSensitivity(BaseModel):
     @property
     def end_soc_span(self) -> tuple[float, float]:
         return (self.pessimistic.end_soc_fraction, self.optimistic.end_soc_fraction)
+
+
+class ScenarioEnsembleResult(BaseModel):
+    """Scenario evaluated against a stack of ensemble member realisations.
+
+    The team's own simulator (drive-system/.../python/simulation/robust_objective.py
+    at :149) runs the scenario against several weather realisations and uses the
+    upper CVaR as the objective to minimise. That is the right principle for a
+    solar car - a strategy that wins on the median forecast and loses on the
+    bad quartile is not a strategy you can race on - but their realisations are
+    perturbations of a single point forecast. We have real ECMWF ensemble
+    members in rwi.ensemble; running the scenario against them is honest in a
+    way a perturbation is not.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    member_results: list[ScenarioResult]
+    """One ScenarioResult per ensemble member fed through the model."""
+    objective: Literal["net_energy_wh", "travel_time_s"] = Field(
+        description="which quantity is treated as the loss (lower is worse)"
+    )
+    alpha: float = Field(
+        gt=0.0, lt=1.0,
+        description="worst-quartile fraction, usually 0.25; CVaR_alpha is the mean of "
+                    "the alpha worst outcomes",
+    )
+    cvar_value: float = Field(
+        description="mean of the loss over the worst alpha fraction of members "
+                    "(lower is worse than cvar_median)"
+    )
+    median_value: float
+    best_value: float
+    worst_value: float
+    member_count: int = Field(ge=1)
+    feasible_count: int = Field(ge=0)
+    method_note: str = _UNCERTAINTY_METHOD_NOTE
 
 
 class SpeedOptimisation(BaseModel):
@@ -847,6 +886,132 @@ def scenario_sensitivity(
         optimistic=optimistic,
         uncertainty_fraction=uncertainty_fraction,
     )
+
+
+def scenario_cvar(
+    *,
+    segments: Sequence[SegmentConditions],
+    ghi_members_w_m2: Sequence[Sequence[float]] | None = None,
+    wind_members_mps: Sequence[Sequence[float]] | None = None,
+    alpha: float = 0.25,
+    objective: Literal["net_energy_wh", "travel_time_s"] = "net_energy_wh",
+    **kwargs: Any,
+) -> ScenarioEnsembleResult:
+    """Evaluate a scenario against ensemble members and report its CVaR.
+
+    This is the principle the team's own simulator uses: a strategy that wins on
+    the median forecast and fails on the bad quartile has not actually won.
+    CVaR (conditional value at risk) at level ``alpha`` is the mean of the
+    worst ``alpha`` fraction of outcomes. A plan whose median net energy is
+    +600 Wh but whose CVaR_0.25 is -800 Wh is a plan with a tail that must be
+    priced in.
+
+    The members are supplied as per-segment arrays, one row per ensemble
+    member. If both ``ghi_members_w_m2`` and ``wind_members_mps`` are None, the
+    function raises - a single realisation gives no CVaR information and the
+    caller probably meant :func:`scenario_sensitivity`.
+
+    This function returns the member results so a caller can show the fan, not
+    just the single number.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must be in (0, 1)")
+    if ghi_members_w_m2 is None and wind_members_mps is None:
+        raise ValueError(
+            "scenario_cvar needs at least one of ghi_members_w_m2 or wind_members_mps; "
+            "with a single realisation use scenario_sensitivity instead"
+        )
+
+    # Normalise to a common member count.
+    sources = [m for m in (ghi_members_w_m2, wind_members_mps) if m is not None]
+    counts = {len(m) for m in sources}
+    if len(counts) != 1:
+        raise ValueError(
+            f"ensemble member counts disagree: {sorted(counts)} - supply the same "
+            "number of members for every variable"
+        )
+    member_count = counts.pop()
+    if member_count < 2:
+        raise ValueError("need at least 2 ensemble members to compute a CVaR")
+
+    seg_count = len(segments)
+    for name, arrays in (
+        ("ghi_members_w_m2", ghi_members_w_m2),
+        ("wind_members_mps", wind_members_mps),
+    ):
+        if arrays is None:
+            continue
+        for i, row in enumerate(arrays):
+            if len(row) != seg_count:
+                raise ValueError(
+                    f"{name}[{i}] has {len(row)} segments but there are {seg_count}; "
+                    "each member must cover every segment"
+                )
+
+    member_results: list[ScenarioResult] = []
+    for member in range(member_count):
+        per_segment = []
+        for seg_idx, seg in enumerate(segments):
+            overrides: dict[str, Any] = {}
+            if ghi_members_w_m2 is not None:
+                # Rescale generation by this member's GHI relative to the segment's own.
+                ratio = _generation_scale(seg, ghi_members_w_m2[member][seg_idx])
+                if ratio is not None and seg.generation_w is not None:
+                    overrides["generation_w"] = seg.generation_w * ratio
+                elif ratio is not None and seg.generation_wh is not None:
+                    overrides["generation_wh"] = seg.generation_wh * ratio
+            if wind_members_mps is not None:
+                overrides["wind_speed_mps"] = float(wind_members_mps[member][seg_idx])
+            per_segment.append(seg.model_copy(update=overrides) if overrides else seg)
+        result = evaluate_scenario(
+            segments=per_segment,
+            uncertainty_fraction=0.0,
+            case=f"ensemble_member_{member}",
+            name=f"ensemble member {member}",
+            description="ensemble CVaR evaluation",
+            **kwargs,
+        )
+        member_results.append(result)
+
+    def _loss(r: ScenarioResult) -> float:
+        if objective == "net_energy_wh":
+            return -r.net_energy_wh  # lower is worse -> loss is -net_energy
+        return r.travel_time_s
+
+    losses = sorted(_loss(r) for r in member_results)
+    k = max(1, round(len(losses) * alpha))
+    worst_losses = losses[-k:]
+    cvar_loss = sum(worst_losses) / len(worst_losses)
+    median_loss = losses[len(losses) // 2]
+
+    def _back(x: float) -> float:
+        return -x if objective == "net_energy_wh" else x
+
+    return ScenarioEnsembleResult(
+        member_results=member_results,
+        objective=objective,
+        alpha=alpha,
+        cvar_value=_back(cvar_loss),
+        median_value=_back(median_loss),
+        best_value=_back(losses[0]),
+        worst_value=_back(losses[-1]),
+        member_count=member_count,
+        feasible_count=sum(1 for r in member_results if r.feasible),
+    )
+
+
+def _generation_scale(seg: SegmentConditions, member_ghi_w_m2: float) -> float | None:
+    """Multiplicative factor to rescale a segment's generation by a member GHI.
+
+    Uses :func:`generation_index` as the reference GHI if generation_w was
+    directly supplied; otherwise returns None and leaves generation untouched.
+    This is a first-order approximation that treats array power as linear in
+    GHI (which it approximately is away from the clear-sky limit).
+    """
+    reference = generation_index(seg)
+    if reference is None or reference == 0.0:
+        return None
+    return float(member_ghi_w_m2) / float(reference)
 
 
 # ---------------------------------------------------------------------------
