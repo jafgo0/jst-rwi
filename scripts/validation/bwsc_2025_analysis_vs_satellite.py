@@ -60,6 +60,52 @@ def _fetch(url: str) -> dict:
         return json.loads(resp.read())
 
 
+def _silo_daily_ghi_w_m2(point: GeoPoint) -> dict[str, float]:
+    """BoM-anchored daily global horizontal irradiance from SILO.
+
+    SILO (Queensland Government, longpaddock.qld.gov.au) is a gridded
+    product interpolated from BoM station observations and satellite.
+    For most of Australia the solar grid is anchored on BoM measurements
+    with a satellite fallback; the 'dataset' field in the response says
+    which. Not raw station data, but the closest scriptable BoM source
+    we have.
+
+    Returns a mapping ISO-date (YYYY-MM-DD) -> daily mean W/m^2.
+    SILO reports radiation in MJ/m^2/day; the conversion to a 24-hour
+    mean W/m^2 is value * 1e6 / 86400 = value * 11.574.
+    """
+    params = {
+        "lat": f"{point.latitude_deg:.4f}",
+        "lon": f"{point.longitude_deg:.4f}",
+        "start": RACE_START.date().strftime("%Y%m%d"),
+        "finish": RACE_END.date().strftime("%Y%m%d"),
+        "format": "json",
+        "username": "api@longpaddock.qld.gov.au",  # SILO's documented anonymous account
+        "password": "apirequest",
+        "comment": "J",  # J = daily global solar exposure, MJ/m^2
+    }
+    url = (
+        "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php?"
+        + urllib.parse.urlencode(params)
+    )
+    payload = _fetch(url)
+    out: dict[str, float] = {}
+    for row in payload.get("data", []):
+        for var in row.get("variables", []):
+            if var.get("variable_code") == "radiation" and var.get("value") is not None:
+                out[row["date"]] = float(var["value"]) * 1e6 / 86400.0
+                break
+    return out
+
+
+def _daily_mean_w_m2(hourly: dict[datetime, float]) -> dict[str, float]:
+    """Collapse an hourly W/m^2 series into daily means keyed by ISO date."""
+    by_day: dict[str, list[float]] = {}
+    for when, val in hourly.items():
+        by_day.setdefault(when.date().isoformat(), []).append(val)
+    return {day: sum(vs) / len(vs) for day, vs in by_day.items() if vs}
+
+
 def _ecmwf_archive_ghi(point: GeoPoint) -> dict[datetime, float]:
     """Hourly GHI from Open-Meteo's ECMWF-IFS archive at the given point."""
     params = {
@@ -198,6 +244,28 @@ def main() -> None:
     print()
     print("=== POOLED (all route points) ===")
     _row("all points", all_pairs)
+
+    print()
+    print("=== TRIANGULATION: daily mean against SILO (BoM-anchored) ===")
+    print(
+        f"  {'point':14s}  {'ECMWF':>7s}  {'NASA':>7s}  {'SILO':>7s}  "
+        f"{'E-S':>6s}  {'N-S':>6s}"
+    )
+    for name, point in ROUTE_POINTS:
+        ecmwf_daily = _daily_mean_w_m2(_ecmwf_archive_ghi(point))
+        nasa_daily = _daily_mean_w_m2(_nasa_power_ghi(point))
+        silo_daily = _silo_daily_ghi_w_m2(point)
+        days = sorted(set(ecmwf_daily) & set(nasa_daily) & set(silo_daily))
+        if not days:
+            print(f"  {name:14s}  no overlap")
+            continue
+        e = sum(ecmwf_daily[d] for d in days) / len(days)
+        n = sum(nasa_daily[d] for d in days) / len(days)
+        s = sum(silo_daily[d] for d in days) / len(days)
+        print(
+            f"  {name:14s}  {e:7.1f}  {n:7.1f}  {s:7.1f}  "
+            f"{e - s:>+6.1f}  {n - s:>+6.1f}"
+        )
 
 
 if __name__ == "__main__":
