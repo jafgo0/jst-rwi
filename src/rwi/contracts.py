@@ -16,7 +16,7 @@ Conventions that apply to everything here:
 from __future__ import annotations
 
 import bisect
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from enum import StrEnum
 from itertools import pairwise
@@ -25,6 +25,7 @@ from typing import Literal, Protocol, Self, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rwi.core.geo import GeoPoint
+from rwi.core.position import PositionFix
 from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag, Uncertainty
 from rwi.core.timebase import TimeWindow, ensure_utc
 from rwi.core.wind import RelativeWind
@@ -1146,12 +1147,172 @@ class IrradianceNowcast(BaseModel):
         return self
 
 
+# ---------------------------------------------------------------------------
+# Vehicle telemetry (phase 3)
+#
+# The team already produces live telemetry over CAN -> sub-GHz radio -> pit
+# laptop -> MongoDB (drive-system/.../telemetry/). This platform does not
+# redefine any of that. These types are the ingest contract: whatever reader
+# we write - MongoDB adapter, logfile replay, future UDP listener - produces
+# values of these shapes, and the rest of the platform does not care which.
+#
+# Rules the types enforce:
+#   * every sample carries a timestamp from the vehicle, not from "now";
+#   * state of charge is reported as the ESTIMATE a BMS gave, not re-derived
+#     from a model, so a model vs. measurement comparison is possible;
+#   * array power from the MPPTs is a MEASUREMENT (DataKind.OBSERVATION),
+#     unlike anything the weather and solar modules can give us;
+#   * speed, position and heading come from the vehicle's own sensors, which
+#     the StateStore prefers over operator-entered manual fixes.
+# ---------------------------------------------------------------------------
+
+
+class TelemetrySource(StrEnum):
+    LIVE_RADIO = "live_radio"
+    """Sub-GHz radio from the car, arriving within seconds."""
+    LIVE_CELLULAR = "live_cellular"
+    """Cellular backup link (where coverage exists)."""
+    MONGO_REPLAY = "mongo_replay"
+    """Replayed from the team's MongoDB collection; the receive time stays the
+    vehicle time, not the replay time."""
+    FILE_REPLAY = "file_replay"
+    """Replayed from a logfile (ndjson, csv, mcap). Same rule: times are the
+    vehicle's own."""
+    SIMULATED = "simulated"
+    """Produced by rwi.simulation; a consumer that must know whether it is
+    looking at real driving can tell from this field."""
+
+
+class BatteryTelemetry(BaseModel):
+    """One sample of the pack as the BMS reports it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time_utc: datetime
+    state_of_charge_fraction: float | None = Field(default=None, ge=0.0, le=1.0,
+        description="BMS estimate, 0..1. None when the BMS has not published one yet.")
+    pack_voltage_v: float | None = Field(default=None, ge=0.0, le=200.0)
+    pack_current_a: float | None = Field(
+        default=None, description="positive = discharging, negative = charging"
+    )
+    pack_power_w: float | None = None
+    pack_energy_wh: float | None = Field(default=None, ge=0.0,
+        description="energy in the pack right now, when the BMS reports it")
+    min_cell_voltage_v: float | None = None
+    max_cell_voltage_v: float | None = None
+    min_cell_temperature_c: float | None = None
+    max_cell_temperature_c: float | None = None
+    provenance: Provenance
+
+
+class ArrayTelemetry(BaseModel):
+    """What the MPPTs actually delivered. This is the measurement the entire
+    PV model has been waiting to be validated against."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time_utc: datetime
+    total_power_w: float | None = Field(default=None, ge=0.0,
+        description="sum across all MPPTs, if reported")
+    per_group_power_w: dict[str, float] = Field(default_factory=dict,
+        description="power per MPPT group; keys match ArrayConfig cell groups")
+    bus_voltage_v: float | None = None
+    cell_temperature_c: float | None = Field(default=None,
+        description="measured on-array temperature sensor, if present")
+    provenance: Provenance
+
+
+class MotorTelemetry(BaseModel):
+    """Drivetrain power draw and vehicle speed as the motor controller sees it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time_utc: datetime
+    speed_mps: float | None = Field(default=None, ge=0.0,
+        description="vehicle ground speed from the motor controller / wheel sensor")
+    bus_power_w: float | None = Field(default=None,
+        description="power draw from the bus; negative = regen if the car has it")
+    motor_current_a: float | None = None
+    motor_rpm: float | None = None
+    provenance: Provenance
+
+
+class VehicleTelemetrySample(BaseModel):
+    """A unified vehicle sample built from one or more subsystem frames.
+
+    Fields are all optional because the CAN frames arrive asynchronously and
+    one radio burst usually does not carry everything at once. The reader is
+    responsible for stitching contemporaneous frames into one sample; the
+    stitching window is recorded in ``aggregation_window_s``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    time_utc: datetime = Field(description="the vehicle's own clock, not the receiver's")
+    source: TelemetrySource
+    position: PositionFix | None = None
+    battery: BatteryTelemetry | None = None
+    array: ArrayTelemetry | None = None
+    motor: MotorTelemetry | None = None
+    aggregation_window_s: float | None = Field(default=None, ge=0.0,
+        description="width of the window used to stitch sub-frames into this sample")
+    provenance: Provenance
+
+
+class TelemetryGap(BaseModel):
+    """A period during which no telemetry was received.
+
+    Gaps are information. A silent reader that just "catches up" when data
+    arrives again hides from the strategist that the car was out of radio
+    coverage for ten minutes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    start_utc: datetime
+    end_utc: datetime
+    expected_cadence_s: float = Field(gt=0.0,
+        description="what cadence the source normally delivers")
+    missing_samples_estimate: int = Field(ge=0)
+    reason: str | None = Field(default=None,
+        description="e.g. 'radio dropout', 'MongoDB connection lost', 'end of file'")
+
+    @property
+    def duration_s(self) -> float:
+        return (self.end_utc - self.start_utc).total_seconds()
+
+
+@runtime_checkable
+class TelemetryReader(Protocol):
+    """A source of VehicleTelemetrySample objects.
+
+    Implementations: rwi.telemetry.mongo.MongoReader (team's live MongoDB),
+    rwi.telemetry.replay.FileReader (ndjson / csv logfile), and later a UDP
+    or websocket live reader.
+
+    The reader does NOT advance the active position by itself. It yields
+    samples; a coordinator decides whether to feed them to StateStore.
+    """
+
+    source: TelemetrySource
+
+    async def stream(self) -> AsyncIterator[VehicleTelemetrySample]: ...
+
+    async def gaps_so_far(self) -> list[TelemetryGap]:
+        """Gaps the reader has detected up to now."""
+        ...
+
+    async def close(self) -> None: ...
+
+
 __all__ = [
     "Alert",
     "AlertCategory",
     "AlertSeverity",
     "ArchiveRecordKind",
     "ArrayConfig",
+    "ArrayTelemetry",
+    "BatteryTelemetry",
     "CloudMotion",
     "ConsumptionEstimate",
     "EnergyEstimate",
@@ -1164,6 +1325,7 @@ __all__ = [
     "IrradianceNowcast",
     "ModelComparison",
     "ModelDisagreement",
+    "MotorTelemetry",
     "POAIrradiance",
     "ParameterSource",
     "PowerEstimate",
@@ -1181,9 +1343,13 @@ __all__ = [
     "ScenarioResult",
     "SolarDayEvents",
     "SolarPosition",
+    "TelemetryGap",
+    "TelemetryReader",
+    "TelemetrySource",
     "Trajectory",
     "TrajectoryPoint",
     "VehicleConfig",
+    "VehicleTelemetrySample",
     "VerificationReport",
     "VerificationScore",
     "WaypointKind",

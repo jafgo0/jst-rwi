@@ -28,6 +28,7 @@ _CAPABILITY_MODULES: dict[str, tuple[str, ...]] = {
     "fusion": ("rwi.fusion",),
     "capture": ("rwi.capture",),
     "satellite": ("rwi.satellite.source", "rwi.satellite.scene"),
+    "telemetry": ("rwi.telemetry",),
 }
 
 
