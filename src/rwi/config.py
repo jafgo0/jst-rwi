@@ -33,6 +33,17 @@ class Settings(BaseSettings):
 
     # Caching
     cache_dir: Path = Field(default=Path("data/cache"))
+
+    # Route elevation enrichment. Points at an operator-local copy of
+    # JU Solar Team's wsc_race_data.csv. The platform does not bundle it;
+    # leaving the path at None means the loaded route carries no elevation,
+    # which rwi.route.geometry.grade_at_distance already handles honestly
+    # (returns 0.0 and says "unknown", not "flat").
+    team_elevation_csv: Path | None = None
+    #: How far a waypoint may be from the nearest team row before enrichment
+    #: refuses to attach a bad elevation. The known Adelaide approach
+    #: disagreement is about 2 km, which 3000 m clears.
+    team_elevation_max_match_m: float = 3000.0
     cache_ttl_forecast_s: float = 900.0
     cache_ttl_observation_s: float = 300.0
 

@@ -60,11 +60,28 @@ LonQuery = Query(ge=-180.0, le=180.0, description="degrees east, WGS84")
 
 
 class RouteRepository:
-    """Loads route files from disk once, through the route module."""
+    """Loads route files from disk once, through the route module.
 
-    def __init__(self, directory: Path) -> None:
+    When ``team_elevation_csv`` is set (via Settings), every loaded route is
+    enriched with the team's elevation data. Enrichment failures (file missing,
+    schema changed, a waypoint beyond the match tolerance) are logged and the
+    original un-enriched route is served - a bad path to the team CSV must not
+    stop the dashboard from loading, but it must not silently claim elevation
+    either.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        team_elevation_csv: Path | None = None,
+        team_elevation_max_match_m: float = 3000.0,
+    ) -> None:
         self.directory = directory
+        self._team_elevation_csv = team_elevation_csv
+        self._team_elevation_max_match_m = team_elevation_max_match_m
         self._routes: dict[str, Route] | None = None
+        self._elevation_status: str = "not attempted"
 
     def _load(self) -> dict[str, Route]:
         """Load every route file, preferring the BWSC loader where it applies.
@@ -99,7 +116,52 @@ class RouteRepository:
                     )
             except (RouteError, OSError, ValueError):
                 continue
-        return routes
+        return self._enrich_all(routes)
+
+    def _enrich_all(self, routes: dict[str, Route]) -> dict[str, Route]:
+        """Attach team elevation to every loaded route, honestly.
+
+        A missing path means the operator hasn't configured one and we leave
+        routes as they are. A broken enrichment means the file was configured
+        and is bad - that is worth a log line and a status, but it must not
+        stop the dashboard. The un-enriched route is served and
+        ``_elevation_status`` records what happened.
+        """
+        if self._team_elevation_csv is None:
+            self._elevation_status = "not configured"
+            return routes
+        try:
+            from rwi.route.elevation import enrich_with_team_elevation
+        except ImportError as exc:
+            self._elevation_status = f"import failed: {exc}"
+            return routes
+        enriched: dict[str, Route] = {}
+        failures: list[str] = []
+        for route_id, route in routes.items():
+            try:
+                enriched[route_id] = enrich_with_team_elevation(
+                    route,
+                    self._team_elevation_csv,
+                    max_match_m=self._team_elevation_max_match_m,
+                )
+            except (RouteError, OSError, ValueError) as exc:
+                failures.append(f"{route_id}: {type(exc).__name__}: {exc}")
+                enriched[route_id] = route
+        if failures:
+            okays = len(routes) - len(failures)
+            self._elevation_status = (
+                f"partial: {okays}/{len(routes)} enriched; " + "; ".join(failures)
+            )
+        else:
+            self._elevation_status = f"ok: {len(enriched)}/{len(routes)} enriched"
+        return enriched
+
+    @property
+    def elevation_status(self) -> str:
+        """Human-readable status of the last enrichment attempt."""
+        if self._routes is None:
+            self.all()  # trigger lazy load
+        return self._elevation_status
 
     def all(self) -> dict[str, Route]:
         if self._routes is None:
@@ -122,5 +184,8 @@ class RouteRepository:
 def get_route_repository() -> RouteRepository:
     settings: Settings = get_settings()
     base = Path("data/routes")
-    _ = settings
-    return RouteRepository(base)
+    return RouteRepository(
+        base,
+        team_elevation_csv=settings.team_elevation_csv,
+        team_elevation_max_match_m=settings.team_elevation_max_match_m,
+    )

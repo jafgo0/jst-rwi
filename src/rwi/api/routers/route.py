@@ -47,6 +47,14 @@ class RouteSummary(BaseModel):
     control_stop_count: int
     source_description: str
     provenance_label: str
+    has_elevation: bool = Field(
+        description="True only when every waypoint carries a known elevation. "
+        "When False, grade_at_distance returns 0.0 but 'unknown' is the honest "
+        "reading - the vehicle model's gradient term is not meaningful."
+    )
+    elevation_status: str = Field(
+        description="Repo-wide status of the last team-elevation enrichment attempt."
+    )
 
 
 class ProgressResponse(BaseModel):
@@ -61,6 +69,9 @@ class ProgressResponse(BaseModel):
 
 @router.get("", response_model=list[RouteSummary])
 async def list_routes(repo: RepoDep) -> Any:
+    from rwi.route.geometry import has_elevation
+
+    status = repo.elevation_status
     return [
         RouteSummary(
             id=route_id,
@@ -70,6 +81,8 @@ async def list_routes(repo: RepoDep) -> Any:
             control_stop_count=len(route.control_stops),
             source_description=route.source_description,
             provenance_label=route.provenance.label(),
+            has_elevation=has_elevation(route),
+            elevation_status=status,
         )
         for route_id, route in repo.all().items()
     ]
