@@ -15,18 +15,22 @@ validation.
 
 from rwi.validation.pv import (
     HourlyComparison,
+    ParkedTiltModel,
     RetrospectiveReport,
     build_report,
     read_hourly_headings,
     read_hourly_measured_power,
     read_hourly_positions,
+    read_hourly_speeds,
 )
 
 __all__ = [
     "HourlyComparison",
+    "ParkedTiltModel",
     "RetrospectiveReport",
     "build_report",
     "read_hourly_headings",
     "read_hourly_measured_power",
     "read_hourly_positions",
+    "read_hourly_speeds",
 ]
