@@ -30,10 +30,12 @@ def test_collection_constants_are_the_ones_the_catalogue_commits_to() -> None:
 
 
 def test_default_variables_cover_the_three_properties_the_catalogue_names() -> None:
-    """The catalogue markets cloud fraction, cloud optical depth and cloud top height
-    as the primary SatCORPS fields for race strategy; defaults must carry them."""
+    """The catalogue markets cloud phase, cloud visible optical depth and cloud top
+    height as the primary pixel-level SatCORPS fields for race strategy; defaults
+    must carry them. The pixel file does NOT carry cloud_fraction or cloud_mask -
+    those are aggregate products (see module docstring)."""
     defaults = satcorps.DEFAULT_VARIABLES
-    for required in ("cloud_fraction", "cloud_optical_depth", "cloud_top_height"):
+    for required in ("cloud_phase", "cloud_visible_optical_depth", "cloud_top_height"):
         assert required in defaults
 
 

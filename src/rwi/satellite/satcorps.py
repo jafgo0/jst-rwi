@@ -63,17 +63,21 @@ COLLECTION_SHORT_NAME = "CER_GEO_Ed4_HIM09_SH"
 #: short name; CMR concept ids are immutable per revision.
 COLLECTION_CONCEPT_ID = "C3880513838-LARC_CLOUD"
 
-#: SatCORPS netCDF variables we extract by default. Names follow the LaRC
-#: SATCORPS Edition 4 convention; confirm against an actual granule header
-#: (``h5ls``) once credentials are set up. If a file's variable is named
-#: differently, pass it explicitly to :func:`read_cloud_point`.
+#: SatCORPS netCDF variables we extract by default. Names verified against
+#: CER_GEO_Ed4_HIM09_SH V01.4 granule 2025.236.0030.06K. The pixel-level file
+#: carries cloud *properties* per pixel; it does not carry a cloud-fraction
+#: or cloud-mask grid (those are aggregate products you'd compute from
+#: cloud_phase over a region). Per-pixel "is this pixel cloudy?" is
+#: ``cloud_phase != 0``.
 DEFAULT_VARIABLES: tuple[str, ...] = (
-    "cloud_mask",            # 0 / 1 per pixel
-    "cloud_fraction",        # 0..1 fractional cover
-    "cloud_optical_depth",   # VIS retrieval, dimensionless
-    "cloud_top_height",      # m above sea level
-    "cloud_top_temperature", # K
-    "cloud_phase",           # 0=clear, 1=water, 2=ice (per LaRC convention)
+    # cloud_phase: 0=snow, 1=water, 2=ice, 3=no retrieval, 4=clear, 5=bad,
+    # 6=suspected water, 7=suspected ice, 13=cleaned. CLEAR is 4, not 0.
+    "cloud_phase",
+    "cloud_visible_optical_depth",   # dimensionless, valid 0..150
+    "cloud_top_height",              # km, valid -0.1..20
+    "cloud_top_temperature",         # K
+    "cloud_effective_height",        # km, radiatively effective layer
+    "broadband_shortwave_albedo",    # % (not 0..1), valid 0..150
 )
 
 
@@ -224,6 +228,10 @@ def download_scene(scene: SatCorpsScene, *, cache_dir: Path) -> SatCorpsScene:
             f"granule {scene.granule_id} not found by CMR search; it may have been "
             "superseded by a new revision. Call search_scenes again."
         )
+    # earthaccess requires an explicit login() in each process before download
+    # even when ~/.netrc already has the credentials; it initialises an
+    # internal auth store that search_data does not need.
+    earthaccess.login(strategy="netrc")
     paths = earthaccess.download(match, local_path=str(cache_dir))
     if not paths:
         raise SatCorpsCapabilityError(
@@ -255,9 +263,9 @@ def read_cloud_point(
 
     The SatCORPS files are netCDF-4 (HDF5 underneath); we read them with
     ``h5py`` which this project already depends on for the raw-tile pipeline.
-    The pixel geolocation is stored as 2-D ``pixel_latitude`` /
-    ``pixel_longitude`` arrays; a brute-force nearest-neighbour is enough at
-    6 km resolution over the 180 x 45 region a single car occupies.
+    The pixel geolocation is stored as 2-D ``latitude`` / ``longitude``
+    arrays (one per pixel row/column); a brute-force nearest-neighbour is
+    enough at 6 km resolution over the 180 x 45 region a single car occupies.
 
     Returns a dict ``variable -> value`` with ``None`` for any variable that
     is missing, flagged invalid by a fill value, or marked bad by the
@@ -276,11 +284,11 @@ def read_cloud_point(
 
     with h5py.File(path, "r") as f:
         try:
-            lat = np.asarray(f["pixel_latitude"][:])
-            lon = np.asarray(f["pixel_longitude"][:])
+            lat = np.asarray(f["latitude"][:])
+            lon = np.asarray(f["longitude"][:])
         except KeyError as exc:
             raise SatCorpsCapabilityError(
-                f"SatCORPS granule {path.name} has no pixel_latitude/pixel_longitude dataset; "
+                f"SatCORPS granule {path.name} has no latitude/longitude dataset; "
                 "the file may follow a different version's layout. Inspect it with "
                 "`h5ls -r` and pass the correct variable names explicitly."
             ) from exc
@@ -311,10 +319,20 @@ def _nearest_pixel(
     Not haversine - the SatCORPS grid spacing at 23 S is 6 km and a car
     sees the sky across hundreds of km of parallax, so a planar
     approximation is already tighter than the pixel footprint.
+
+    SATCORPS full-disk pixels that fall off Earth carry latitude/longitude
+    ``_FillValue`` 3.4e+38; computed in float32 their square overflows.
+    Promote to float64 and mask out-of-range lat/lon with +inf distance
+    so they never win argmin.
     """
-    dlat = lat_grid - target_lat
-    dlon = (lon_grid - target_lon) * np.cos(np.radians(target_lat))
-    idx = int(np.argmin(dlat * dlat + dlon * dlon))
+    lat = lat_grid.astype(np.float64)
+    lon = lon_grid.astype(np.float64)
+    bad = (np.abs(lat) > 90.0) | (np.abs(lon) > 180.0)
+    dlat = lat - target_lat
+    dlon = (lon - target_lon) * np.cos(np.radians(target_lat))
+    d2 = dlat * dlat + dlon * dlon
+    d2[bad] = np.inf
+    idx = int(np.argmin(d2))
     return divmod(idx, lat_grid.shape[1])
 
 
