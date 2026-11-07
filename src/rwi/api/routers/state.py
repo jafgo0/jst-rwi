@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from rwi.config import Settings, get_settings
+from rwi.core.errors import NaiveDatetimeError
+from rwi.core.fix_guard import FixVerdict, assess_live_fix, normalise_optional_utc
 from rwi.core.geo import GeoPoint, geodesic_distance_m
 from rwi.core.position import ActiveState, FixQuality, PositionFix, PositionMode
 from rwi.core.state import StateStore, get_state_store
@@ -129,15 +131,24 @@ async def set_position(
 ) -> StateResponse:
     _authorise_mode(request.mode, settings, x_telemetry_secret)
     now = utc_now()
-    _reject_future_gps_time(request.gps_time_utc, now, settings)
+    try:
+        gps_time_utc = normalise_optional_utc(request.gps_time_utc)
+    except NaiveDatetimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "gps_time_utc must include a UTC offset (e.g. "
+                "\"2026-11-07T15:30:00Z\"). A bare local timestamp cannot "
+                "be compared to the server clock."
+            ),
+        ) from exc
     default_quality = {
         PositionMode.LIVE_GPS: FixQuality.GPS,
         PositionMode.MANUAL: FixQuality.MANUAL,
         PositionMode.ROUTE_SIM: FixQuality.SIMULATED,
         PositionMode.HISTORICAL_REPLAY: FixQuality.SIMULATED,
     }[request.mode]
-    quality_override = _demote_on_implausible_jump(request, store.state.fix, now, settings)
-    fix = PositionFix(
+    candidate = PositionFix(
         point=GeoPoint(
             latitude_deg=request.latitude_deg,
             longitude_deg=request.longitude_deg,
@@ -146,39 +157,51 @@ async def set_position(
         mode=request.mode,
         source=request.source,
         received_at_utc=now,
-        gps_time_utc=request.gps_time_utc,
+        gps_time_utc=gps_time_utc,
         accuracy_m=request.accuracy_m,
         speed_mps=request.speed_mps,
         course_deg=request.heading_deg,
-        fix_quality=quality_override or request.fix_quality or default_quality,
+        fix_quality=request.fix_quality or default_quality,
     )
-    # A fix the implausible-jump gate demoted to UNKNOWN does NOT become the
-    # active position. It is parked as suspect_fix and the last trusted fix
-    # remains authoritative for weather, route and strategy; the alerts
-    # layer surfaces the discrepancy. The old behaviour (update_fix with a
-    # suspect fix) let a GPS glitch silently teleport the car on screen.
-    if quality_override is FixQuality.UNKNOWN and store.state.fix is not None:
-        await store.patch(suspect_fix=fix)
-        return _describe(store)
-    # Compute route progress BEFORE acquiring the store lock, so the critical
-    # section only does the write. Route projection is deterministic in fix.
+    # Only live_gps goes through the jump/monotonicity gate. Operator-
+    # entered manual fixes are explicitly authoritative and must not be
+    # second-guessed against a previous live sample; simulated modes have
+    # their own cadence.
+    if request.mode is PositionMode.LIVE_GPS:
+        assessment = assess_live_fix(
+            candidate=candidate,
+            previous=store.state.fix,
+            now=now,
+            jump_speed_threshold_mps=settings.http_live_jump_speed_mps,
+            future_grace_s=settings.telemetry_future_grace_s,
+            stale_limit_s=None,
+        )
+        if assessment.verdict is FixVerdict.REJECT:
+            log.info(
+                "POST /state/position rejected live_gps candidate: %s", assessment.reason
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=assessment.reason or "live_gps candidate rejected",
+            )
+        if assessment.verdict is FixVerdict.PARK_SUSPECT:
+            log.warning("parking suspect live_gps fix: %s", assessment.reason)
+            # Mark the parked fix as UNKNOWN quality so any subsystem that
+            # accidentally reads it cannot mistake it for a trusted GPS fix.
+            suspect = candidate.model_copy(update={"fix_quality": FixQuality.UNKNOWN})
+            await store.park_suspect_fix(suspect)
+            return _describe(store)
+    # ACCEPT (or non-live mode): compute route progress BEFORE the lock, so
+    # the critical section only does the write. Project the candidate onto
+    # whichever route is active (request.route_id overrides the state).
     route_id = request.route_id or store.state.route_id
-    updates: dict[str, Any] = {}
-    if route_id is not None:
-        updates["route_id"] = route_id
-        progress = _project_progress(route_id, fix)
-        if progress is not None:
-            updates["route_distance_m"] = progress
-    # A trusted fix clears any previously parked suspect fix: if the
-    # operator or a fresh telemetry sample confirms the new location,
-    # the earlier warning no longer applies.
-    updates["suspect_fix"] = None
-    # Single atomic write: fix + route updates together. The previous code
-    # called update_fix() and then a separate replace() with a model_copy of
-    # store.state read outside the lock; a telemetry fix landing between the
-    # two would be clobbered.
-    await store.update_fix(fix, heading_deg=request.heading_deg)
-    await store.patch(**updates)
+    route_distance_m = _project_progress(route_id, candidate) if route_id else None
+    await store.apply_trusted_fix(
+        candidate,
+        heading_deg=request.heading_deg,
+        route_id=route_id,
+        route_distance_m=route_distance_m,
+    )
     return _describe(store)
 
 
@@ -208,65 +231,6 @@ def _authorise_mode(mode: PositionMode, settings: Settings, secret: str | None) 
             status_code=status.HTTP_403_FORBIDDEN,
             detail="mode=live_gps requires a correct X-Telemetry-Secret header.",
         )
-
-
-def _reject_future_gps_time(
-    gps_time_utc: datetime | None, now: datetime, settings: Settings
-) -> None:
-    if gps_time_utc is None:
-        return
-    # Pydantic has already parsed the datetime; it may still be naive on some
-    # clients. Treat it as UTC and compare.
-    ahead_s = (gps_time_utc - now).total_seconds()
-    if ahead_s > settings.telemetry_future_grace_s:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"gps_time_utc is {ahead_s:.0f} s in the future "
-                f"(grace is {settings.telemetry_future_grace_s:.0f} s). "
-                "This usually means the sending device has a clock skew."
-            ),
-        )
-
-
-def _demote_on_implausible_jump(
-    request: PositionRequest,
-    previous: PositionFix | None,
-    now: datetime,
-    settings: Settings,
-) -> FixQuality | None:
-    """If a live_gps fix implies an impossible speed, mark it suspect.
-
-    Not dropping it: silently freezing the dashboard at the previous fix is
-    more dangerous than a flagged one. The demotion to UNKNOWN surfaces the
-    problem to any consumer that reads fix_quality.
-    """
-    if request.mode is not PositionMode.LIVE_GPS or previous is None:
-        return None
-    if previous.mode is not PositionMode.LIVE_GPS:
-        return None
-    previous_time = previous.gps_time_utc or previous.received_at_utc
-    reference_time = request.gps_time_utc or now
-    elapsed_s = (reference_time - previous_time).total_seconds()
-    if elapsed_s <= 0:
-        return None
-    jump_m = geodesic_distance_m(
-        previous.point,
-        GeoPoint(
-            latitude_deg=request.latitude_deg,
-            longitude_deg=request.longitude_deg,
-            elevation_m=request.elevation_m,
-        ),
-    )
-    implied_speed = jump_m / elapsed_s
-    if implied_speed > settings.http_live_jump_speed_mps:
-        log.warning(
-            "implausible jump on POST /state/position: %.0f m in %.1f s "
-            "(%.0f m/s, previous at %s); marking fix_quality=UNKNOWN",
-            jump_m, elapsed_s, implied_speed, previous_time.isoformat(),
-        )
-        return FixQuality.UNKNOWN
-    return None
 
 
 def _project_progress(route_id: str, fix: PositionFix) -> float | None:

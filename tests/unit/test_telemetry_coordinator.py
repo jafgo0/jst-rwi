@@ -33,16 +33,18 @@ def _sample(
     lat: float = -14.46,
     lon: float = 132.26,
     source: TelemetrySource = TelemetrySource.FILE_REPLAY,
+    mode: PositionMode = PositionMode.HISTORICAL_REPLAY,
+    fix_quality: FixQuality = FixQuality.SIMULATED,
 ) -> VehicleTelemetrySample:
     now = utc_now()
     when = now + timedelta(seconds=seconds_from_now)
     fix = PositionFix(
         point=GeoPoint(latitude_deg=lat, longitude_deg=lon),
-        mode=PositionMode.HISTORICAL_REPLAY,
+        mode=mode,
         source="unit test",
         received_at_utc=now,
         gps_time_utc=when,
-        fix_quality=FixQuality.SIMULATED,
+        fix_quality=fix_quality,
     )
     return VehicleTelemetrySample(
         time_utc=when,
@@ -139,18 +141,52 @@ async def test_the_freshness_gate_does_not_fire_on_a_replay_source() -> None:
     assert stats.stale_dropped == 0
 
 
-async def test_a_position_jump_is_logged_but_the_sample_still_applies() -> None:
-    """Freezing the state at the old position when the next sample disagrees
-    is more dangerous than a visible outlier. Count it, log it, apply it."""
+async def test_a_live_gps_jump_is_parked_as_suspect_not_promoted_to_trusted_state() -> None:
+    """A jump between live_gps samples now follows the same rule as the HTTP
+    endpoint: park the suspect fix on ActiveState, keep the previous trusted
+    fix authoritative. Freezing on a glitch was the old danger; silently
+    teleporting on a glitch was a worse one."""
+    store = StateStore()
+    coordinator = TelemetryCoordinator(store)
+    samples = [
+        _sample(
+            seconds_from_now=-2.0, lat=-14.46, lon=132.26,
+            source=TelemetrySource.LIVE_RADIO,
+            mode=PositionMode.LIVE_GPS, fix_quality=FixQuality.GPS,
+        ),
+        _sample(
+            seconds_from_now=-1.0, lat=-14.00, lon=132.26,  # ~51 km in 1 s
+            source=TelemetrySource.LIVE_RADIO,
+            mode=PositionMode.LIVE_GPS, fix_quality=FixQuality.GPS,
+        ),
+    ]
+    stats = await coordinator.consume(
+        FakeReader(samples, source=TelemetrySource.LIVE_RADIO)
+    )
+    assert stats.samples_applied == 1
+    assert stats.suspect_parked == 1
+    assert stats.position_jumps_logged == 1
+    assert store.state.fix is not None
+    assert store.state.fix.point.latitude_deg == pytest.approx(-14.46)  # first, trusted
+    assert store.state.suspect_fix is not None
+    assert store.state.suspect_fix.point.latitude_deg == pytest.approx(-14.00)
+    assert store.state.suspect_fix.fix_quality is FixQuality.UNKNOWN
+
+
+async def test_a_replay_jump_is_applied_because_replay_cadence_is_synthetic() -> None:
+    """Replay streams reconstruct historical data at wall-clock speed; two
+    samples 'a second apart' are really minutes or hours apart in the
+    original run. The live-fix gate would wrongly reject ordinary driving.
+    Replay therefore skips the gate entirely."""
     store = StateStore()
     coordinator = TelemetryCoordinator(store)
     samples = [
         _sample(seconds_from_now=-2.0, lat=-14.46, lon=132.26),
-        _sample(seconds_from_now=-1.0, lat=-14.00, lon=132.26),  # ~51 km jump
+        _sample(seconds_from_now=-1.0, lat=-14.00, lon=132.26),
     ]
     stats = await coordinator.consume(FakeReader(samples))
     assert stats.samples_applied == 2
-    assert stats.position_jumps_logged == 1
+    assert stats.suspect_parked == 0
 
 
 async def test_gap_events_from_the_reader_are_carried_through() -> None:
@@ -211,11 +247,23 @@ async def test_a_jump_is_decided_by_implied_speed_not_absolute_distance() -> Non
     but fails one. Implied speed is the physically meaningful test."""
     store = StateStore()
     coordinator = TelemetryCoordinator(store)
-    # 500 m in 60 s = 8 m/s - a plausible solar-car speed, must not flag.
+    # 500 m in 50 s = 10 m/s - a plausible solar-car speed, must not flag.
+    # Well inside the live-freshness limit so the freshness gate never
+    # interferes with the jump test.
     samples = [
-        _sample(seconds_from_now=-60.0, lat=-14.4600, lon=132.26),
-        _sample(seconds_from_now=0.0, lat=-14.4555, lon=132.26),  # ~500 m
+        _sample(
+            seconds_from_now=-50.0, lat=-14.4600, lon=132.26,
+            source=TelemetrySource.LIVE_RADIO,
+            mode=PositionMode.LIVE_GPS, fix_quality=FixQuality.GPS,
+        ),
+        _sample(
+            seconds_from_now=0.0, lat=-14.4555, lon=132.26,  # ~500 m
+            source=TelemetrySource.LIVE_RADIO,
+            mode=PositionMode.LIVE_GPS, fix_quality=FixQuality.GPS,
+        ),
     ]
-    stats = await coordinator.consume(FakeReader(samples))
+    stats = await coordinator.consume(
+        FakeReader(samples, source=TelemetrySource.LIVE_RADIO)
+    )
     assert stats.position_jumps_logged == 0
     assert stats.samples_applied == 2

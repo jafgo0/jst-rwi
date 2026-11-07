@@ -264,6 +264,126 @@ def test_an_operator_fix_clears_a_previously_parked_suspect(client: TestClient) 
     assert cleared["suspect_fix"] is None
 
 
+def test_a_naive_gps_timestamp_is_a_client_error_not_a_server_crash(
+    client: TestClient,
+) -> None:
+    """A client that sent a bare local timestamp (no offset) used to make the
+    subtraction against the server clock raise TypeError and return 500.
+    The contract is simple: supply a UTC offset or get a 400."""
+    response = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "gps_time_utc": "2026-11-07T15:30:00",  # no timezone
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert response.status_code == 400
+    assert "UTC offset" in response.json()["detail"]
+
+
+def test_two_live_gps_fixes_sharing_a_timestamp_park_the_second_as_suspect(
+    client: TestClient,
+) -> None:
+    """A stream that emits two different positions with the same gps_time_utc
+    cannot compute an implied speed, but two different places "at the same
+    instant" is itself a bug. Park, do not promote."""
+    from datetime import UTC, datetime
+
+    stamp = (datetime.now(UTC).replace(microsecond=0)).isoformat().replace("+00:00", "Z")
+    first = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "gps_time_utc": stamp,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert first.status_code == 200
+    second = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.5000,  # different position
+            "longitude_deg": 132.2635,
+            "gps_time_utc": stamp,  # same instant
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["state"]["fix"]["point"]["latitude_deg"] == pytest.approx(-14.4652)
+    assert body["suspect_fix"] is not None
+    assert body["suspect_fix"]["latitude_deg"] == pytest.approx(-14.5000)
+
+
+def test_a_duplicate_live_gps_retry_is_rejected_quietly(
+    client: TestClient,
+) -> None:
+    """A retry sending the identical fix (same timestamp, same place) is a
+    duplicate, not a new report. The second POST returns 400 so a confused
+    caller sees the problem, and the state is untouched."""
+    from datetime import UTC, datetime
+
+    stamp = (datetime.now(UTC).replace(microsecond=0)).isoformat().replace("+00:00", "Z")
+    payload = {
+        "mode": "live_gps",
+        "latitude_deg": -14.4652,
+        "longitude_deg": 132.2635,
+        "gps_time_utc": stamp,
+        "source": "vehicle_telemetry",
+    }
+    first = client.post("/api/state/position", json=payload, headers=TELEMETRY_HEADERS)
+    assert first.status_code == 200
+    duplicate = client.post("/api/state/position", json=payload, headers=TELEMETRY_HEADERS)
+    assert duplicate.status_code == 400
+    assert "duplicate" in duplicate.json()["detail"].lower()
+
+
+def test_a_live_gps_fix_dated_earlier_than_the_previous_one_is_rejected(
+    client: TestClient,
+) -> None:
+    """Monotonicity: live_gps samples that arrive out of order must not
+    rewind the trusted state. Rejected 400 rather than silently parked:
+    this is a sender bug the operator wants to see."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    recent = now.isoformat().replace("+00:00", "Z")
+    older = (now - timedelta(seconds=10)).isoformat().replace("+00:00", "Z")
+    client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "gps_time_utc": recent,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    rewind = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4700,
+            "longitude_deg": 132.2635,
+            "gps_time_utc": older,  # dated earlier than the previous accepted fix
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert rewind.status_code == 400
+    assert "monotonicity" in rewind.json()["detail"].lower()
+
+
 def test_simulated_position_is_flagged_for_the_ui(client: TestClient) -> None:
     body = client.post(
         "/api/state/position",

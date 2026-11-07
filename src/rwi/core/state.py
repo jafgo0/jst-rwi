@@ -62,6 +62,60 @@ class StateStore:
             del self._history[:-5000]
             return self._state
 
+    async def apply_trusted_fix(
+        self,
+        fix: PositionFix,
+        *,
+        heading_deg: float | None = None,
+        route_id: str | None = None,
+        route_distance_m: float | None = None,
+    ) -> ActiveState:
+        """Promote ``fix`` to the trusted active state in one lock acquisition.
+
+        A trusted fix always clears any previously parked ``suspect_fix``:
+        a confirmed later location means the earlier suspect report no
+        longer applies. ``route_id`` and ``route_distance_m`` are set
+        together with the fix so downstream readers never see a stale
+        progress value against a new position. Caller computes progress
+        before calling; the store does not import the route layer.
+        """
+        async with self._lock:
+            current = self._state
+            resolved_route_id = route_id if route_id is not None else current.route_id
+            # route_distance_m MUST be recomputed for each new fix: the
+            # previous value belonged to the previous position and silently
+            # keeping it would misplace the vehicle along the route. If the
+            # caller does not supply a fresh value we show None (unknown
+            # progress) rather than reuse a stale one.
+            resolved_distance = route_distance_m
+            self._state = ActiveState(
+                mode=fix.mode,
+                fix=fix,
+                suspect_fix=None,
+                selected_time_utc=current.selected_time_utc,
+                route_id=resolved_route_id,
+                route_distance_m=resolved_distance,
+                heading_deg=heading_deg if heading_deg is not None else fix.course_deg,
+            )
+            self._history.append(fix)
+            del self._history[:-5000]
+            return self._state
+
+    async def park_suspect_fix(self, fix: PositionFix) -> ActiveState:
+        """Park ``fix`` as suspect without disturbing the trusted active fix.
+
+        When there is no trusted fix to protect (the state's ``fix`` is
+        None) parking is silently a no-op: with nothing trusted to compare
+        against, a suspect is meaningless and callers should either accept
+        the fix or reject it loudly. This method exists so both the HTTP
+        endpoint and the telemetry coordinator have one place to call.
+        """
+        async with self._lock:
+            if self._state.fix is None:
+                return self._state
+            self._state = self._state.model_copy(update={"suspect_fix": fix})
+            return self._state
+
     async def patch(self, **updates: Any) -> ActiveState:
         """Atomically apply ``updates`` on top of the current state.
 
