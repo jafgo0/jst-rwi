@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "source": "scripts/validation/bwsc_2025_analysis_vs_satellite.py",
+  "window_utc": ["2025-08-24T00:00:00Z", "2025-08-30T23:00:00Z"],
+  "window_description": "BWSC-2025 race week, used as a 2027 surrogate",
+  "truth": "SILO daily GHI (BoM station-anchored, Queensland Government data drill)",
+  "unit": "W/m^2",
+  "note": "Bias = product daily-mean GHI minus SILO daily-mean GHI, averaged over the 7-day window. Positive means the product reads HIGHER than SILO. A window this short is not a long-term climatology, but three independent reanalyses agreeing in direction is still a real signal to watch.",
+  "points": [
+    {
+      "name": "Darwin",
+      "lat": -12.4634, "lon": 130.8456,
+      "bias_vs_silo": { "ecmwf": -14.5, "power": -25.9, "merra2":  7.5 },
+      "aerosol_hypothesis_tested": false
+    },
+    {
+      "name": "Katherine",
+      "lat": -14.4650, "lon": 132.2635,
+      "bias_vs_silo": { "ecmwf":   0.7, "power":  -5.6, "merra2": 17.2 }
+    },
+    {
+      "name": "Tennant Creek",
+      "lat": -19.6500, "lon": 134.1900,
+      "bias_vs_silo": { "ecmwf":   2.2, "power":   1.0, "merra2": 15.5 }
+    },
+    {
+      "name": "Alice Springs",
+      "lat": -23.6980, "lon": 133.8807,
+      "bias_vs_silo": { "ecmwf":  16.7, "power":  23.3, "merra2": 30.1 },
+      "aerosol_hypothesis_tested": true,
+      "aerosol_note": "MERRA-2 AOD@550 race-week mean 0.045 (clean air, below 2024 baseline 0.054). Model aerosol-miss ruled out as a cause."
+    },
+    {
+      "name": "Coober Pedy",
+      "lat": -29.0135, "lon": 134.7544,
+      "bias_vs_silo": { "ecmwf": -18.7, "power":  -5.1, "merra2":  8.4 }
+    },
+    {
+      "name": "Adelaide",
+      "lat": -34.9285, "lon": 138.6007,
+      "bias_vs_silo": { "ecmwf":  -8.0, "power":   9.3, "merra2": 17.5 }
+    }
+  ]
+}

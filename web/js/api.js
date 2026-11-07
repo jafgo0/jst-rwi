@@ -321,6 +321,10 @@ export const api = {
   satcorpsCrossCheck: ({ lat, lon, elev, maxAgeHours }) =>
     request("/api/satellite/satcorps-crosscheck", { params: { lat, lon, elev, max_age_hours: maxAgeHours }, timeoutMs: 60000 }),
 
+  /** BWSC-2025 route-point GHI bias against BoM-anchored SILO. @returns {Promise<Object>} */
+  ghiBias: ({ lat, lon, elev }) =>
+    request("/api/validation/ghi-bias", { params: { lat, lon, elev } }),
+
   /** @returns {Promise<RouteInfo[]>} */
   routes: () => request("/api/route"),
   /** GeoJSON FeatureCollection: LineString + waypoint Point features. */

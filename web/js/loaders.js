@@ -56,6 +56,19 @@ export async function loadSatcorps(force = false) {
   }, () => api.satcorpsCrossCheck({ lat: p.lat, lon: p.lon, elev: p.elev, maxAgeHours: 2880 }));
 }
 
+export async function loadGhiBias(force = false) {
+  const p = activePoint();
+  if (!p) { block("ghiBias", NO_POS, "GET /api/validation/ghi-bias"); return; }
+  // Static table, so a long TTL is fine; keyed on position so moving along
+  // the route picks up the nearest tabulated point.
+  return load("ghiBias", {
+    endpoint: "GET /api/validation/ghi-bias",
+    paramsKey: posKey(p),
+    ttlMs: 3600000,
+    force,
+  }, () => api.ghiBias({ lat: p.lat, lon: p.lon, elev: p.elev }));
+}
+
 export async function loadSolar(force = false) {
   const p = activePoint();
   if (!p) { for (const k of ["solarPos", "solarDay", "clearskyDay"]) block(k, NO_POS); return; }

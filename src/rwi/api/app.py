@@ -34,6 +34,7 @@ from rwi.api.routers import (
     solar,
     state,
     strategy,
+    validation,
     weather,
 )
 from rwi.config import Settings, get_settings
@@ -146,6 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(strategy.router)
     app.include_router(forecast_quality.router)
     app.include_router(satellite.router)
+    app.include_router(validation.router)
     app.include_router(alerts.router)
 
     web_dir = Path(__file__).resolve().parents[3] / "web"

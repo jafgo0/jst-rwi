@@ -9,11 +9,11 @@ import { h, replace, append } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, fmtLocal, compass, toMs, fmtEnergyWh } from "../format.js";
 import { panel, kv, numCell, textCell, kindChip, chip, withResource, positionUnknown, stateBox, provFooter, ageSpan } from "../ui.js";
 import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, signature, setSession } from "../store.js";
-import { loadSolar, loadForecast, loadObservations, loadEnergy, loadSatcorps, solarDate } from "../loaders.js";
+import { loadSolar, loadForecast, loadObservations, loadEnergy, loadSatcorps, loadGhiBias, solarDate } from "../loaders.js";
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
 
-const KEYS = ["state", "observable", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy", "satcorps"];
+const KEYS = ["state", "observable", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy", "satcorps", "ghiBias"];
 
 export function create(root) {
   const body = h("div");
@@ -26,7 +26,7 @@ export function create(root) {
   let lastSig = "";
   return {
     update() {
-      loadSolar(); loadForecast({ hours: 48, key: "forecastSolar" }); loadObservations({ hours: 24, key: "observationsSolar" }); loadEnergy(); loadSatcorps();
+      loadSolar(); loadForecast({ hours: 48, key: "forecastSolar" }); loadObservations({ hours: 24, key: "observationsSolar" }); loadEnergy(); loadSatcorps(); loadGhiBias();
       const sig = signature(KEYS, String(session.solarDayOffset));
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
@@ -156,6 +156,7 @@ function irradiancePanel(charts) {
   append(box, [
     h("div", { class: "lastgood", style: { borderColor: "var(--k-clearsky)", background: "rgba(229,167,59,0.1)" } }, kindChip("clear_sky_model"),
       " The dotted amber-filled curves are a physical MODEL UPPER BOUND for a cloudless sky. They are not measured irradiance and not a forecast."),
+    ghiBiasBanner(),
     chartDiv,
     styleLegend([
       { color: "--series-4", kind: "clear", text: "Clear-sky model bound (GHI, DNI, DHI)" },
@@ -176,6 +177,28 @@ function irradiancePanel(charts) {
 }
 
 function provenanceLabel(p) { return [p.provider, p.dataset, p.model_name].filter(Boolean).join(" / "); }
+
+function ghiBiasBanner() {
+  const r = res("ghiBias");
+  if (r.status !== "ok" || !r.data) return null;
+  const d = r.data;
+  const b = d.bias_vs_truth || {};
+  const agree = Math.sign(b.ecmwf) === Math.sign(b.power) && Math.sign(b.power) === Math.sign(b.merra2);
+  // Flag only when the three products agree in sign AND the median bias is
+  // worth caring about operationally (>=15 W/m^2 by convention).
+  const strong = agree && Math.abs(b.median) >= 15;
+  if (!strong) return null;
+  const sign = b.median > 0 ? "+" : "";
+  const dir = b.median > 0 ? "higher" : "lower";
+  const dist = d.distance_km > 50
+    ? ` (nearest tabulated point, ${d.distance_km} km away)`
+    : "";
+  return h("div", { class: "note warn", style: { borderLeft: "3px solid var(--warn)", paddingLeft: "8px" } },
+    "GHI bias at ", h("b", null, d.nearest_point), dist,
+    `: three gridded reanalyses read ${sign}${b.median.toFixed(0)} W/m² ${dir} than BoM-anchored SILO over BWSC-2025 race week `,
+    `(ECMWF ${b.ecmwf > 0 ? "+" : ""}${b.ecmwf.toFixed(1)}, POWER ${b.power > 0 ? "+" : ""}${b.power.toFixed(1)}, MERRA-2 ${b.merra2 > 0 ? "+" : ""}${b.merra2.toFixed(1)}). `,
+    `Treat the clear-sky and forecast GHI as likely to ${b.median > 0 ? "overread" : "underread"} by this amount here.`);
+}
 
 function powerPanel(charts) {
   const r = res("energy"); const { tz } = vehicleTimezone();
