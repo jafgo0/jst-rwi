@@ -37,10 +37,13 @@ import json
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from rwi.contracts import ForecastObservationPair
 from rwi.core.geo import GeoPoint
 from rwi.verification.metrics import score_pairs
+
+_MERRA2_CACHE_DIR = Path("data/cache/merra2")
 
 ROUTE_POINTS: list[tuple[str, GeoPoint]] = [
     ("Darwin",         GeoPoint(latitude_deg=-12.4634, longitude_deg=130.8456, elevation_m=30.0)),
@@ -124,6 +127,63 @@ def _ecmwf_archive_ghi(point: GeoPoint) -> dict[datetime, float]:
         if val is None:
             continue
         out[datetime.fromisoformat(ts).replace(tzinfo=UTC)] = float(val)
+    return out
+
+
+def _merra2_hourly_ghi(point: GeoPoint) -> dict[datetime, float]:
+    """Hourly surface incoming SW flux (SWGDN) from MERRA-2 M2T1NXRAD.
+
+    MERRA-2 is NASA's own reanalysis (GEOS-5 model), independent of ECMWF.
+    Collection ``M2T1NXRAD`` V5.12.4, grid 0.625 x 0.5 deg, hourly time-
+    centered means stamped at HH:30 UTC. We remap the :30 stamp to the
+    matching :00 hour so values align with ECMWF-IFS and NASA POWER.
+
+    Each daily file is ~214 MB; the race week pulls ~1.5 GB total. Files
+    are cached under ``data/cache/merra2/`` by the earthaccess session so a
+    repeat run only reads from disk. Credentials come from ``~/.netrc``;
+    one-time EULA acceptance for GESDISC is required on the Earthdata
+    profile.
+    """
+    import earthaccess  # type: ignore[import-untyped]
+    import h5py
+    import numpy as np
+
+    earthaccess.login(strategy="netrc")
+    _MERRA2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    out: dict[datetime, float] = {}
+    day = RACE_START.date()
+    end = RACE_END.date()
+    while day <= end:
+        iso = day.isoformat()
+        granules = earthaccess.search_data(
+            short_name="M2T1NXRAD", temporal=(iso, iso), count=1,
+        )
+        if not granules:
+            day += timedelta(days=1)
+            continue
+        paths = earthaccess.download(granules, local_path=str(_MERRA2_CACHE_DIR))
+        if not paths:
+            day += timedelta(days=1)
+            continue
+        with h5py.File(paths[0], "r") as f:
+            lat_grid = np.asarray(f["lat"][:])
+            lon_grid = np.asarray(f["lon"][:])
+            row = int(np.argmin(np.abs(lat_grid - point.latitude_deg)))
+            col = int(np.argmin(np.abs(lon_grid - point.longitude_deg)))
+            swgdn = np.asarray(f["SWGDN"][:, row, col])  # (24,)
+            fill = float(np.asarray(f["SWGDN"].attrs.get("_FillValue", 1e15)).item())
+        base = datetime(day.year, day.month, day.day, 0, 30, tzinfo=UTC)
+        for hour_idx in range(24):
+            val = float(swgdn[hour_idx])
+            if val >= fill * 0.99:  # 1e15 marker, with float32 slack
+                continue
+            # MERRA-2 stamps the hour-mean at :30; align with :00 like
+            # ECMWF/POWER by subtracting 30 min (the mean represents the
+            # interval centred on that stamp, which is [HH:00, HH+1:00]).
+            stamp = base + timedelta(minutes=60 * hour_idx) - timedelta(minutes=30)
+            out[stamp] = val
+        day += timedelta(days=1)
     return out
 
 
@@ -246,25 +306,29 @@ def main() -> None:
     _row("all points", all_pairs)
 
     print()
-    print("=== TRIANGULATION: daily mean against SILO (BoM-anchored) ===")
+    print("=== QUADRANGULATION: daily mean against SILO (BoM-anchored) ===")
     print(
-        f"  {'point':14s}  {'ECMWF':>7s}  {'NASA':>7s}  {'SILO':>7s}  "
-        f"{'E-S':>6s}  {'N-S':>6s}"
+        f"  {'point':14s}  {'ECMWF':>7s}  {'NASA':>7s}  {'MERRA2':>7s}  "
+        f"{'SILO':>7s}  {'E-S':>6s}  {'N-S':>6s}  {'M-S':>6s}"
     )
     for name, point in ROUTE_POINTS:
         ecmwf_daily = _daily_mean_w_m2(_ecmwf_archive_ghi(point))
         nasa_daily = _daily_mean_w_m2(_nasa_power_ghi(point))
+        merra_daily = _daily_mean_w_m2(_merra2_hourly_ghi(point))
         silo_daily = _silo_daily_ghi_w_m2(point)
-        days = sorted(set(ecmwf_daily) & set(nasa_daily) & set(silo_daily))
+        days = sorted(
+            set(ecmwf_daily) & set(nasa_daily) & set(merra_daily) & set(silo_daily)
+        )
         if not days:
             print(f"  {name:14s}  no overlap")
             continue
         e = sum(ecmwf_daily[d] for d in days) / len(days)
         n = sum(nasa_daily[d] for d in days) / len(days)
+        m = sum(merra_daily[d] for d in days) / len(days)
         s = sum(silo_daily[d] for d in days) / len(days)
         print(
-            f"  {name:14s}  {e:7.1f}  {n:7.1f}  {s:7.1f}  "
-            f"{e - s:>+6.1f}  {n - s:>+6.1f}"
+            f"  {name:14s}  {e:7.1f}  {n:7.1f}  {m:7.1f}  {s:7.1f}  "
+            f"{e - s:>+6.1f}  {n - s:>+6.1f}  {m - s:>+6.1f}"
         )
 
 
