@@ -74,11 +74,18 @@ class TelemetryCoordinator:
     #: not so forgiving that a stale sample masquerades as current.
     live_freshness_limit_s: float = 60.0
 
-    #: A position jump larger than this between consecutive samples is logged
-    #: but the sample is still applied. 2 km over the sub-second cadence of
-    #: BWSC telemetry corresponds to about 7200 km/h; nothing on Earth moves
-    #: that fast, so this really is a sensor glitch worth noting.
-    position_jump_threshold_m: float = 2000.0
+    #: A small negative grace for live samples timestamped slightly in the
+    #: future: receivers may stamp a sub-second early, but anything beyond
+    #: this is a clock bug and dropping it is safer than trusting the age.
+    live_future_grace_s: float = 5.0
+
+    #: Implausible implied speed between consecutive samples. 110 m/s is
+    #: about 400 km/h; nothing on the race convoy moves that fast. When
+    #: the gate fires the sample is still applied (freezing on the
+    #: previous fix is more dangerous), but a jump event is logged and
+    #: counted. A fixed-distance threshold was wrong because the implied
+    #: speed depends on the cadence, which varies per telemetry link.
+    position_jump_speed_threshold_mps: float = 110.0
 
     def __init__(self, store: StateStore) -> None:
         self._store = store
@@ -112,11 +119,14 @@ class TelemetryCoordinator:
                     jump = geodesic_distance_m(
                         last_sample.position.point, sample.position.point
                     )
-                    if jump > self.position_jump_threshold_m:
+                    elapsed = (sample.time_utc - last_sample.time_utc).total_seconds()
+                    implied_speed = jump / elapsed if elapsed > 0 else float("inf")
+                    if implied_speed > self.position_jump_speed_threshold_mps:
                         self.stats.position_jumps_logged += 1
                         log.warning(
-                            "position jump %.0f m at %s from previous sample at %s",
-                            jump,
+                            "position jump %.0f m in %.1f s (%.0f m/s) at %s "
+                            "from previous sample at %s",
+                            jump, elapsed, implied_speed,
                             sample.time_utc.isoformat(),
                             last_sample.time_utc.isoformat(),
                         )
@@ -145,9 +155,16 @@ class TelemetryCoordinator:
         return current.time_utc >= previous.time_utc
 
     def _fresh_enough(self, sample: VehicleTelemetrySample) -> bool:
-        """A live sample's own time must be within the freshness limit of now."""
+        """A live sample's own time must be recent and NOT in the future.
+
+        A clock-skewed sender can time-stamp a sample well ahead of real
+        time; the old gate accepted anything within |age| <= limit and so
+        let such samples through. We now bound it to the real range
+        [-grace, +limit]: a touch of future is tolerated for GPS/host
+        clock jitter, anything further is a clock bug.
+        """
         age = (utc_now() - sample.time_utc).total_seconds()
-        return abs(age) <= self.live_freshness_limit_s
+        return -self.live_future_grace_s <= age <= self.live_freshness_limit_s
 
 
 async def run_once(reader: TelemetryReader, store: StateStore) -> CoordinatorStats:

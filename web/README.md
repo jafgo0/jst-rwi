@@ -34,6 +34,11 @@ API-unreachable state).
 A classic script that sets `window.RWI_CONFIG`; every key is optional
 (defaults in `js/settings.js`).
 
+**`web/config.js` is operator-local and ignored by git** (via
+`.gitignore`). The versioned file is `web/config.example.js`: copy it
+to `web/config.js` on each machine and put map tokens or API-key
+overrides there. The real `config.js` never enters version control.
+
 * `apiBase`: API base URL ("" = same origin; `http://localhost:8000` under file://).
 * `requestTimeoutMs`, `pollStateMs`, `pollSlowMs`.
 * `freshnessDefaultsS`: fallback freshness limits used **only** while
@@ -60,6 +65,40 @@ map: {
 Any MapLibre-compatible style URL works. The key is visible to anyone who can load
 the page, so use a domain-restricted key. The footer prints exactly what is
 configured, so keep `providerName` / `licenceText` truthful.
+
+#### Using a Mapbox style with MapLibre
+
+The code loads a MapLibre style and does NOT embed the Mapbox GL SDK. If the team
+holds a Mapbox account and wants to use one of their styles, point MapLibre at
+Mapbox's Style Specification endpoint and let MapLibre render it; nothing in the
+repo assumes a Mapbox token exists, and no token is checked into git.
+
+```js
+map: {
+  styleUrl: "https://api.mapbox.com/styles/v1/<username>/<style_id>",
+  apiKey:   "YOUR_MAPBOX_ACCESS_TOKEN",   // keep OUT of git; config.js is operator-local
+  apiKeyParam: "access_token",             // Mapbox uses access_token=... not key=...
+  providerName: "Mapbox <style_id>",
+  licenceText:  "(c) Mapbox (c) OpenStreetMap contributors",
+  requiresOsmCredit: true,
+}
+```
+
+Known caveats of the MapLibre-reads-Mapbox path:
+
+* Mapbox styles may use SDF icons, `mapbox://` sprite/glyph URLs, or custom
+  layer types that MapLibre does not implement. If something does not draw,
+  check `read_console_messages` for the first missing resource; a style built
+  on Mapbox Streets v12 usually works out of the box, a custom Studio style may
+  not.
+* The Mapbox access token in `config.js` is served by the API and visible to
+  every page viewer, so it MUST be a domain-restricted "URL referrer"
+  token - the Mapbox dashboard sets this; the token SHOULD NOT be a
+  secret-key (`sk.*`) token. `config.js` itself stays outside the git repo on
+  operator machines (add it to `.gitignore` in your checkout).
+* Mapbox counts map loads against the account monthly quota. For race-day use
+  consider pre-caching tiles or switching back to the MapTiler / OpenFreeMap
+  style on the race convoy.
 
 ### Tile source and licence in use by default
 

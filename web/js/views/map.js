@@ -54,6 +54,7 @@ export function create(root) {
   let loaded = false, fitted = false, fittedRoute = false, destroyed = false, styleFallback = false, tileErrors = 0;
   let samples = []; // current sample list for hover lookups
   let lastSig = "";
+  let pinned = false; // true after a tap/Enter pins the readout; mouseout no longer clears
 
   /* ---------------------------------------------------------------- map setup */
   const ML = /** @type {any} */ (window).maplibregl;
@@ -75,7 +76,27 @@ export function create(root) {
       notice.className = "map-notice warn";
     });
     map.on("mousemove", onHover);
-    map.on("mouseout", () => paintReadout(null));
+    map.on("mouseout", () => { if (!pinned) paintReadout(null); });
+    // Touch devices have no hover: a tap pins the readout to the tapped
+    // point. A second tap on empty map clears it. Keyboard users get the
+    // same behaviour via Enter/Space on the focused map canvas.
+    map.on("click", (e) => { pinned = true; onHover(e); });
+    const canvas = map.getCanvas();
+    if (canvas) {
+      canvas.setAttribute("tabindex", "0");
+      canvas.setAttribute("aria-label",
+        "Race weather map. Arrow keys pan, plus and minus zoom. Press Enter to pin a readout at the map centre, Escape to clear.");
+      canvas.addEventListener("keydown", (ke) => {
+        if (ke.key === "Enter" || ke.key === " ") {
+          ke.preventDefault();
+          const c = map.getCenter();
+          pinned = true;
+          onHover({ point: map.project(c), lngLat: c });
+        } else if (ke.key === "Escape") {
+          pinned = false; paintReadout(null);
+        }
+      });
+    }
     var styleTimer = setTimeout(() => { if (!loaded && !styleFallback) fallbackStyle("style did not load within 25 s"); }, 25000);
   }
 

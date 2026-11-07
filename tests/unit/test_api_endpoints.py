@@ -10,22 +10,33 @@ from fastapi.testclient import TestClient
 
 from rwi.api import capability
 from rwi.api.app import create_app
+from rwi.config import get_settings
 from rwi.core.position import ActiveState, PositionMode
 from rwi.core.state import get_state_store
 
 NIGHT = "2026-01-15T23:00:00Z"
 RACE_NOON = "2027-08-24T03:00:00Z"
+#: Shared secret used by tests that exercise live_gps over HTTP. Any string
+#: works - production uses a deployment-specific value in RWI_TELEMETRY_SHARED_SECRET.
+TEST_TELEMETRY_SECRET = "test-secret"
+TELEMETRY_HEADERS = {"X-Telemetry-Secret": TEST_TELEMETRY_SECRET}
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     store = get_state_store()
     # Each test starts with no position: the platform must not assume one.
     import asyncio
 
+    # Enable the live_gps HTTP path for the tests that need it. The cache on
+    # get_settings() is why we clear it rather than patching the instance.
+    monkeypatch.setenv("RWI_TELEMETRY_SHARED_SECRET", TEST_TELEMETRY_SECRET)
+    get_settings.cache_clear()
+
     asyncio.run(store.replace(ActiveState(mode=PositionMode.MANUAL, fix=None)))
     with TestClient(create_app()) as test_client:
         yield test_client
+    get_settings.cache_clear()
 
 
 def test_health_reports_what_the_build_can_do(client: TestClient) -> None:
@@ -97,6 +108,7 @@ def test_setting_a_position_resolves_local_time_from_that_position(client: TestC
             "heading_deg": 181.0,
             "source": "vehicle_telemetry",
         },
+        headers=TELEMETRY_HEADERS,
     )
     body = response.json()
     assert body["position_available"] is True
@@ -104,6 +116,152 @@ def test_setting_a_position_resolves_local_time_from_that_position(client: TestC
     assert body["timezone_name"] == "Australia/Darwin"
     assert body["utc_offset_hours"] == pytest.approx(9.5)
     assert body["state"]["fix"]["fix_quality"] == "gps"
+
+
+def test_live_gps_requires_the_shared_secret_header(client: TestClient) -> None:
+    """Without a valid X-Telemetry-Secret header, mode=live_gps must be refused:
+    live_gps is the one mode downstream consumers treat as 'real car on real
+    road', and letting any caller claim it would let a browser lie about being
+    the car."""
+    response = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "source": "attacker",
+        },
+    )
+    assert response.status_code == 403
+    assert "X-Telemetry-Secret" in response.json()["detail"]
+
+
+def test_live_gps_with_a_wrong_secret_is_refused(client: TestClient) -> None:
+    response = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "source": "attacker",
+        },
+        headers={"X-Telemetry-Secret": "wrong-value"},
+    )
+    assert response.status_code == 403
+
+
+def test_manual_and_route_sim_modes_do_not_require_the_secret(client: TestClient) -> None:
+    """Non-authoritative modes stay open: operator and sim entry must not be
+    gated by the telemetry secret."""
+    for mode in ("manual", "route_sim"):
+        response = client.post(
+            "/api/state/position",
+            json={
+                "mode": mode,
+                "latitude_deg": -14.4652,
+                "longitude_deg": 132.2635,
+                "source": "operator",
+            },
+        )
+        assert response.status_code == 200, mode
+
+
+def test_a_gps_timestamp_in_the_future_is_rejected(client: TestClient) -> None:
+    """Clock-skewed senders could otherwise poison the state with a sample
+    stamped well ahead of real time. Grace is a couple of seconds; anything
+    further is a clock bug."""
+    from datetime import UTC, datetime, timedelta
+
+    ahead = (datetime.now(UTC) + timedelta(minutes=10)).isoformat()
+    response = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "gps_time_utc": ahead,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert response.status_code == 400
+    assert "future" in response.json()["detail"].lower()
+
+
+def test_an_implausible_live_gps_jump_is_parked_as_suspect_not_promoted(
+    client: TestClient,
+) -> None:
+    """A second live_gps fix that implies ground speed over the threshold must
+    NOT become the active position. The last trusted fix stays authoritative
+    for weather/route/strategy; the suspect fix is reported alongside so the
+    operator can see the discrepancy."""
+    first = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert first.status_code == 200
+    # ~111 km north at any plausible cadence - implied speed well over 110 m/s.
+    second = client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -13.4652,
+            "longitude_deg": 132.2635,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    assert second.status_code == 200
+    body = second.json()
+    # The trusted fix must still be the first one, not the suspect jump.
+    assert body["state"]["fix"]["point"]["latitude_deg"] == pytest.approx(-14.4652)
+    assert body["state"]["fix"]["fix_quality"] == "gps"
+    # The suspect fix is visible to the operator.
+    assert body["suspect_fix"] is not None
+    assert body["suspect_fix"]["latitude_deg"] == pytest.approx(-13.4652)
+    assert body["suspect_fix"]["jump_m"] > 100_000.0
+
+
+def test_an_operator_fix_clears_a_previously_parked_suspect(client: TestClient) -> None:
+    """When the operator posts a confirming fix (manual or a fresh trusted
+    live_gps), any earlier suspect fix must be cleared: it no longer applies
+    to the current trusted state."""
+    client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -14.4652,
+            "longitude_deg": 132.2635,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    client.post(
+        "/api/state/position",
+        json={
+            "mode": "live_gps",
+            "latitude_deg": -13.4652,
+            "longitude_deg": 132.2635,
+            "source": "vehicle_telemetry",
+        },
+        headers=TELEMETRY_HEADERS,
+    )
+    cleared = client.post(
+        "/api/state/position",
+        json={
+            "mode": "manual",
+            "latitude_deg": -13.4652,
+            "longitude_deg": 132.2635,
+            "source": "operator",
+        },
+    ).json()
+    assert cleared["suspect_fix"] is None
 
 
 def test_simulated_position_is_flagged_for_the_ui(client: TestClient) -> None:

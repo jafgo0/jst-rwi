@@ -320,6 +320,7 @@ def data_integrity_alerts(
     *,
     series: list[WeatherSeries] | None = None,
     fix: PositionFix | None = None,
+    suspect_fix: PositionFix | None = None,
     provider_health: list[ProviderHealth] | None = None,
     thresholds: AlertThresholds | None = None,
     now: datetime | None = None,
@@ -386,6 +387,39 @@ def data_integrity_alerts(
                 evidence=[f"mode={fix.mode.value}", f"source={fix.source}"],
                 location=fix.point,
             )
+
+    if suspect_fix is not None and fix is not None:
+        from rwi.core.geo import geodesic_distance_m
+
+        jump = geodesic_distance_m(fix.point, suspect_fix.point)
+        suspect_age = suspect_fix.age_s(builder.now)
+        trusted_age = fix.age_s(builder.now)
+        builder.add(
+            alert_id="position-suspect-jump",
+            severity=AlertSeverity.CRITICAL,
+            category=AlertCategory.POSITION,
+            headline=f"Suspect GPS jump {jump / 1000:.1f} km - ignored",
+            detail=(
+                f"The last live_gps sample claimed a position "
+                f"{jump / 1000:.1f} km from the previous one, which is physically "
+                "implausible. It is NOT being used for weather, route or strategy; "
+                f"the last trusted fix ({trusted_age:.0f} s old) is still "
+                "authoritative. Confirm by posting a manual fix, or wait for a "
+                "fresh trusted telemetry sample."
+            ),
+            evidence=[
+                f"suspect_lat={suspect_fix.point.latitude_deg:.4f}",
+                f"suspect_lon={suspect_fix.point.longitude_deg:.4f}",
+                f"jump_m={jump:.0f}",
+                f"suspect_age_s={suspect_age:.0f}",
+                f"trusted_age_s={trusted_age:.0f}",
+            ],
+            recommended_action=(
+                "Verify the telemetry link; if the suspect position is correct, "
+                "post a manual fix to accept it."
+            ),
+            location=fix.point,
+        )
 
     for item in series or []:
         base = item.base_provenance()

@@ -2,19 +2,31 @@
 
 Deliberately tiny and explicit: a single object, replaced atomically, read by
 every subsystem. No module may keep its own copy of "current position".
+
+Scope note: this is an *in-process* store. A single ``uvicorn`` worker is the
+only supported deployment because every writer and every reader must see the
+same object. Running with ``--workers N > 1`` silently splits the state N ways
+and must not be done. See ``docs/OPERATIONS.md``.
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from typing import Any
 
 from rwi.core.errors import PositionUnavailableError, StaleDataError
 from rwi.core.position import ActiveState, PositionFix, PositionMode
 
 
 class StateStore:
-    """Holds the authoritative :class:`ActiveState`."""
+    """Holds the authoritative :class:`ActiveState`.
+
+    All writes go through ``replace``/``update_fix``/``patch`` under the same
+    lock, so reads taken between write steps never leak back into a later
+    write: anyone wanting a compound update (new fix AND new route) must use
+    ``patch`` with a callable rather than ``state`` + ``replace``.
+    """
 
     def __init__(self, initial: ActiveState | None = None) -> None:
         self._state = initial or ActiveState(mode=PositionMode.MANUAL, fix=None)
@@ -48,6 +60,18 @@ class StateStore:
             )
             self._history.append(fix)
             del self._history[:-5000]
+            return self._state
+
+    async def patch(self, **updates: Any) -> ActiveState:
+        """Atomically apply ``updates`` on top of the current state.
+
+        Using ``state.model_copy(update=updates)`` outside the lock lets a
+        concurrent writer land between read and write, and the compound write
+        clobbers that concurrent update. This method takes the lock across
+        read and write so no snapshot ever leaks back as a clobber.
+        """
+        async with self._lock:
+            self._state = self._state.model_copy(update=updates)
             return self._state
 
     def recent_fixes(self, limit: int = 200) -> list[PositionFix]:

@@ -68,10 +68,30 @@ function positionPanel(st) {
         `No position fix in mode ${s.mode}. No coordinates are shown and no weather, solar or route value is computed for a default location.`)];
     }
     const f = s.fix;
+    // A parked suspect fix (implausible-jump) is surfaced inline so the
+    // operator cannot miss that the trusted position is being held while a
+    // live_gps sample disagrees. Weather / route / strategy already use the
+    // trusted fix; this banner explains why the screen is not following the
+    // new coordinate.
+    const suspect = s?.suspect_fix;
+    const suspectBanner = suspect ? h("div", {
+      class: "note warn", style: { borderLeft: "3px solid var(--crit)", padding: "6px 8px", marginBottom: "8px" },
+    },
+      h("b", null, "SUSPECT GPS SAMPLE — not used. "),
+      `Live_gps claimed ${fmtLatLon(suspect.latitude_deg, suspect.longitude_deg)} `,
+      suspect.jump_m !== null && suspect.jump_m !== undefined
+        ? `(${fmtNum(suspect.jump_m / 1000, 1)} km from the trusted fix)`
+        : null,
+      suspect.implied_speed_mps !== null && suspect.implied_speed_mps !== undefined
+        ? `, implying ${fmtNum(suspect.implied_speed_mps, 0)} m/s. `
+        : ". ",
+      "The last trusted fix (shown below) is still authoritative; weather, route and strategy use it. Post a manual fix to accept the jump.",
+    ) : null;
     const fr = fixFreshness(f, s.mode);
     const acc = f.accuracy_m;
     const ageRef = f.gps_time_utc || f.received_at_utc;
     return [
+      suspectBanner,
       h("div", { style: { marginBottom: "8px", display: "flex", gap: "8px", alignItems: "center" } }, mode,
         h("span", { class: "dim" }, `source: ${f.source}`),
         f.mode !== s.mode ? chip("MODE MISMATCH", "crit", "fix.mode differs from state.mode") : null),

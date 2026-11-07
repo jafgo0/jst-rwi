@@ -1,4 +1,12 @@
-# First real PV model validation (2026-11-03)
+# First real PV model validation (2026-11-03) — SUPERSEDED
+
+> **SUPERSEDED 2026-11-08** by `retrospective-5-days-2025.md`. The main
+> conclusion of this report — that the shadow matrix closed the 2.49x
+> power gap to 0.98x — was based on a 4-hour window at one site. When
+> the same run was expanded to 13 hours across five race days it
+> reversed sign (matrix underestimates by 54 %, naked array lands at
+> 99 %). Keep this file for historical traceability; do not act on it.
+> The current conclusion lives in the five-day retrospective.
 
 The first time this platform's models have met real data from a car on the road.
 

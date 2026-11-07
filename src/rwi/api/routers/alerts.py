@@ -42,6 +42,7 @@ async def read_alerts(
 ) -> Any:
     now = utc_now()
     fix = store.state.fix
+    suspect_fix = store.state.suspect_fix
     series: list[Any] = []
     health: list[Any] = []
 
@@ -70,6 +71,12 @@ async def read_alerts(
     for item in series:
         alerts.extend(weather_alerts(item, now=now, horizon_s=hours * 3600.0))
     alerts.extend(
-        data_integrity_alerts(series=series, fix=fix, provider_health=health, now=now)
+        data_integrity_alerts(
+            series=series,
+            fix=fix,
+            suspect_fix=suspect_fix,
+            provider_health=health,
+            now=now,
+        )
     )
     return sort_alerts(alerts)

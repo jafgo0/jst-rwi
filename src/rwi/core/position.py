@@ -104,6 +104,14 @@ class ActiveState(BaseModel):
 
     mode: PositionMode
     fix: PositionFix | None = None
+    #: A suspect fix held aside, not promoted to the active ``fix``. The
+    #: HTTP position endpoint parks an implausible-jump live_gps fix here
+    #: instead of letting it clobber the last trusted position; weather,
+    #: route and strategy read ``fix``, so they keep using the last trusted
+    #: location until the operator confirms or the next trusted fix arrives.
+    #: UI shows the discrepancy (lat/lon, implied speed, age) via
+    #: :mod:`rwi.alerts`.
+    suspect_fix: PositionFix | None = None
     selected_time_utc: datetime | None = Field(
         default=None, description="None means 'follow real time'"
     )

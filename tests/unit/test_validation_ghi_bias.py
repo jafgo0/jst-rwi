@@ -50,3 +50,25 @@ def test_nearest_tie_is_deterministic() -> None:
     # Equidistant between Tennant Creek (-19.65) and Alice Springs (-23.698) at -21.674.
     table = load_default_table()
     _, _ = table.nearest(-21.674, 134.0)  # just assert no error; result is one of the two
+
+
+def test_endpoint_marks_distant_points_as_not_relevant() -> None:
+    """The 6-point table is not a continental model: far from a tabulated
+    route point there is no local bias evidence, and the endpoint must say
+    so rather than extrapolate a Darwin figure to a thousand kilometres
+    away."""
+    from fastapi.testclient import TestClient
+
+    from rwi.api.app import create_app
+
+    with TestClient(create_app()) as client:
+        # Alice: close to a tabulated point.
+        here = client.get(
+            "/api/validation/ghi-bias", params={"lat": -23.7, "lon": 133.9}
+        ).json()
+        assert here["relevant"] is True
+        # Mid-ocean: far from any route point.
+        far = client.get(
+            "/api/validation/ghi-bias", params={"lat": 0.0, "lon": 0.0}
+        ).json()
+        assert far["relevant"] is False

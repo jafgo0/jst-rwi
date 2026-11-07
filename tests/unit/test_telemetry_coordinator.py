@@ -188,3 +188,34 @@ async def test_samples_with_no_position_do_not_touch_state() -> None:
     stats = await coordinator.consume(FakeReader([no_pos]))
     assert stats.samples_applied == 1
     assert store.state.fix is None
+
+
+async def test_a_future_dated_live_sample_is_dropped_by_the_freshness_gate() -> None:
+    """Old code accepted anything within |age| <= limit. A sender with a
+    skewed clock could time-stamp a sample 30 minutes in the future and have
+    it pass. The gate now bounds age to [-grace, +limit]."""
+    store = StateStore()
+    coordinator = TelemetryCoordinator(store)
+    ahead = _sample(seconds_from_now=60.0, source=TelemetrySource.LIVE_RADIO)
+    stats = await coordinator.consume(
+        FakeReader([ahead], source=TelemetrySource.LIVE_RADIO)
+    )
+    assert stats.stale_dropped == 1
+    assert stats.samples_applied == 0
+
+
+async def test_a_jump_is_decided_by_implied_speed_not_absolute_distance() -> None:
+    """The old fixed-distance threshold confused cadence with travel: a
+    500 m hop between samples a second apart is a 500 m/s jump but passes
+    a fixed-distance gate; a 500 m hop ten minutes apart is normal driving
+    but fails one. Implied speed is the physically meaningful test."""
+    store = StateStore()
+    coordinator = TelemetryCoordinator(store)
+    # 500 m in 60 s = 8 m/s - a plausible solar-car speed, must not flag.
+    samples = [
+        _sample(seconds_from_now=-60.0, lat=-14.4600, lon=132.26),
+        _sample(seconds_from_now=0.0, lat=-14.4555, lon=132.26),  # ~500 m
+    ]
+    stats = await coordinator.consume(FakeReader(samples))
+    assert stats.position_jumps_logged == 0
+    assert stats.samples_applied == 2

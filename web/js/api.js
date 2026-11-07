@@ -275,6 +275,7 @@ function normaliseState(r) {
     is_simulated: Boolean(r.is_simulated), position_available: Boolean(r.position_available),
     server_time_utc: st, effective_time_utc: r.effective_time_utc ?? null, utc_offset_hours: r.utc_offset_hours ?? null,
     position_age_s: r.position_age_s ?? null,
+    suspect_fix: r.suspect_fix ?? null,
   };
 }
 

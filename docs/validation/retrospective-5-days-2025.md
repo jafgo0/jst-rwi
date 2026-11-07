@@ -53,6 +53,50 @@ and panel does `efficiency_matrix.mat` describe? What azimuth convention
 does their own simulator use? Without those answers, any further validation
 is guessing which end of the stick to grab.
 
+## Review audit of the PV chain (2026-11-08)
+
+What has actually been checked, against the code and the 2025 race data,
+and what remains open.
+
+| Check | Status | Where |
+|---|---|---|
+| Timestamp matching: MPPT and reanalysis use the same UTC and the same local-time offset | **done** | `scripts/validation/pv_vs_mppt_2025.py` converts MPPT UTC to hour-bucket UTC; reanalysis hours are UTC. No local-time drift found. |
+| Hour-mean vs instantaneous comparison | **documented as a limit** | The MPPT CSV is per-sample; reanalysis GHI is hourly mean. The script averages MPPT per hour before comparing. A 526 W mean on 13 hours cannot resolve sub-hour variability; "hourly aggregation is too coarse" is listed above as candidate explanation #3. |
+| Heading-aware vehicle-frame azimuth | **done** | The current run uses `sun_az_vehicle = (sun_az_world - vehicle_heading) % 360` before indexing the shadow matrix. The previous run did not; that is why this retrospective reversed the first report. |
+| Shadow-matrix coordinate convention (sign, axis order) | **OPEN** | The matrix index convention is not documented alongside `efficiency_matrix.mat`. Candidate explanation #2 above. |
+| Vehicle/panel version coupling of the matrix | **OPEN** | The matrix file loaded has 4 MPPT groups so the Pydantic contract accepts it, but the physical geometry may belong to the 2027 car. Candidate explanation #1. |
+| Night-time irradiance leak | **done** | GHI is 8 W/m² at 22:00 UTC on day 1; DC power is 15 W — no night leak into daytime. |
+| Unit sanity (W vs kW, m/s vs km/h) | **done** | Order-of-magnitude on day-1 noon is 500–700 W modelled / 500 W measured; no 1000× bug. |
+| Clock skew between telemetry and reanalysis | **done** (within the hourly bin) | Hour-bin alignment hides sub-hour clock skew; see hour-mean limit above. |
+
+### Precise questions for the team
+
+Write-once, non-urgent; the answer to any one of these unblocks the next
+step of validation. Numbered so the team can reply by number.
+
+1. **Matrix version.** Does `efficiency_matrix.mat` describe (a) the
+   2025 race car (Tesseract-2025, 4 MPPT groups, X cells per group), or
+   (b) the 2027 car (planned, N MPPT groups, ... cells)? If (b),
+   validating against 2025 race data is comparing a 2027 model against
+   a 2025 car and no further code change will close the gap.
+2. **Index convention of the matrix.** For a given cell index, is axis 0
+   the sun's **elevation** or its **zenith** angle? Is axis 1 the sun's
+   **azimuth** or its **hour angle**? Are the azimuth zeros at **north
+   clockwise**, **south clockwise**, or **east counter-clockwise**?
+   What range (0..360, -180..180, 0..90)? Reference: the matrix file
+   itself has no header text our loader reads.
+3. **Vehicle frame orientation.** Is the vehicle's local +x axis the
+   **direction of travel** (nose), or is the matrix defined relative to
+   the **panel normal** which may differ from nose by a mounting offset?
+4. **MPPT-to-array mapping.** The MPPT CSV has four channels. Which
+   physical group on the panel does each channel feed? If the file we
+   load has the groups ordered differently from the CSV, hourly totals
+   still match but per-group sensitivity to shadow does not.
+5. **Panel reference used by the team's own simulator.** If the team's
+   own tool reports a figure for day 1 at 00:00 UTC, we can compare
+   their number against ours and localise the disagreement to either
+   model inputs (GHI, heading, position) or model code.
+
 ## Status changes
 
 | Row | Before | After | Why |

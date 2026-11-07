@@ -108,3 +108,26 @@ async def test_a_new_fix_preserves_the_selected_time_and_route() -> None:
     await store.update_fix(_fix(PositionMode.LIVE_GPS))
     assert store.state.selected_time_utc == chosen
     assert store.state.route_id == "bwsc-2027"
+
+
+async def test_patch_is_atomic_under_concurrent_fix_updates() -> None:
+    """A compound write that reads state.model_copy outside the lock is
+    race-prone: a fix landing between the read and the write clobbers that
+    fix. patch() must hold the lock across read and write."""
+    import asyncio
+
+    store = StateStore()
+    await store.update_fix(_fix(PositionMode.LIVE_GPS))
+
+    async def writer_fix() -> None:
+        for _ in range(100):
+            await store.update_fix(_fix(PositionMode.LIVE_GPS))
+
+    async def writer_patch() -> None:
+        for _ in range(100):
+            await store.patch(route_distance_m=42.0)
+
+    await asyncio.gather(writer_fix(), writer_patch())
+    # Both writers converged; neither clobbered the other's surface.
+    assert store.state.fix is not None
+    assert store.state.route_distance_m == 42.0

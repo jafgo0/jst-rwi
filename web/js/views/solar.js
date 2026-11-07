@@ -184,20 +184,26 @@ function ghiBiasBanner() {
   const d = r.data;
   const b = d.bias_vs_truth || {};
   const agree = Math.sign(b.ecmwf) === Math.sign(b.power) && Math.sign(b.power) === Math.sign(b.merra2);
-  // Flag only when the three products agree in sign AND the median bias is
-  // worth caring about operationally (>=15 W/m^2 by convention).
   const strong = agree && Math.abs(b.median) >= 15;
+  // Beyond the API's relevance radius there is no local comparison; the chip
+  // must not quote a bias from the nearest tabulated point as if it applied.
+  if (!d.relevant) {
+    if (!strong) return null;
+    return h("div", { class: "note", style: { borderLeft: "3px solid var(--muted)", paddingLeft: "8px" } },
+      h("b", null, "No local GHI comparison data"),
+      `. The nearest tabulated route point (${d.nearest_point}) is `,
+      `${d.distance_km} km away, outside the ${d.relevant_radius_km} km relevance radius. `,
+      "No bias figure is applied here.");
+  }
   if (!strong) return null;
   const sign = b.median > 0 ? "+" : "";
   const dir = b.median > 0 ? "higher" : "lower";
-  const dist = d.distance_km > 50
-    ? ` (nearest tabulated point, ${d.distance_km} km away)`
-    : "";
   return h("div", { class: "note warn", style: { borderLeft: "3px solid var(--warn)", paddingLeft: "8px" } },
-    "GHI bias at ", h("b", null, d.nearest_point), dist,
-    `: three gridded reanalyses read ${sign}${b.median.toFixed(0)} W/m² ${dir} than BoM-anchored SILO over BWSC-2025 race week `,
+    "Historical GHI signal at ", h("b", null, d.nearest_point),
+    ` (within ${d.distance_km} km): over BWSC-2025 race week (2025-08-24..30), three gridded reanalyses read `,
+    `${sign}${b.median.toFixed(0)} W/m² ${dir} than BoM-anchored SILO `,
     `(ECMWF ${b.ecmwf > 0 ? "+" : ""}${b.ecmwf.toFixed(1)}, POWER ${b.power > 0 ? "+" : ""}${b.power.toFixed(1)}, MERRA-2 ${b.merra2 > 0 ? "+" : ""}${b.merra2.toFixed(1)}). `,
-    `Treat the clear-sky and forecast GHI as likely to ${b.median > 0 ? "overread" : "underread"} by this amount here.`);
+    h("i", null, "This is a 2025 observation between gridded products, not a measured error in today's forecast or clear-sky model. No correction is applied."));
 }
 
 function powerPanel(charts) {

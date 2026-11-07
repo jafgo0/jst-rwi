@@ -281,6 +281,17 @@ event Wi-Fi should not be relied on (p.13). Offline operation is therefore a cor
 Not claimed: any availability, latency or update-frequency target. Those must be defined and measured
 (master specification section 14); none has been.
 
+**Provider diversity (and what it is not).** The platform today talks to one forecast API,
+Open-Meteo, which hosts several models (ECMWF-IFS, GFS, ICON, AIFS). That is *model* diversity
+*inside one provider*, not provider independence: if Open-Meteo is down, rate-limited, or changes
+its terms, every "fallback model" becomes unavailable at the same time. Live observations come
+from the BoM FTP path, which is a separate dependency from Open-Meteo and is the only genuine
+other source of weather data in the platform today. Everything in `docs/science/fusion.md` about
+"two models disagree" must be read as "two models under one API disagree": it detects model
+disagreement, not source failure. A second forecast provider (ECMWF direct, BARRA, or a NWP
+mirror) is a prerequisite to any claim of resilience against provider outage. See
+`docs/science/providers.md` section 3.
+
 ## 9. Security and access
 
 * Secrets only in environment/`.env` (not in git); `.env.example` lists names only.

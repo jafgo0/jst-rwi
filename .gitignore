@@ -17,3 +17,8 @@ data/replay/
 data/archive/
 node_modules/
 .DS_Store
+
+# Operator-local dashboard config (holds map tokens and other per-machine
+# settings). Each operator copies `web/config.example.js` to `web/config.js`;
+# the real file never enters version control.
+web/config.js

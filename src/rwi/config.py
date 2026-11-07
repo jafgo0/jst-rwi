@@ -73,6 +73,27 @@ class Settings(BaseSettings):
     allow_network: bool = True
     """Set false in offline drills: providers then serve cache or fail explicitly."""
 
+    # Trusted-source token for POST /api/state/position with mode=live_gps.
+    # Set via RWI_TELEMETRY_SHARED_SECRET on a trusted private LAN. When
+    # None (the default) POST with live_gps is rejected and the platform
+    # only accepts manual/sim fixes over HTTP. A real on-car telemetry
+    # pipeline should go through rwi.telemetry.TelemetryCoordinator, which
+    # applies monotonicity and jump gates the single-shot HTTP endpoint
+    # cannot.
+    telemetry_shared_secret: str | None = None
+
+    # Jump gate for the HTTP position endpoint, applied to live_gps fixes
+    # only. A jump that implies ground speed over this many m/s against the
+    # previous fix tags the new fix as suspect (fix_quality=UNKNOWN) and
+    # logs it; the fix is still accepted because dropping it silently
+    # freezes the dashboard where the previous fix was.
+    http_live_jump_speed_mps: float = 110.0  # ~400 km/h
+
+    # Future-time grace for inbound fixes. A GPS receiver may stamp a fix a
+    # second or two ahead of server clock; anything further is a sign of
+    # clock corruption and is rejected.
+    telemetry_future_grace_s: float = 5.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

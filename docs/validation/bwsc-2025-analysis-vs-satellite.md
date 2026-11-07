@@ -48,9 +48,16 @@ All numbers W/m^2.
    bias flips around Tennant Creek. Consistent with a cloud-fraction bias
    that is small on bright tropical days and larger when stratocumulus
    dominates the southern half.
-4. **RMSE 108 W/m^2 is the lower bound on our GHI forecast error over
-   this region**. Any live ECMWF-IFS forecast will inherit at least this
-   much hour-to-hour uncertainty from the model's analysis step.
+4. **The hourly RMSE between ECMWF-IFS reanalysis and NASA POWER is
+   108 W/m^2.** This is the disagreement between two gridded products,
+   neither of which is a ground measurement. It is NOT a lower bound on
+   the error of a future ECMWF-IFS *forecast*: a forecast is evaluated
+   against the truth, and RMSE(product A, product B) and RMSE(forecast,
+   truth) are different quantities that can move in either direction.
+   What the number does tell us is the scale at which two gridded
+   analyses of the same hour already disagree, and that is the scale
+   below which inferences about model skill will be dominated by
+   analysis-product noise rather than by signal.
 
 ## Triangulation against a BoM-anchored product (added 2026-11-03)
 
@@ -139,10 +146,17 @@ What the fourth product changed:
   table. Treat MERRA-2 as useful for direction-of-bias checks, not as a
   stand-alone truth.
 
-So the final picture for Alice Springs: the live ECMWF pipeline reads
-+17-30 W/m^2 higher than BoM, consistently across reanalyses. For the
-car's energy budget over the second half of the race this is the
-single strongest bias signal we have from the gridded products.
+So the current picture at Alice Springs is that three gridded
+reanalyses agree with each other and disagree with BoM-anchored SILO
+by +17 to +30 W/m^2. This is a disagreement BETWEEN GRIDDED PRODUCTS;
+it is not yet a validation against a ground measurement. It could be
+a shared reanalysis bias, or it could be SILO reading low over sparsely
+stationed arid terrain. The two cannot be separated without station
+data, and the BoM one-minute solar product covers only up to December
+2020, so a direct 2025 race-week check is not possible with free
+tools. Until a station comparison exists for any period at this site,
+the chip the dashboard shows at Alice Springs is a WARNING of a known
+disagreement, not a confirmed model bias to be corrected against.
 
 ### Aerosol hypothesis ruled out (added 2026-11-07)
 
@@ -159,12 +173,14 @@ for the same week of 2024 as a baseline.
 
 Race-week AOD is *lower* than baseline (0.83x), both are at the low end
 of a clean continental value (typical clean 0.05-0.10; a dusty day is
-0.3-0.5). So the models were not failing to see elevated aerosol;
-MERRA-2's own assimilated AOD field says Alice had clean air that
+0.3-0.5). On MERRA-2's own assimilated field, Alice had clean air that
 week.
 
-That eliminates "aerosol miss" as an explanation for the +17/+23/+30
-W/m^2 bias. The remaining candidates are:
+This narrows (but does not formally rule out) "aerosol miss" as an
+explanation for the +17/+23/+30 W/m^2 bias: the check uses MERRA-2's
+*own* AOD against MERRA-2's GHI, so a systematic AOD under-read common
+to the assimilation and the radiation scheme would be invisible to it.
+Within that limit, the remaining candidates are:
 
 1. **SILO is low**, not the models high. SILO's radiation grid is
    interpolated from BoM stations; the arid Red Centre is sparsely

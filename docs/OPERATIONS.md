@@ -122,6 +122,59 @@ make check                    # lint, types, tests
 The API is read-mostly and safe to restart at any time; the capture job is a
 separate process for exactly that reason.
 
+### Run it as a single process
+
+`StateStore` lives in process memory (`src/rwi/core/state.py`). A fix posted to
+worker A is not visible to worker B. Run `uvicorn` with **one worker** on the
+race-day laptop; that is the only supported mode today.
+
+```bash
+uvicorn rwi.api.app:app --host 127.0.0.1 --port 8000       # OK
+uvicorn rwi.api.app:app --workers 4                          # DO NOT: splits state 4 ways
+gunicorn -w 4 rwi.api.app:app                                # DO NOT: same reason
+```
+
+If someone wants to run multiple API processes behind a load balancer, the
+state store has to move out of process first (Redis, SQLite with WAL, or a
+dedicated writer) and `get_state_store()` has to become an adapter. That is
+work, not a config flip.
+
+### Trusted-source telemetry secret
+
+`POST /api/state/position` with `mode=live_gps` is refused unless the
+deployment sets `RWI_TELEMETRY_SHARED_SECRET` AND the caller presents the
+same value in the `X-Telemetry-Secret` header. Without the env var set, the
+HTTP path for live_gps is closed; manual and route_sim modes stay open so
+operator entry and simulation still work. This closes the trivial path where
+any page reachable on the private network could lie about being the car.
+
+* Rotate the secret per race; store it in a password manager, not in the
+  repo.
+* The real telemetry pipeline (`rwi.telemetry.TelemetryCoordinator`) applies
+  monotonicity, freshness and implied-speed gates that this single-shot
+  endpoint cannot; prefer the pipeline for anything beyond operator-driven
+  pokes.
+
+### Faster data: what it would take
+
+Live dashboard latency today is bounded by two independent clocks:
+
+1. **State poll** — the UI polls `/api/state` every 5 s (`pollStateMs` in
+   `web/config.js`). Lowering it to 1 s on a LAN is safe; the backend reads
+   from an in-memory store.
+2. **Provider fetch** — Open-Meteo forecasts update at the model cadence
+   (6 h for ECMWF-IFS, 1 h for GFS); nothing the client does gets a new
+   value between model runs. The capture job already pre-warms the archive
+   for the 7 configured route sites; extending the site list and enabling
+   `capture_enabled=true` is the real "faster data" lever.
+
+A new value cannot arrive before the upstream model publishes it. What the
+platform controls is how quickly a published value reaches the dashboard:
+pre-warm the cache (`capture_enabled=true`), shorten
+`cache_ttl_forecast_s` only where quota permits, and reduce `pollStateMs` on
+a trusted LAN. A WebSocket push path would help only once the capture
+cadence is already down to minutes; today it is hours.
+
 ## Before the race
 
 * Start capture now, and verify weekly that `value_count` is still growing.
