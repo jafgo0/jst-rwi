@@ -144,6 +144,42 @@ So the final picture for Alice Springs: the live ECMWF pipeline reads
 car's energy budget over the second half of the race this is the
 single strongest bias signal we have from the gridded products.
 
+### Aerosol hypothesis ruled out (added 2026-11-07)
+
+A natural question: are the three gridded products overestimating GHI
+at Alice Springs because they all under-represent dust aerosol over
+the Red Centre? Pulled MERRA-2 M2T1NXAER TOTEXTTAU (total aerosol
+optical depth at 550 nm, assimilated) for Alice Springs race week and
+for the same week of 2024 as a baseline.
+
+| Week             | mean total AOD @550 | mean dust AOD | dust fraction |
+|------------------|--------------------:|--------------:|--------------:|
+| Race (2025-08-24..30) | 0.045 | 0.014 | 31 % |
+| Baseline (2024-08-24..30) | 0.054 | 0.015 | 28 % |
+
+Race-week AOD is *lower* than baseline (0.83x), both are at the low end
+of a clean continental value (typical clean 0.05-0.10; a dusty day is
+0.3-0.5). So the models were not failing to see elevated aerosol;
+MERRA-2's own assimilated AOD field says Alice had clean air that
+week.
+
+That eliminates "aerosol miss" as an explanation for the +17/+23/+30
+W/m^2 bias. The remaining candidates are:
+
+1. **SILO is low**, not the models high. SILO's radiation grid is
+   interpolated from BoM stations; the arid Red Centre is sparsely
+   stationed, and the nearest radiation station to Alice (Alice
+   Springs Airport 015540, a BSRN-class 1-min site) is a separate
+   dataset that SILO's gridding does not necessarily anchor on.
+2. A shared surface-process bias all three reanalyses inherit
+   (sub-grid cloud, surface albedo over red sand). Less likely given
+   that three independent models from three groups agree numerically.
+
+Both candidates point in the same direction: a direct comparison
+against BoM Alice Springs 015540 1-min station data is now the next
+step, and the hypothesis is that the station will read closer to the
+gridded products than to SILO.
+
 ## What is now in the repo
 
 `scripts/validation/bwsc_2025_analysis_vs_satellite.py` runs the whole
