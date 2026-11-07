@@ -280,7 +280,9 @@ async def read_satcorps_crosscheck(
     try:
         latest = _cached_latest_scene(max_age_hours)
     except satcorps.SatCorpsCapabilityError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
     if latest is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -293,7 +295,9 @@ async def read_satcorps_crosscheck(
     try:
         downloaded = satcorps.download_scene(latest, cache_dir=settings.cache_dir / "satcorps")
     except satcorps.SatCorpsCapabilityError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
+        ) from exc
     if downloaded.local_path is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
