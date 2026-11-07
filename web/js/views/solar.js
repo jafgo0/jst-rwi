@@ -9,11 +9,11 @@ import { h, replace, append } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, fmtLocal, compass, toMs, fmtEnergyWh } from "../format.js";
 import { panel, kv, numCell, textCell, kindChip, chip, withResource, positionUnknown, stateBox, provFooter, ageSpan } from "../ui.js";
 import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, signature, setSession } from "../store.js";
-import { loadSolar, loadForecast, loadObservations, loadEnergy, solarDate } from "../loaders.js";
+import { loadSolar, loadForecast, loadObservations, loadEnergy, loadSatcorps, solarDate } from "../loaders.js";
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
 
-const KEYS = ["state", "observable", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy"];
+const KEYS = ["state", "observable", "solarPos", "solarDay", "clearskyDay", "forecastSolar", "observationsSolar", "energy", "satcorps"];
 
 export function create(root) {
   const body = h("div");
@@ -26,7 +26,7 @@ export function create(root) {
   let lastSig = "";
   return {
     update() {
-      loadSolar(); loadForecast({ hours: 48, key: "forecastSolar" }); loadObservations({ hours: 24, key: "observationsSolar" }); loadEnergy();
+      loadSolar(); loadForecast({ hours: 48, key: "forecastSolar" }); loadObservations({ hours: 24, key: "observationsSolar" }); loadEnergy(); loadSatcorps();
       const sig = signature(KEYS, String(session.solarDayOffset));
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
@@ -39,7 +39,7 @@ export function create(root) {
 function layout(charts) {
   if (!activePoint()) return positionUnknown("Sun position, day events and irradiance are computed only for a known position.");
   const g = h("div", { class: "grid", style: { gridTemplateColumns: "340px minmax(0, 1fr)" } });
-  g.append(h("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } }, positionPanel(), eventsPanel()),
+  g.append(h("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } }, positionPanel(), eventsPanel(), satcorpsPanel()),
     h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 } }, irradiancePanel(charts), powerPanel(charts)));
   return g;
 }
@@ -83,6 +83,33 @@ function eventsPanel() {
       ]),
     ];
   }, { blockedNode: () => positionUnknown() }), { footer: r.data ? provFooter(r.data.provenance) : null });
+}
+
+function satcorpsPanel() {
+  const r = res("satcorps");
+  return panel("NASA SatCORPS cross-check", withResource(r, (d) => {
+    const v = d.values || {};
+    const ageH = d.age_s != null ? (d.age_s / 3600) : null;
+    const phaseLbl = d.cloud_phase_label || (v.cloud_phase != null ? `code ${v.cloud_phase}` : null);
+    return [
+      h("div", { style: { marginBottom: "6px" } },
+        v.cloud_phase === 4 ? chip("CLEAR SKY", "ok", "SatCORPS phase 4") :
+        v.cloud_phase === 1 || v.cloud_phase === 2 ? chip(phaseLbl?.toUpperCase() || "CLOUDY", "warn") :
+        chip(phaseLbl?.toUpperCase() || "NO RETRIEVAL", "mute"),
+        " ", kindChip("derived")),
+      kv([
+        ["Cloud phase", textCell(phaseLbl)],
+        ["Cloud optical depth (VIS)", numCell(v.cloud_visible_optical_depth, "", { digits: 2, reason: "clear pixel or no retrieval" })],
+        ["Cloud top height", numCell(v.cloud_top_height, "km", { digits: 2, reason: "clear pixel or no retrieval" })],
+        ["Cloud top temperature", numCell(v.cloud_top_temperature, "K", { digits: 1, reason: "clear pixel or no retrieval" })],
+        ["Broadband SW albedo", numCell(v.broadband_shortwave_albedo, "%", { digits: 1, reason: "no retrieval" })],
+        ["Scene time (UTC)", textCell(d.scene_time_utc)],
+        ["Age (NASA latency)", ageH != null ? textCell(`${ageH.toFixed(1)} h`) : textCell(null, "not computed")],
+      ], "tight"),
+      h("div", { class: "note" }, d.caveat || ""),
+    ];
+  }, { blockedNode: () => positionUnknown("SatCORPS reads the pixel at the car's position; without a fix there is no point to read.") }),
+  { footer: r.data ? h("span", { class: "faint" }, r.data.attribution || r.data.source || "") : null });
 }
 
 function irradiancePanel(charts) {

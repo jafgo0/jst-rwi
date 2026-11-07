@@ -311,6 +311,16 @@ export const api = {
   /** Throws ApiError kind "unsupported" (501) when no provider offers observations. @returns {Promise<WeatherSeries>} */
   observations: ({ lat, lon, hours, variables }) => request("/api/weather/observations", { params: { lat, lon, hours, variables: variables?.join(",") } }),
 
+  /**
+   * Latest NASA LaRC SatCORPS cloud retrieval at a point. First call per
+   * granule may take 5-30 s (downloads ~60 MB and caches to disk); cached
+   * calls are fast. 503 when no scene is published in the window (LaRC
+   * typically lags by 1-2 days).
+   * @returns {Promise<Object>}
+   */
+  satcorpsCrossCheck: ({ lat, lon, elev, maxAgeHours }) =>
+    request("/api/satellite/satcorps-crosscheck", { params: { lat, lon, elev, max_age_hours: maxAgeHours }, timeoutMs: 60000 }),
+
   /** @returns {Promise<RouteInfo[]>} */
   routes: () => request("/api/route"),
   /** GeoJSON FeatureCollection: LineString + waypoint Point features. */

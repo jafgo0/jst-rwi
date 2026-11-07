@@ -29,11 +29,11 @@ now a declared dependency in `pyproject.toml`.
 | doi | `10.5067/HIM09/CERES/GEO_ED4_SH_V01.4` |
 | spatial resolution | 2 km nadir, subsampled to 6 km |
 | temporal resolution | 1 hour |
-| coverage | 2022-11-30 -> ongoing (southern hemisphere) |
+| coverage | 2022-11-30 -> 2026-07-31 verified in CMR; publication latency observed on 2026-11-07 was ~99 days, so this is NOT a real-time product. |
 | variables | cloud fraction, cloud optical depth, cloud top height, cloud top temperature, liquid/ice water path, radiative properties |
 | format | netCDF-4 |
 | access | Earthdata login via `earthaccess`; the native asdc S3/HTTPS bucket |
-| race-strategy use | **The direct forecast input for solar-irradiance nowcasting along the route.** Himawari-9 is the regional geostationary; a single scene covers Darwin and Adelaide at the same instant and refreshes every 10 min on the raw feed (hourly in this collection). Feeds the Heliosat cloud-index pipeline we already have for `rwi.satellite`. The MERRA-2 atmospheric input in V01.4 is why this is better than V01.2 for consistency with our MERRA-2 cross-check. |
+| race-strategy use | **Retrospective cross-check against our own Heliosat retrieval, not a live input.** The ~99-day publication latency rules it out for race-day forecasting; the live path stays `noaa-himawari9` raw tiles via `rwi.satellite.tiles`. Its value is as an independent cloud-property retrieval (phase, optical depth, top height) against which our `rwi.satellite` output can be audited after the fact, and as a bias-correction input against archived ECMWF for the corridor. |
 
 | Field | CERES SYN1deg 1-Hour |
 |---|---|

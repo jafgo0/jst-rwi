@@ -220,6 +220,116 @@ async def read_cloud_field(
     )
 
 
+# In-process cache for the "latest SatCORPS scene" CMR search. One scene
+# covers the whole southern hemisphere, so it is independent of the car's
+# position; caching it means consecutive dashboard polls skip the ~2 s CMR
+# round-trip. The downloaded granule is already idempotent on disk; this
+# just saves the discovery step.
+_LATEST_SCENE_TTL_S = 900.0
+_latest_scene_cache: dict[str, tuple[float, Any]] = {}
+
+
+def _cached_latest_scene(window_hours: int) -> Any:
+    from rwi.core.timebase import TimeWindow
+    from rwi.satellite import satcorps
+
+    key = f"last_{window_hours}h"
+    hit = _latest_scene_cache.get(key)
+    now_s = utc_now().timestamp()
+    if hit is not None and now_s - hit[0] < _LATEST_SCENE_TTL_S:
+        return hit[1]
+    window = TimeWindow(
+        start_utc=utc_now() - timedelta(hours=window_hours),
+        end_utc=utc_now(),
+    )
+    scenes = satcorps.search_scenes(window)
+    if not scenes:
+        return None
+    latest = scenes[-1]
+    _latest_scene_cache[key] = (now_s, latest)
+    return latest
+
+
+@router.get("/satcorps-crosscheck")
+async def read_satcorps_crosscheck(
+    store: StoreDep,
+    settings: SettingsDep,
+    lat: Annotated[float | None, LatQuery] = None,
+    lon: Annotated[float | None, LonQuery] = None,
+    elev: Annotated[float | None, Query()] = None,
+    max_age_hours: Annotated[int, Query(ge=1, le=17520)] = 2880,
+) -> dict[str, Any]:
+    """Latest NASA LaRC SatCORPS cloud retrieval at the car's point.
+
+    SatCORPS is an independent reprocessing of Himawari-9 radiances into
+    cloud properties by NASA Langley (CER_GEO_Ed4_HIM09_SH V1.4). It is a
+    cross-check on our own Heliosat retrieval; it is not a measurement.
+    LaRC publishes this reprocessed product with multi-week latency (not the
+    "1-2 day" claim in the catalogue), so this endpoint defaults to a 120-day
+    look-back and reports the observed age in the response.
+
+    First call per granule downloads ~60 MB and may take 5-30 s; cached on
+    disk by `satcorps.download_scene`, subsequent calls are fast. The CMR
+    "latest scene" lookup is also cached in-process for 15 minutes.
+    """
+    from rwi.core.geo import GeoPoint
+    from rwi.satellite import satcorps
+
+    point = resolve_point(lat, lon, elev, store)
+    now = utc_now()
+    try:
+        latest = _cached_latest_scene(max_age_hours)
+    except satcorps.SatCorpsCapabilityError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if latest is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"no SatCORPS scene found within the last {max_age_hours}h; LaRC "
+                "publishes this product with multi-week latency. Try a larger "
+                "max_age_hours."
+            ),
+        )
+    try:
+        downloaded = satcorps.download_scene(latest, cache_dir=settings.cache_dir / "satcorps")
+    except satcorps.SatCorpsCapabilityError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if downloaded.local_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SatCORPS download reported success but local_path is None",
+        )
+    values = satcorps.read_cloud_point(
+        downloaded.local_path,
+        GeoPoint(latitude_deg=point.latitude_deg, longitude_deg=point.longitude_deg),
+    )
+    phase_map = {
+        0: "snow", 1: "water cloud", 2: "ice cloud", 3: "no retrieval",
+        4: "clear", 5: "bad data", 6: "suspected water", 7: "suspected ice",
+        13: "cleaned data",
+    }
+    cp = values.get("cloud_phase")
+    age_days = (now - downloaded.time_start_utc).total_seconds() / 86400.0
+    return {
+        "granule_id": downloaded.granule_id,
+        "scene_time_utc": downloaded.time_start_utc.isoformat().replace("+00:00", "Z"),
+        "age_s": (now - downloaded.time_start_utc).total_seconds(),
+        "point": {"latitude_deg": point.latitude_deg, "longitude_deg": point.longitude_deg},
+        "values": values,
+        "cloud_phase_label": phase_map.get(int(cp)) if cp is not None else None,
+        "source": "NASA LaRC SatCORPS CERES GEO Edition 4 Himawari-9 SH V1.4",
+        "attribution": "NASA/LaRC/SD/ASDC (doi:10.5067/HIM09/CERES/GEO_ED4_SH_V01.4)",
+        "caveat": (
+            f"SatCORPS is a retrieval, not a ground measurement. This granule is "
+            f"{age_days:.0f} days old (scene time "
+            f"{downloaded.time_start_utc.date().isoformat()}); LaRC publishes with "
+            "multi-week latency, far beyond the catalogue's '1-2 day' claim. This "
+            "is a retrospective cross-check against OUR Heliosat retrieval, not a "
+            "live nowcast."
+        ),
+    }
+
+
 @router.get("/nowcast", response_model=IrradianceNowcast)
 async def read_nowcast(
     store: StoreDep,

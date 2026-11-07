@@ -43,6 +43,19 @@ export function solarDate() {
   return { date: d || new Date(t).toISOString().slice(0, 10), basis: d ? "local" : "utc" };
 }
 
+export async function loadSatcorps(force = false) {
+  const p = activePoint();
+  if (!p) { block("satcorps", NO_POS, "GET /api/satellite/satcorps-crosscheck"); return; }
+  // Cached on disk by the backend; frontend TTL = 15 min so the dashboard
+  // does not poke NASA every poll but a manual force still refreshes.
+  return load("satcorps", {
+    endpoint: "GET /api/satellite/satcorps-crosscheck",
+    paramsKey: posKey(p),
+    ttlMs: 900000,
+    force,
+  }, () => api.satcorpsCrossCheck({ lat: p.lat, lon: p.lon, elev: p.elev, maxAgeHours: 2880 }));
+}
+
 export async function loadSolar(force = false) {
   const p = activePoint();
   if (!p) { for (const k of ["solarPos", "solarDay", "clearskyDay"]) block(k, NO_POS); return; }
