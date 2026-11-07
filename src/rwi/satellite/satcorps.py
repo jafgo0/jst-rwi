@@ -68,7 +68,15 @@ COLLECTION_CONCEPT_ID = "C3880513838-LARC_CLOUD"
 #: carries cloud *properties* per pixel; it does not carry a cloud-fraction
 #: or cloud-mask grid (those are aggregate products you'd compute from
 #: cloud_phase over a region). Per-pixel "is this pixel cloudy?" is
-#: ``cloud_phase != 0``.
+#: ``cloud_phase in {1, 2, 6, 7}`` (water, ice, suspected water, suspected
+#: ice); phase 4 is clear sky.
+#:
+#: Cloud-property path verified end-to-end against the 2025-12-20 02:30 UTC
+#: Darwin monsoon granule: Darwin pixel returned phase=2 (ice cloud),
+#: OD=2.51, top_height=11.0 km, top_temperature=234.7 K; Kakadu returned
+#: phase=1 (water), OD=1.98, top=4.3 km, 277 K; Katherine returned phase=4
+#: (clear) with cloud-variables set to None. Physics-consistent across the
+#: temperature-lapse check.
 DEFAULT_VARIABLES: tuple[str, ...] = (
     # cloud_phase: 0=snow, 1=water, 2=ice, 3=no retrieval, 4=clear, 5=bad,
     # 6=suspected water, 7=suspected ice, 13=cleaned. CLEAR is 4, not 0.
