@@ -24,8 +24,8 @@ from rwi.energy.angular import (
 
 
 def test_the_identity_response_is_1_everywhere_and_knows_it_is_a_fallback() -> None:
-    table = identity_response(cell_count=338)
-    assert table.values.shape == (AZIMUTH_BINS, ZENITH_BINS, 338)
+    table = identity_response(group_count=5)
+    assert table.values.shape == (AZIMUTH_BINS, ZENITH_BINS, 5)
     assert float(table.values.min()) == 1.0
     assert float(table.values.max()) == 1.0
     # The caller must be able to distinguish identity from measured.
@@ -44,7 +44,7 @@ def test_shape_matches_the_shadow_analysis_tools_output() -> None:
 def test_mean_response_is_0_below_the_horizon() -> None:
     """The night-time invariant: sun below the horizon means no response, by
     physics, regardless of what the lookup table happens to contain."""
-    table = identity_response(cell_count=4)
+    table = identity_response(group_count=4)
     for zen in (90.0, 90.1, 120.0, 180.0):
         assert table.mean_response(azimuth_deg=0.0, zenith_deg=zen) == 0.0
     # And a negative zenith (above the sky dome) is nonsense -> 0.
@@ -52,28 +52,28 @@ def test_mean_response_is_0_below_the_horizon() -> None:
 
 
 def test_mean_response_wraps_azimuth_modulo_360() -> None:
-    table = identity_response(cell_count=1)
+    table = identity_response(group_count=1)
     for az in (0.0, 180.0, 359.9, 360.0, 720.5, -45.0):
         assert table.mean_response(azimuth_deg=az, zenith_deg=30.0) == 1.0
 
 
 def test_shape_mismatch_is_refused_not_silently_summed_wrong() -> None:
-    """If a 338-cell array is given a 339-cell table, the per-cell mean comes
-    out plausible and completely wrong. Refuse at construction."""
-    wrong_cells = np.ones((AZIMUTH_BINS, ZENITH_BINS, 7), dtype=np.float32)
+    """If a 4-group matrix is given a 5-group table declaration, the per-group
+    mean comes out plausible and completely wrong. Refuse at construction."""
+    wrong_groups = np.ones((AZIMUTH_BINS, ZENITH_BINS, 7), dtype=np.float32)
     with pytest.raises(ValueError, match="refusing to silently sum the wrong panel"):
         AngularResponseTable(
-            name="t", source="simulated", cell_count=5, values=wrong_cells
+            name="t", source="simulated", group_count=5, values=wrong_groups
         )
     wrong_grid = np.ones((100, 50, 3), dtype=np.float32)
     with pytest.raises(ValueError, match="must be 180 azimuth"):
         AngularResponseTable(
-            name="t", source="simulated", cell_count=3, values=wrong_grid
+            name="t", source="simulated", group_count=3, values=wrong_grid
         )
     wrong_dim = np.ones((AZIMUTH_BINS, ZENITH_BINS), dtype=np.float32)
     with pytest.raises(ValueError, match="must be 3-D"):
         AngularResponseTable(
-            name="t", source="simulated", cell_count=1, values=wrong_dim
+            name="t", source="simulated", group_count=1, values=wrong_dim
         )
 
 
@@ -83,32 +83,67 @@ def test_values_outside_the_unit_interval_are_refused() -> None:
     too_high = np.ones((AZIMUTH_BINS, ZENITH_BINS, 1), dtype=np.float32) * 1.01
     with pytest.raises(ValueError, match="must lie in"):
         AngularResponseTable(
-            name="t", source="simulated", cell_count=1, values=too_high
+            name="t", source="simulated", group_count=1, values=too_high
         )
     with_nan = np.ones((AZIMUTH_BINS, ZENITH_BINS, 1), dtype=np.float32)
     with_nan[0, 0, 0] = np.nan
     with pytest.raises(ValueError, match="non-finite"):
         AngularResponseTable(
-            name="t", source="simulated", cell_count=1, values=with_nan
+            name="t", source="simulated", group_count=1, values=with_nan
         )
 
 
-def test_a_graded_table_averages_correctly_across_cells() -> None:
-    """The weighted mean across cells is what the array power model actually
-    consumes. A table that applies a 0.5 derate to one of two cells must give
-    a mean response of 0.75, not 0.5 or 1.0."""
+def test_a_graded_table_averages_correctly_across_groups() -> None:
+    """The mean across groups is what the array power model actually consumes.
+    An unweighted table that applies a 0.5 derate to one of two equal groups
+    must give a mean response of 0.75, not 0.5 or 1.0."""
     values = np.ones((AZIMUTH_BINS, ZENITH_BINS, 2), dtype=np.float32)
     values[:, :, 1] = 0.5
     table = AngularResponseTable(
-        name="halved", source="simulated", cell_count=2, values=values
+        name="halved", source="simulated", group_count=2, values=values
     )
     assert table.mean_response(azimuth_deg=0.0, zenith_deg=30.0) == pytest.approx(0.75)
 
 
+def test_cell_weights_switch_the_reduction_to_a_weighted_mean() -> None:
+    """2027 car: 5 groups of 84/84/84/42/44 cells. If group 0 is in full shade
+    the correct array-level response is weighted by cell count, not plain
+    mean. Unweighted: (0 + 4*1.0) / 5 = 0.8. Weighted: (0*84 + 84 + 84 + 42
+    + 44) / (84+84+84+42+44) = 254 / 338 ~= 0.7515."""
+    values = np.ones((AZIMUTH_BINS, ZENITH_BINS, 5), dtype=np.float32)
+    values[:, :, 0] = 0.0
+    weights = (84, 84, 84, 42, 44)
+    weighted = AngularResponseTable(
+        name="2027", source="simulated", group_count=5, values=values,
+        cell_weights=weights,
+    )
+    unweighted = AngularResponseTable(
+        name="2027-unweighted", source="simulated", group_count=5, values=values,
+    )
+    assert weighted.mean_response(azimuth_deg=0.0, zenith_deg=30.0) == pytest.approx(
+        254.0 / 338.0, abs=1e-6
+    )
+    assert unweighted.mean_response(azimuth_deg=0.0, zenith_deg=30.0) == pytest.approx(0.8)
+
+
+def test_cell_weights_of_wrong_length_or_nonpositive_are_refused() -> None:
+    values = np.ones((AZIMUTH_BINS, ZENITH_BINS, 3), dtype=np.float32)
+    with pytest.raises(ValueError, match="cell_weights has 2 entries"):
+        AngularResponseTable(
+            name="t", source="simulated", group_count=3, values=values,
+            cell_weights=(1, 2),
+        )
+    with pytest.raises(ValueError, match="cell_weights must all be > 0"):
+        AngularResponseTable(
+            name="t", source="simulated", group_count=3, values=values,
+            cell_weights=(1, 0, 2),
+        )
+
+
 def test_a_measured_table_reports_itself_as_measured() -> None:
-    values = np.ones((AZIMUTH_BINS, ZENITH_BINS, 10), dtype=np.float32) * 0.9
+    values = np.ones((AZIMUTH_BINS, ZENITH_BINS, 5), dtype=np.float32) * 0.9
     table = AngularResponseTable(
-        name="cad", source="measured", cell_count=10, values=values
+        name="cad", source="measured", group_count=5, values=values
     )
     assert table.is_measured is True
 
@@ -117,22 +152,25 @@ def test_load_npy_round_trip(tmp_path: Path) -> None:
     """What the team's writer produces, our loader reads. A format change on
     their side becomes a loud error, not a silent misread."""
     original = np.random.default_rng(seed=42).uniform(
-        0.0, 1.0, size=(AZIMUTH_BINS, ZENITH_BINS, 338)
+        0.0, 1.0, size=(AZIMUTH_BINS, ZENITH_BINS, 5)
     ).astype(np.float32)
     path = tmp_path / "shadow.npy"
     np.save(path, original)
-    table = load_shadow_matrix(path, name="loaded", cell_count=338)
+    table = load_shadow_matrix(
+        path, name="loaded", group_count=5, cell_weights=(84, 84, 84, 42, 44)
+    )
     np.testing.assert_array_equal(table.values, original)
     assert table.source == "measured"
     assert table.is_measured is True
+    assert table.cell_weights == (84, 84, 84, 42, 44)
 
 
-def test_load_npy_refuses_mismatched_cell_count(tmp_path: Path) -> None:
-    arr = np.ones((AZIMUTH_BINS, ZENITH_BINS, 100), dtype=np.float32)
+def test_load_npy_refuses_mismatched_group_count(tmp_path: Path) -> None:
+    arr = np.ones((AZIMUTH_BINS, ZENITH_BINS, 4), dtype=np.float32)
     path = tmp_path / "shadow.npy"
     np.save(path, arr)
-    with pytest.raises(ValueError, match="does not match cell_count"):
-        load_shadow_matrix(path, name="x", cell_count=338)
+    with pytest.raises(ValueError, match="does not match group_count"):
+        load_shadow_matrix(path, name="x", group_count=5)
 
 
 def test_load_rejects_unknown_file_type(tmp_path: Path) -> None:
@@ -141,7 +179,7 @@ def test_load_rejects_unknown_file_type(tmp_path: Path) -> None:
     bad = tmp_path / "shadow.pickle"
     bad.write_bytes(b"not real")
     with pytest.raises(ValueError, match="unsupported file type"):
-        load_shadow_matrix(bad, name="x", cell_count=1)
+        load_shadow_matrix(bad, name="x", group_count=1)
 
 
 # --------------------------------------------------------------------------
@@ -185,7 +223,7 @@ def test_identity_response_leaves_array_power_unchanged() -> None:
     flat = array_power(poa, DEFAULT_ARRAY, air_temperature_c=25.0, wind_speed_mps=4.0)
 
     with_identity = DEFAULT_ARRAY.model_copy(
-        update={"angular_response": identity_response(cell_count=1)}
+        update={"angular_response": identity_response(group_count=1)}
     )
     identity = array_power(poa, with_identity, air_temperature_c=25.0, wind_speed_mps=4.0)
     assert flat.net_power_w == pytest.approx(identity.net_power_w, abs=1e-9)
@@ -226,7 +264,7 @@ def test_a_measured_half_response_halves_the_array_power() -> None:
     halved = AngularResponseTable(
         name="halved",
         source="measured",
-        cell_count=1,
+        group_count=1,
         values=np.ones((AZIMUTH_BINS, ZENITH_BINS, 1), dtype=np.float32) * 0.5,
     )
     array_half = DEFAULT_ARRAY.model_copy(update={"angular_response": halved})

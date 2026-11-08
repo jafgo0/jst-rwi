@@ -43,6 +43,7 @@ def load_team_efficiency_matrix(
     *,
     stc_efficiency: float,
     name: str = "ju-solar-team-shadow-analysis",
+    cell_weights: tuple[int, ...] | None = None,
 ) -> AngularResponseTable:
     """Load the team's efficiency_matrix.mat and normalise to our convention.
 
@@ -54,6 +55,10 @@ def load_team_efficiency_matrix(
             values are divided by this so the result is a multiplier in
             ``[0, 1]`` on the modelled flat-plane output.
         name: Human-readable label stored on the returned table.
+        cell_weights: Cells per MPPT group along axis 2. Must match the
+            matrix's third dimension when supplied. Required for the 2027
+            car's uneven groups (84, 84, 84, 42, 44); None is correct for
+            an equal-group matrix such as the 2025 car (4 x identical groups).
 
     Raises:
         ModelConfigurationError: If stc_efficiency is not strictly positive,
@@ -86,7 +91,13 @@ def load_team_efficiency_matrix(
             f"{path.name}: shape {raw.shape[:2]} does not match the "
             f"({AZIMUTH_BINS}, {ZENITH_BINS}) azimuth x zenith grid our contract uses"
         )
-    cell_count = raw.shape[2]
+    group_count = raw.shape[2]
+
+    if cell_weights is not None and len(cell_weights) != group_count:
+        raise ModelConfigurationError(
+            f"{path.name}: matrix has {group_count} MPPT groups but "
+            f"cell_weights has {len(cell_weights)} entries"
+        )
 
     # Sanity check: the matrix should be absolute cell efficiency. If any
     # value exceeds stc_efficiency * 1.05, the matrix is not what we think
@@ -105,23 +116,35 @@ def load_team_efficiency_matrix(
     normalised = (raw / stc_efficiency).clip(0.0, 1.0)
     peak_before = float(raw.max())
     peak_after = float(normalised.max())
+    weights_note = (
+        f", cell_weights={cell_weights}" if cell_weights is not None else ""
+    )
     log.info(
         "loaded %s: shape %s, peak %.4f (abs eff) -> %.4f (multiplier) "
-        "using stc_efficiency=%.3f",
+        "using stc_efficiency=%.3f%s",
         path.name, raw.shape, peak_before, peak_after, stc_efficiency,
+        weights_note,
     )
 
     return AngularResponseTable(
         name=name,
         source="measured",
-        cell_count=cell_count,
+        group_count=group_count,
         values=normalised,
+        cell_weights=cell_weights,
         notes=(
             f"Loaded from {path.name} (JU Solar Team shadow-analysis output). "
             f"Original matrix is absolute cell efficiency with peak "
             f"{peak_before:.4f}; normalised by stc_efficiency={stc_efficiency} "
             f"to multiplier in [0, 1] (peak {peak_after:.4f}) so it slots into "
             "ArrayConfig.angular_response without changing the energy model."
+            + (
+                f" Cell-count weighting enabled: cells per group = {cell_weights}."
+                if cell_weights is not None
+                else " No cell_weights supplied; mean_response is unweighted "
+                "across groups (correct only for equal-group matrices such as "
+                "the 2025 car)."
+            )
         ),
     )
 
@@ -131,16 +154,19 @@ def enrich_array_with_team_matrix(
     path: Path,
     *,
     name: str | None = None,
+    cell_weights: tuple[int, ...] | None = None,
 ) -> ArrayConfig:
     """Return a new ArrayConfig whose angular_response is the team's matrix.
 
     This is the analogue of ``enrich_with_team_elevation`` for the array:
     one function call turns a nameplate-only ArrayConfig into one that
-    describes the per-cell geometry the team has actually measured.
+    describes the per-group geometry the team has actually measured. Pass
+    ``cell_weights`` (cells per MPPT group) for the 2027 car's uneven groups.
     """
     table = load_team_efficiency_matrix(
         path,
         stc_efficiency=array.cell_efficiency_stc,
         name=name or f"team-shadow-{path.stem}",
+        cell_weights=cell_weights,
     )
     return array.model_copy(update={"angular_response": table})

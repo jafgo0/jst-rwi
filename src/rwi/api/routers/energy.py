@@ -64,8 +64,8 @@ class ArrayConfigResponse(BaseModel):
     parameter_source: str
     source_notes: str | None
     angular_response: dict[str, Any] | None = Field(
-        description="None if no per-cell geometry is applied (flat-plane model). "
-        "Otherwise: {name, source, cell_count, mean, min, max, notes}."
+        description="None if no per-group geometry is applied (flat-plane model). "
+        "Otherwise: {name, source, group_count, cell_weights, mean, min, max, notes}."
     )
 
 
@@ -82,7 +82,8 @@ def _summarise_angular(response: Any) -> dict[str, Any] | None:
         "name": response.name,
         "source": response.source,
         "is_measured": response.is_measured,
-        "cell_count": response.cell_count,
+        "group_count": response.group_count,
+        "cell_weights": list(response.cell_weights) if response.cell_weights else None,
         "shape": list(arr.shape),
         "min": float(arr.min()),
         "max": float(arr.max()),
