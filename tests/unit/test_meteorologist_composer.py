@@ -191,9 +191,69 @@ def test_suspect_fix_triggers_a_warning() -> None:
     assert any("Misstänkt GPS" in w for w in briefing.warnings_and_limits)
 
 
-def test_morning_briefing_is_a_stub_naming_fas_2() -> None:
+def test_morning_briefing_critical_convection_climbs_to_assessment() -> None:
+    from datetime import timedelta
+
+    from rwi.contracts import WeatherSeries, WeatherStep
+    from rwi.core.provenance import measured
+    from rwi.meteorologist import tools as mt
+
+    t2 = NOW + timedelta(hours=4)
+    prov = Provenance(
+        provider="openmeteo",
+        dataset="forecast",
+        kind=DataKind.FORECAST,
+        retrieved_at_utc=NOW,
+        valid_time_utc=t2,
+        point=JONKOPING,
+    )
+    series = WeatherSeries(
+        point=JONKOPING,
+        requested_point=JONKOPING,
+        provider="openmeteo",
+        dataset="forecast",
+        kind=DataKind.FORECAST,
+        model_name="icon",
+        retrieved_at_utc=NOW,
+        temporal_resolution_s=3600.0,
+        steps=[
+            WeatherStep(
+                valid_time_utc=t2,
+                values={
+                    "cape": measured("cape", 2800.0, prov),
+                    "lifted_index": measured("lifted_index", -5.0, prov),
+                    "precipitation_probability": measured(
+                        "precipitation_probability", 70.0, prov
+                    ),
+                },
+            )
+        ],
+    )
+    ctx = _empty_ctx()
+    ctx.convection = mt.convection_outlook(series, now=NOW, horizon_s=12 * 3600.0)
+    briefing = compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=NOW)
+    assert briefing.assessment.startswith("Konvektionsrisk critical")
+    # CAPE and lifted_index land in supporting_data with the convection citation.
+    labels = {dp.label for dp in briefing.supporting_data}
+    assert "peak CAPE" in labels
+    assert "min lifted index" in labels
+
+
+def test_morning_briefing_degrades_gracefully_when_convection_unavailable() -> None:
+    """When cape/lifted_index are missing the briefing MUST NOT crash.
+
+    The assessment says convection could not be computed; the six
+    sections are still filled; the gap shows up in unknowns; the
+    uncertainty section falls back to the 'unproven' line.
+    """
     briefing = compose(QuestionKind.MORNING_BRIEFING, _empty_ctx(), asked_at=NOW)
-    assert "Fas 2" in briefing.assessment
+    assert briefing.assessment  # section 1
+    assert briefing.uncertainty  # section 3 - never empty
+    assert briefing.warnings_and_limits  # section 6
+    assert any("konvektions" in u.lower() for u in briefing.unknowns)
+    assert "MODELLHÄRLEDDA" in " ".join(briefing.warnings_and_limits)
+    assert "GENERISKA" in " ".join(briefing.warnings_and_limits)
+    assert "CIN" in " ".join(briefing.warnings_and_limits)
 
 
 def test_free_form_through_deterministic_composer_is_refused() -> None:

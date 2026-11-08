@@ -608,3 +608,53 @@ async def test_ensemble_rate_limit_is_typed_and_not_retried_for_a_daily_quota(tm
     with pytest.raises(ProviderRateLimitError):
         await make(tmp_path).fetch_ensemble(DARWIN, ENS_WINDOW, ENS_VARS)
     assert route.call_count == 1
+
+
+# --------------------------------------------------------------------------- instability
+
+@respx.mock
+@pytest.mark.science
+async def test_lifted_index_sign_convention_is_negative_for_unstable(tmp_path):
+    """Pin Open-Meteo's lifted_index sign convention.
+
+    Open-Meteo inherits the Galway (1956) definition of Lifted Index:
+    LI = T_environment(500 hPa) - T_parcel(500 hPa), so a NEGATIVE value
+    marks an unstable column (parcel warmer than environment at 500 hPa).
+    This is the same convention used by SPC, the AMS Glossary of
+    Meteorology and WMO No. 782. Our convection alert thresholds
+    (LI <= 0 / -2 / -4) are only correct under this convention, so the
+    adapter must not silently flip the sign at the boundary.
+
+    References:
+    - Galway, J. G. (1956). "The Lifted Index as a Predictor of Latent
+      Instability", Bull. Amer. Meteor. Soc. 37(10), 528-529.
+    - AMS Glossary of Meteorology, s.v. "lifted index".
+    - Open-Meteo public forecast API documentation, hourly variable
+      `lifted_index` (verified 2026-11-08).
+
+    We inject a value of -5.2 K into the fixture - a magnitude that any
+    production Open-Meteo call over a convective afternoon returns as a
+    negative number - and assert the adapter preserves the sign. CAPE is
+    injected alongside at a strongly-unstable 2800 J/kg to assert its
+    pass-through unit as well.
+    """
+    payload = fx("openmeteo_forecast_darwin_ifs025.json")
+    length = len(payload["hourly"]["time"])
+    payload["hourly"]["lifted_index"] = [-5.2] * length
+    payload["hourly_units"]["lifted_index"] = ""
+    payload["hourly"]["cape"] = [2800.0] * length
+    payload["hourly_units"]["cape"] = "J/kg"
+    mock_forecast(payload)
+    series = await make(tmp_path).fetch_forecast(
+        DARWIN, FORECAST_WINDOW, ["lifted_index", "cape"]
+    )
+    step = series.nearest_step(datetime(2026, 11, 2, 3, 0, tzinfo=UTC), tolerance_s=0)
+    assert step is not None
+    # Sign is preserved: a negative API value remains negative canonical.
+    li = step.value("lifted_index")
+    assert li is not None
+    assert li < 0.0, f"expected negative LI for unstable column, got {li}"
+    assert li == pytest.approx(-5.2)
+    assert step.values["lifted_index"].unit == "K"
+    assert step.value("cape") == pytest.approx(2800.0)
+    assert step.values["cape"].unit == "J/kg"

@@ -52,11 +52,18 @@ def test_forecast_reliability_names_the_variable_in_assessment() -> None:
     assert "ghi" in response.json()["assessment"]
 
 
-def test_morning_briefing_is_a_stub_pointing_to_fas_2() -> None:
+def test_morning_briefing_returns_a_well_formed_briefing() -> None:
     with _client() as client:
         response = client.get("/api/meteorologist/morning-briefing")
     assert response.status_code == 200
-    assert "Fas 2" in response.json()["assessment"]
+    body = response.json()
+    assert body["question_kind"] == "morning_briefing"
+    assert body["assessment"]
+    assert body["uncertainty"], "uncertainty section is never empty"
+    # The convection caveat lines must appear in warnings_and_limits.
+    warnings = " ".join(body["warnings_and_limits"])
+    assert "GENERISKA" in warnings
+    assert "CIN" in warnings
 
 
 def test_ask_returns_501_when_api_key_is_not_configured() -> None:

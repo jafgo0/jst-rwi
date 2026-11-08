@@ -38,7 +38,7 @@ from rwi.meteorologist.contract import (
     UncertaintyItem,
     WatchItem,
 )
-from rwi.meteorologist.tools import ToolResult
+from rwi.meteorologist.tools import ConvectionOutlook, ToolResult, WindOutlook
 
 STATIC_UNKNOWNS: tuple[str, ...] = (
     "Ingen pyranometer eller arraytelemetri — modellerad irradians kan inte "
@@ -68,6 +68,8 @@ class BriefingContext:
         disagreements_ghi: ToolResult[list[ModelDisagreement]],
         verification_ghi: ToolResult[VerificationScore],
         alerts: ToolResult[list[Alert]],
+        convection: ToolResult[ConvectionOutlook] | None = None,
+        wind: ToolResult[WindOutlook] | None = None,
     ) -> None:
         self.state = state
         self.solar_day = solar_day
@@ -78,6 +80,14 @@ class BriefingContext:
         self.disagreements_ghi = disagreements_ghi
         self.verification_ghi = verification_ghi
         self.alerts = alerts
+        # Defaulted to unavailable so Fas 1 call sites keep working
+        # without passing them. The morning-briefing path requires both.
+        self.convection: ToolResult[ConvectionOutlook] = convection or ToolResult.unavailable(
+            "konvektions-utsikt är inte beräknad för denna fråga"
+        )
+        self.wind: ToolResult[WindOutlook] = wind or ToolResult.unavailable(
+            "vindutsikt är inte beräknad för denna fråga"
+        )
 
     def available_citations(self) -> list[Citation]:
         """Return citations from every tool that produced a value."""
@@ -91,6 +101,8 @@ class BriefingContext:
             self.disagreements_ghi,
             self.verification_ghi,
             self.alerts,
+            self.convection,
+            self.wind,
         ]
         return [r.citation for r in results if r.citation is not None]
 
@@ -106,6 +118,8 @@ class BriefingContext:
             (self.disagreements_ghi, "GHI-modelljämförelse"),
             (self.verification_ghi, "GHI-verifiering"),
             (self.alerts, "varningar"),
+            (self.convection, "konvektions-utsikt"),
+            (self.wind, "vindutsikt"),
         ]
         return [f"{label} saknas: {r.reason}" for r, label in pairs if not r.available]
 
@@ -511,33 +525,198 @@ def _compose_forecast_reliability(
 
 
 def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Briefing:
-    """Stub morning briefing — filled in Fas 2.
+    """Synoptic morning briefing. Convection first, then everything else.
 
-    Fas 1 lays the plumbing: this returns a Briefing with the exact same
-    shape as the other kinds, with ``assessment`` clearly stating that
-    the synoptic content arrives in Fas 2 and ``watch_next`` telling the
-    user to come back for the convection flag.
+    The six sections are always filled; every number is drawn from a
+    tool-cited value and the uncertainty section is never empty. When
+    the convection tool could not read the indices (missing cape /
+    lifted_index in the series) the briefing degrades to the stable-day
+    template and the gap appears in ``unknowns``.
     """
-    assessment = (
-        "Morgonbriefing-ramen finns men den synoptiska texten "
-        "levereras i Fas 2 (konvektionsvarning först)."
-    )
     supporting: list[DataPoint] = []
+    watch: list[WatchItem] = []
+    consequences: list[str] = []
+
+    # --- Section 1: assessment (convection first, then wind, then stable).
+    conv_value = ctx.convection.value if ctx.convection.available else None
+    wind_value = ctx.wind.value if ctx.wind.available else None
+    conv_citation_id = (
+        ctx.convection.citation.id if ctx.convection.citation is not None else None
+    )
+    wind_citation_id = ctx.wind.citation.id if ctx.wind.citation is not None else None
+    assessment_parts: list[str] = []
+    if conv_value is not None and conv_value.worst_severity is not None:
+        sev = conv_value.worst_severity
+        when = (
+            f" runt {conv_value.peak_window.start_utc.isoformat()}"
+            if conv_value.peak_window is not None
+            else ""
+        )
+        assessment_parts.append(
+            f"Konvektionsrisk {sev.value}{when}."
+        )
+    elif conv_value is not None:
+        assessment_parts.append("Stabil atmosfär i dagens horisont, ingen konvektionsrisk.")
+    else:
+        assessment_parts.append("Konvektions-utsikt kunde inte beräknas (saknad data).")
+    if wind_value is not None and wind_value.peak_gust_mps is not None:
+        assessment_parts.append(
+            f"Topp byvind {wind_value.peak_gust_mps:.1f} m/s."
+        )
+    assessment = " ".join(assessment_parts)
+
+    # --- Section 2: supporting data, each tied to a citation.
+    if conv_value is not None and conv_citation_id is not None:
+        if conv_value.peak_cape is not None:
+            supporting.append(
+                DataPoint(
+                    label="peak CAPE",
+                    value=round(conv_value.peak_cape, 1),
+                    unit="J/kg",
+                    valid_time_utc=(
+                        conv_value.peak_window.start_utc
+                        if conv_value.peak_window is not None
+                        else None
+                    ),
+                    citation_id=conv_citation_id,
+                )
+            )
+        if conv_value.min_lifted_index is not None:
+            supporting.append(
+                DataPoint(
+                    label="min lifted index",
+                    value=round(conv_value.min_lifted_index, 2),
+                    unit="K",
+                    valid_time_utc=(
+                        conv_value.peak_window.start_utc
+                        if conv_value.peak_window is not None
+                        else None
+                    ),
+                    citation_id=conv_citation_id,
+                )
+            )
+        if conv_value.peak_pop is not None:
+            supporting.append(
+                DataPoint(
+                    label="max precipitation probability",
+                    value=round(conv_value.peak_pop, 1),
+                    unit="%",
+                    citation_id=conv_citation_id,
+                )
+            )
+    if wind_value is not None and wind_citation_id is not None:
+        if wind_value.peak_gust_mps is not None:
+            supporting.append(
+                DataPoint(
+                    label="peak byvind",
+                    value=round(wind_value.peak_gust_mps, 2),
+                    unit="m/s",
+                    valid_time_utc=(
+                        wind_value.peak_window.start_utc
+                        if wind_value.peak_window is not None
+                        else None
+                    ),
+                    citation_id=wind_citation_id,
+                )
+            )
+        if wind_value.peak_wind_mps is not None:
+            supporting.append(
+                DataPoint(
+                    label="peak medelvind",
+                    value=round(wind_value.peak_wind_mps, 2),
+                    unit="m/s",
+                    citation_id=wind_citation_id,
+                )
+            )
     if ctx.solar_day.available and ctx.solar_day.value is not None:
         supporting.extend(_solar_day_data(ctx.solar_day.value))
-    consequences = [
-        "Använd denna briefing som position-/soldags-ram; väntar på synoptisk analys."
-    ]
-    watch: list[WatchItem] = [
-        WatchItem(
-            what="Konvektionsvarning",
-            when="Fas 2",
-            trigger="instability-indicator från NWP",
-            why="Eftermiddagskonvektion är det mest racerelevanta synoptiska fältet.",
+    if ctx.irradiance.available and ctx.irradiance.value is not None:
+        pair = _peak_from_series(ctx.irradiance.value)
+        if pair is not None:
+            supporting.extend(pair)
+
+    # --- Section 4: operational consequences.
+    if conv_value is not None and conv_value.worst_severity is not None:
+        sev = conv_value.worst_severity
+        if sev in (AlertSeverity.WARNING, AlertSeverity.CRITICAL):
+            consequences.append(
+                "Planera ett säkert stopp-fönster runt konvektionsperioden; "
+                "åska och byfronter är icke-förhandlingsbara stoppvillkor."
+            )
+            consequences.append(
+                "Lad batteri i morgontimmarna — eftermiddagens laddning kan "
+                "försämras av molnsvep från konvektionscellerna."
+            )
+        else:
+            consequences.append(
+                "Håll konvektionsindex under uppsikt; en WATCH kan växa till "
+                "WARNING om CAPE stiger eller LI faller ytterligare."
+            )
+    else:
+        consequences.append(
+            "Standarddrift — inget konvektionshot avlett ur dagens indexen."
         )
-    ]
-    warnings = [*_warnings_from_state(ctx), "Synoptisk briefing är inte implementerad i Fas 1."]
+    if wind_value is not None and wind_value.peak_gust_mps is not None:
+        consequences.append(
+            "Granska fordonets stabilitetsbudget mot topp-byvinden; "
+            "sidvindskomponenten beror på kursen."
+        )
+
+    # --- Section 5: watch_next (next things to monitor, with trigger).
+    if conv_value is not None and conv_value.peak_window is not None:
+        watch.append(
+            WatchItem(
+                what="Konvektions-fönster",
+                when=conv_value.peak_window.start_utc.isoformat(),
+                trigger="CAPE stiger eller LI faller vidare mot tröskelbanden",
+                why="Markerar när ett säkert stopp kan bli nödvändigt.",
+            )
+        )
+    if wind_value is not None and wind_value.peak_window is not None:
+        watch.append(
+            WatchItem(
+                what="Topp byvind",
+                when=wind_value.peak_window.start_utc.isoformat(),
+                trigger="wind_gusts_10m över stabilitetsgräns",
+                why="Byvind-topparna styr säker körhastighet mer än medelvinden.",
+            )
+        )
+    if ctx.solar_day.available and ctx.solar_day.value is not None:
+        events = ctx.solar_day.value
+        if events.sunset_utc is not None:
+            watch.append(
+                WatchItem(
+                    what="Solnedgång",
+                    when=events.sunset_utc.isoformat(),
+                    trigger="elevation_deg < 0",
+                    why="Effekten går till noll — batteribanken tar över.",
+                )
+            )
+
+    # --- Section 6: warnings & limits. Convection-specific caveats join
+    # the static ones so the briefing is honest about index skill.
+    warnings = _warnings_from_state(ctx)
+    warnings.append(
+        "CAPE och lifted index är MODELLHÄRLEDDA prognos-index, inte "
+        "observationer; grid-/timupplösning begränsar skickligheten och "
+        "eftermiddagskonvektion i inlandet är notoriskt svår att tajma."
+    )
+    warnings.append(
+        "Konvektionströsklarna är GENERISKA (Galway 1956, SPC, AMS); de är "
+        "inte kalibrerade mot Stuart Highway torrsäsong."
+    )
+    warnings.append(
+        "Convective inhibition (CIN) är inte vägd in — en hög-CAPE / hög-CIN "
+        "atmosfär kan vara kapad och aldrig konvektera."
+    )
+    if conv_value is not None and conv_value.satellite_cell_hint is None:
+        warnings.append(
+            "Satellit-nowcast av växande celler (Himawari/SatCORPS) är ännu "
+            "inte integrerad i konvektionsutsikten — kommande kalibrering."
+        )
+
     unknowns = list(STATIC_UNKNOWNS) + ctx.tool_gaps()
+
     return Briefing(
         question_kind=QuestionKind.MORNING_BRIEFING,
         question="Morgonbriefing",

@@ -15,18 +15,24 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TypeVar
+
+from pydantic import BaseModel, ConfigDict
 
 from rwi.contracts import (
     Alert,
+    AlertSeverity,
     EnsembleSummary,
     ModelDisagreement,
     PowerEstimate,
     RouteWeatherForecast,
     SolarDayEvents,
     VerificationScore,
+    WeatherSeries,
 )
 from rwi.core.position import ActiveState
+from rwi.core.timebase import TimeWindow
 from rwi.meteorologist.contract import Citation
 
 T = TypeVar("T")
@@ -289,9 +295,225 @@ def active_alerts(alerts: Sequence[Alert] | None) -> ToolResult[list[Alert]]:
     )
 
 
+class ConvectionOutlook(BaseModel):
+    """Convection summary for the morning briefing.
+
+    All numbers come from the forecast series; nothing is invented.
+    ``peak_window`` is None when no step cleared the WATCH threshold -
+    then ``worst_severity`` is None too and ``verdict`` describes the
+    stable case. A separate seam, ``satellite_cell_hint``, is reserved
+    for the satellite-nowcast integration (growing cells) that will
+    land in a later phase; it stays None until that work lands so the
+    composer can plan around the field without wiring it now.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    worst_severity: AlertSeverity | None
+    peak_cape: float | None
+    min_lifted_index: float | None
+    peak_pop: float | None
+    peak_window: TimeWindow | None
+    verdict: str
+    satellite_cell_hint: str | None = None
+
+
+class WindOutlook(BaseModel):
+    """Peak-gust window in the forecast horizon, for the briefing."""
+
+    model_config = ConfigDict(frozen=True)
+
+    peak_gust_mps: float | None
+    peak_wind_mps: float | None
+    peak_window: TimeWindow | None
+    dominant_direction_deg: float | None
+    verdict: str
+
+
+def convection_outlook(
+    series: WeatherSeries | None,
+    *,
+    now: datetime,
+    horizon_s: float,
+) -> ToolResult[ConvectionOutlook]:
+    """Summarise convection risk across ``horizon_s`` from a forecast series.
+
+    Graciously degrades: when ``series`` is None, or when it carries
+    neither ``cape`` nor ``lifted_index``, returns :meth:`unavailable`
+    so the composer can emit a data gap rather than claim "stable".
+    """
+    if series is None:
+        return ToolResult.unavailable(
+            "ingen väderserie att läsa instabilitets-index från"
+        )
+    limit = now + timedelta(seconds=horizon_s)
+    peak_cape: float | None = None
+    min_li: float | None = None
+    peak_pop: float | None = None
+    peak_window: TimeWindow | None = None
+    worst: AlertSeverity | None = None
+    has_index = False
+    for step in series.steps:
+        if step.valid_time_utc > limit:
+            break
+        cape = step.value("cape")
+        li = step.value("lifted_index")
+        if cape is None and li is None:
+            continue
+        has_index = True
+        pop = step.value("precipitation_probability")
+        if cape is not None and (peak_cape is None or cape > peak_cape):
+            peak_cape = cape
+        if li is not None and (min_li is None or li < min_li):
+            min_li = li
+        if pop is not None and (peak_pop is None or pop > peak_pop):
+            peak_pop = pop
+        severity = _score_step(cape=cape, li=li, pop=pop)
+        if severity is not None and (
+            worst is None or _severity_rank(severity) > _severity_rank(worst)
+        ):
+            worst = severity
+            peak_window = TimeWindow(
+                start_utc=step.valid_time_utc,
+                end_utc=step.valid_time_utc + timedelta(hours=1),
+            )
+    if not has_index:
+        return ToolResult.unavailable(
+            "serien saknar cape/lifted_index — kan ej bedöma konvektion"
+        )
+    verdict = _convection_verdict(worst, peak_cape, min_li, peak_pop, peak_window)
+    outlook = ConvectionOutlook(
+        worst_severity=worst,
+        peak_cape=peak_cape,
+        min_lifted_index=min_li,
+        peak_pop=peak_pop,
+        peak_window=peak_window,
+        verdict=verdict,
+    )
+    citation = Citation(
+        id="convection",
+        tool="convection_outlook",
+        source_module="rwi.alerts.convection",
+        description=verdict,
+        valid_time_utc=peak_window.start_utc if peak_window is not None else None,
+        retrieved_at_utc=now,
+    )
+    return ToolResult.ok(outlook, verdict, citation)
+
+
+def wind_outlook(
+    series: WeatherSeries | None,
+    *,
+    now: datetime,
+    horizon_s: float,
+) -> ToolResult[WindOutlook]:
+    """Peak gust / mean wind in the horizon, from the same forecast series."""
+    if series is None:
+        return ToolResult.unavailable("ingen väderserie för vindutsikt")
+    limit = now + timedelta(seconds=horizon_s)
+    peak_gust: float | None = None
+    peak_wind: float | None = None
+    peak_dir: float | None = None
+    peak_window: TimeWindow | None = None
+    for step in series.steps:
+        if step.valid_time_utc > limit:
+            break
+        gust = step.value("wind_gusts_10m")
+        if gust is not None and (peak_gust is None or gust > peak_gust):
+            peak_gust = gust
+            peak_window = TimeWindow(
+                start_utc=step.valid_time_utc,
+                end_utc=step.valid_time_utc + timedelta(hours=1),
+            )
+            direction = step.value("wind_direction_10m")
+            if direction is not None:
+                peak_dir = direction
+        wind = step.value("wind_speed_10m")
+        if wind is not None and (peak_wind is None or wind > peak_wind):
+            peak_wind = wind
+    if peak_gust is None and peak_wind is None:
+        return ToolResult.unavailable("serien saknar vindfält")
+    if peak_gust is not None:
+        verdict = f"topp byvind {peak_gust:.1f} m/s"
+    else:
+        verdict = f"topp vind {peak_wind:.1f} m/s"
+    outlook = WindOutlook(
+        peak_gust_mps=peak_gust,
+        peak_wind_mps=peak_wind,
+        peak_window=peak_window,
+        dominant_direction_deg=peak_dir,
+        verdict=verdict,
+    )
+    citation = Citation(
+        id="wind_outlook",
+        tool="wind_outlook",
+        source_module="rwi.meteorologist.tools",
+        description=verdict,
+        valid_time_utc=peak_window.start_utc if peak_window is not None else None,
+        retrieved_at_utc=now,
+    )
+    return ToolResult.ok(outlook, verdict, citation)
+
+
+def _severity_rank(s: AlertSeverity) -> int:
+    return {
+        AlertSeverity.INFO: 0,
+        AlertSeverity.WATCH: 1,
+        AlertSeverity.WARNING: 2,
+        AlertSeverity.CRITICAL: 3,
+    }[s]
+
+
+def _score_step(
+    *, cape: float | None, li: float | None, pop: float | None
+) -> AlertSeverity | None:
+    # Mirrors rwi.alerts.convection._severity; kept local so the tool
+    # layer does not import private helpers across the lane boundary.
+    cape_crit = cape is not None and cape >= 2500.0
+    cape_warn = cape is not None and cape >= 1000.0
+    cape_watch = cape is not None and cape >= 500.0
+    li_crit = li is not None and li <= -4.0
+    li_warn = li is not None and li <= -2.0
+    li_watch = li is not None and li <= 0.0
+    pop_crit = pop is not None and pop >= 60.0
+    pop_warn = pop is not None and pop >= 40.0
+    if cape_crit and li_crit and pop_crit:
+        return AlertSeverity.CRITICAL
+    strong = sum((cape_warn, li_warn, pop_warn))
+    if strong >= 2:
+        return AlertSeverity.WARNING
+    if cape_watch or li_watch:
+        return AlertSeverity.WATCH
+    return None
+
+
+def _convection_verdict(
+    worst: AlertSeverity | None,
+    cape: float | None,
+    li: float | None,
+    pop: float | None,
+    window: TimeWindow | None,
+) -> str:
+    if worst is None:
+        return "stabil atmosfär, ingen konvektionsrisk inom horisonten"
+    headline = f"konvektion {worst.value}"
+    parts = []
+    if cape is not None:
+        parts.append(f"peak CAPE {cape:.0f} J/kg")
+    if li is not None:
+        parts.append(f"min LI {li:.1f}")
+    if pop is not None:
+        parts.append(f"max PoP {pop:.0f}%")
+    when = f" runt {window.start_utc.isoformat()}" if window is not None else ""
+    return headline + ": " + ", ".join(parts) + when
+
+
 __all__ = [
+    "ConvectionOutlook",
     "ToolResult",
+    "WindOutlook",
     "active_alerts",
+    "convection_outlook",
     "ensemble_summary",
     "irradiance_forecast",
     "model_disagreements",
@@ -299,4 +521,5 @@ __all__ = [
     "solar_day",
     "verification_skill",
     "where_and_when",
+    "wind_outlook",
 ]

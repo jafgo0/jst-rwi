@@ -109,6 +109,14 @@ _MM = {"mm": _identity}
 _IRRADIANCE = {"W/m²": _identity}
 _METRE = {"m": _identity}
 _UNITLESS = {"": _identity, "wmo code": _identity}
+_CAPE = {"J/kg": _identity}
+# Open-Meteo reports lifted_index as a pure number (magnitude in K, the
+# temperature difference between the 500 hPa environment and a lifted
+# parcel). Accept the empty-unit string the API actually sends; also
+# accept "°C" and "K" in case the API's unit label ever gets explicit,
+# since the magnitude is the same. The sign convention is pinned by a
+# science-marked test in tests/science/test_openmeteo_signs.py, not here.
+_LIFTED_INDEX = {"": _identity, "°C": _identity, "K": _identity}
 
 
 @dataclass(frozen=True)
@@ -151,6 +159,8 @@ _VAR_MAPS: tuple[_VarMap, ...] = (
     _VarMap("is_day", "is_day", _UNITLESS),
     _VarMap("weather_code", "weather_code", _UNITLESS),
     _VarMap("soil_temperature_0cm", "soil_temperature_0cm", _TEMP),
+    _VarMap("cape", "cape", _CAPE),
+    _VarMap("lifted_index", "lifted_index", _LIFTED_INDEX),
 )
 _BY_CANONICAL: dict[str, _VarMap] = {m.canonical: m for m in _VAR_MAPS}
 assert set(_BY_CANONICAL) == set(CANONICAL_VARIABLES), "registry and Open-Meteo map out of sync"

@@ -109,6 +109,21 @@ CANONICAL_VARIABLES: dict[str, VariableSpec] = {
         _spec("weather_code", "wmo", 0.0, 99.0, V.STATE, "WMO 4677-style present weather code"),
         _spec("soil_temperature_0cm", "degC", -60.0, 90.0, V.THERMODYNAMIC,
               "Surface/skin temperature, proxy for road surface temperature", 25.0),
+        # Instability indices: integrated thermodynamic quantities derived from
+        # the model's vertical profile. Grouped under THERMODYNAMIC rather than
+        # given a new variable class because they ARE thermodynamic and the
+        # consumers (convection alerts, meteorologist layer) read them as
+        # scalars, not as a new coordinate axis. Range floors/ceilings are the
+        # physically plausible outer envelope; typical values are well inside.
+        # No rate-of-change limit: these are prognostic indices that can swing
+        # legitimately between forecast steps as the model updates its
+        # boundary-layer scheme, so a step-change gate would drop valid data.
+        _spec("cape", "J/kg", 0.0, 8000.0, V.THERMODYNAMIC,
+              "Convective Available Potential Energy, surface-based unless the "
+              "provider states otherwise"),
+        _spec("lifted_index", "K", -20.0, 20.0, V.THERMODYNAMIC,
+              "Lifted index: 500 hPa environment temperature minus lifted-parcel "
+              "temperature; negative values indicate instability"),
     )
 }
 

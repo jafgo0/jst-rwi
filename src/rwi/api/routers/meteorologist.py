@@ -57,6 +57,11 @@ BRIEFING_VARIABLES = (
     "precipitation_probability",
     "visibility",
     "cloud_cover",
+    # Instability indices for the morning briefing's convection section.
+    # If the provider cannot deliver them the fetch still succeeds for the
+    # rest; the meteorologist layer surfaces the gap in `unknowns`.
+    "cape",
+    "lifted_index",
 )
 
 
@@ -182,6 +187,15 @@ async def _assemble_context(
         None, variable="ghi", lead_time_s=hours * 3600.0
     )
 
+    # Convection + wind outlooks: read from the first fetched series if any.
+    series_for_outlook = weather_series[0] if weather_series else None
+    convection_result = mt.convection_outlook(
+        series_for_outlook, now=now, horizon_s=hours * 3600.0
+    )
+    wind_result = mt.wind_outlook(
+        series_for_outlook, now=now, horizon_s=hours * 3600.0
+    )
+
     return BriefingContext(
         state=state_result,
         solar_day=solar_day_result,
@@ -192,6 +206,8 @@ async def _assemble_context(
         disagreements_ghi=disagreements_ghi_result,
         verification_ghi=verification_ghi,
         alerts=alerts_result,
+        convection=convection_result,
+        wind=wind_result,
     )
 
 

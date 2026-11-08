@@ -198,3 +198,97 @@ def test_active_alerts_nonempty_cites_rules_module() -> None:
     assert result.available
     assert result.citation is not None
     assert result.citation.source_module == "rwi.alerts.rules"
+
+
+# --------------------------------------------------------------------- convection / wind
+
+from datetime import timedelta  # noqa: E402
+
+from rwi.contracts import WeatherSeries, WeatherStep  # noqa: E402
+from rwi.core.geo import GeoPoint  # noqa: E402
+from rwi.core.provenance import measured  # noqa: E402
+
+_POINT = GeoPoint(latitude_deg=-23.698, longitude_deg=133.8807, elevation_m=545.0)
+
+
+def _c_step(offset_h: float, **values: float) -> WeatherStep:
+    t = NOW + timedelta(hours=offset_h)
+    prov = Provenance(
+        provider="openmeteo",
+        dataset="forecast",
+        kind=DataKind.FORECAST,
+        retrieved_at_utc=NOW,
+        valid_time_utc=t,
+        point=_POINT,
+    )
+    return WeatherStep(
+        valid_time_utc=t,
+        values={k: measured(k, v, prov) for k, v in values.items()},
+    )
+
+
+def _c_series(*steps: WeatherStep) -> WeatherSeries:
+    return WeatherSeries(
+        point=_POINT,
+        requested_point=_POINT,
+        provider="openmeteo",
+        dataset="forecast",
+        kind=DataKind.FORECAST,
+        model_name="icon",
+        retrieved_at_utc=NOW,
+        temporal_resolution_s=3600.0,
+        steps=list(steps),
+    )
+
+
+def test_convection_outlook_none_is_unavailable() -> None:
+    result = mt.convection_outlook(None, now=NOW, horizon_s=12 * 3600.0)
+    assert not result.available
+    assert "ingen väderserie" in result.reason
+
+
+def test_convection_outlook_without_indices_is_unavailable_not_stable() -> None:
+    series = _c_series(_c_step(2, temperature_2m=28.0))
+    result = mt.convection_outlook(series, now=NOW, horizon_s=12 * 3600.0)
+    assert not result.available
+    assert "cape" in result.reason
+
+
+def test_convection_outlook_stable_atmosphere_is_available_with_no_severity() -> None:
+    series = _c_series(_c_step(2, cape=50.0, lifted_index=5.0))
+    result = mt.convection_outlook(series, now=NOW, horizon_s=12 * 3600.0)
+    assert result.available
+    assert result.value is not None
+    assert result.value.worst_severity is None
+    assert result.value.peak_window is None
+    assert "stabil" in result.value.verdict
+
+
+def test_convection_outlook_peak_is_the_worst_step_in_horizon() -> None:
+    series = _c_series(
+        _c_step(1, cape=500.0, lifted_index=-1.0),
+        _c_step(5, cape=2800.0, lifted_index=-5.0, precipitation_probability=70.0),
+        _c_step(9, cape=1200.0, lifted_index=-3.0),
+    )
+    result = mt.convection_outlook(series, now=NOW, horizon_s=12 * 3600.0)
+    assert result.available
+    out = result.value
+    assert out is not None
+    assert out.worst_severity is AlertSeverity.CRITICAL
+    assert out.peak_cape == 2800.0
+    assert out.min_lifted_index == -5.0
+    assert out.peak_pop == 70.0
+    assert out.satellite_cell_hint is None  # future seam, not wired yet
+
+
+def test_wind_outlook_extracts_peak_gust_window() -> None:
+    series = _c_series(
+        _c_step(1, wind_speed_10m=5.0, wind_gusts_10m=9.0, wind_direction_10m=180.0),
+        _c_step(4, wind_speed_10m=8.0, wind_gusts_10m=18.5, wind_direction_10m=220.0),
+    )
+    result = mt.wind_outlook(series, now=NOW, horizon_s=12 * 3600.0)
+    assert result.available
+    out = result.value
+    assert out is not None
+    assert out.peak_gust_mps == 18.5
+    assert out.dominant_direction_deg == 220.0
