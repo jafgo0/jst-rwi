@@ -268,15 +268,18 @@ def _uncertainty_section(
                         ctx.verification_ghi.citation.id,
                     )
                 )
-        elif var == "wind_speed_10m":
-            if ctx.ensemble_wind.available and ctx.ensemble_wind.citation is not None:
-                items.append(
-                    _ensemble_uncertainty(
-                        ctx.ensemble_wind.value or [],
-                        "vind (10 m)",
-                        ctx.ensemble_wind.citation.id,
-                    )
+        elif (
+            var == "wind_speed_10m"
+            and ctx.ensemble_wind.available
+            and ctx.ensemble_wind.citation is not None
+        ):
+            items.append(
+                _ensemble_uncertainty(
+                    ctx.ensemble_wind.value or [],
+                    "vind (10 m)",
+                    ctx.ensemble_wind.citation.id,
                 )
+            )
     if not items:
         items.append(
             UncertaintyItem(
