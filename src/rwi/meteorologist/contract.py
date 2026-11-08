@@ -79,6 +79,7 @@ class UncertaintyItem(BaseModel):
         "verified_skill",
         "unproven",
         "data_gap",
+        "track_record",
     ]
     statement: str
     citation_id: str | None = None

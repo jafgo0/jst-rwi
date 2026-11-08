@@ -39,6 +39,7 @@ from rwi.meteorologist import (
 )
 from rwi.meteorologist import tools as mt
 from rwi.meteorologist.llm import AdapterUnavailable, build_classifier
+from rwi.meteorologist.self_knowledge import platform_confidence
 
 router = APIRouter(prefix="/api/meteorologist", tags=["meteorologist"])
 
@@ -196,6 +197,28 @@ async def _assemble_context(
         series_for_outlook, now=now, horizon_s=hours * 3600.0
     )
 
+    # Fas 3: self-knowledge from the verification archive. open_archive is
+    # lazy (does not raise on a missing file); platform_confidence catches
+    # ArchiveUnavailableError at the first read and returns an honest
+    # 'archive_available=False' summary. We never pretend a verification
+    # exists when it does not.
+    self_knowledge_result: ToolResult = ToolResult.unavailable(
+        "arkivkoppling kunde inte upprättas"
+    )
+    try:
+        open_archive: Any = require_attr(
+            "rwi.archive.store", "open_archive", capability="forecast archive"
+        )
+        archive = open_archive(settings)
+        summary = platform_confidence(
+            archive, variables=BRIEFING_VARIABLES, now=now
+        )
+        self_knowledge_result = mt.platform_self_knowledge(summary)
+    except Exception as exc:
+        self_knowledge_result = ToolResult.unavailable(
+            f"självkännedoms-beräkning misslyckades: {type(exc).__name__}: {exc}"
+        )
+
     return BriefingContext(
         state=state_result,
         solar_day=solar_day_result,
@@ -208,6 +231,7 @@ async def _assemble_context(
         alerts=alerts_result,
         convection=convection_result,
         wind=wind_result,
+        self_knowledge=self_knowledge_result,
     )
 
 

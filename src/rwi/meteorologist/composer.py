@@ -38,6 +38,7 @@ from rwi.meteorologist.contract import (
     UncertaintyItem,
     WatchItem,
 )
+from rwi.meteorologist.self_knowledge import SelfKnowledgeSummary
 from rwi.meteorologist.tools import ConvectionOutlook, ToolResult, WindOutlook
 
 STATIC_UNKNOWNS: tuple[str, ...] = (
@@ -70,6 +71,7 @@ class BriefingContext:
         alerts: ToolResult[list[Alert]],
         convection: ToolResult[ConvectionOutlook] | None = None,
         wind: ToolResult[WindOutlook] | None = None,
+        self_knowledge: ToolResult[SelfKnowledgeSummary] | None = None,
     ) -> None:
         self.state = state
         self.solar_day = solar_day
@@ -88,6 +90,15 @@ class BriefingContext:
         self.wind: ToolResult[WindOutlook] = wind or ToolResult.unavailable(
             "vindutsikt är inte beräknad för denna fråga"
         )
+        # Fas 3: the briefing must always disclose what the platform knows
+        # about its own skill, so this is treated as structurally required
+        # even though the default lets Fas 1/2 fixtures keep working.
+        self.self_knowledge: ToolResult[SelfKnowledgeSummary] = (
+            self_knowledge
+            or ToolResult.unavailable(
+                "självkännedom beräknades inte för denna fråga"
+            )
+        )
 
     def available_citations(self) -> list[Citation]:
         """Return citations from every tool that produced a value."""
@@ -103,6 +114,7 @@ class BriefingContext:
             self.alerts,
             self.convection,
             self.wind,
+            self.self_knowledge,
         ]
         return [r.citation for r in results if r.citation is not None]
 
@@ -120,6 +132,7 @@ class BriefingContext:
             (self.alerts, "varningar"),
             (self.convection, "konvektions-utsikt"),
             (self.wind, "vindutsikt"),
+            (self.self_knowledge, "självkännedom (arkiv)"),
         ]
         return [f"{label} saknas: {r.reason}" for r, label in pairs if not r.available]
 
@@ -280,7 +293,11 @@ def _uncertainty_section(
                     ctx.ensemble_wind.citation.id,
                 )
             )
-    if not items:
+    # Fas 3: track-record is obligatory in every briefing. Prepend it so
+    # the operator reads 'how good has this platform been' before the
+    # ensemble / disagreement / verification bucket details.
+    items.insert(0, _track_record_item(ctx))
+    if len(items) == 1:
         items.append(
             UncertaintyItem(
                 kind="unproven",
@@ -291,6 +308,69 @@ def _uncertainty_section(
             )
         )
     return items
+
+
+def _track_record_item(ctx: BriefingContext) -> UncertaintyItem:
+    """Obligatory track-record line for every briefing (Fas 3).
+
+    The platform speaks plainly about what it knows: zero local pairs,
+    a model that beats persistence, or - the most self-critical case -
+    a model that is worse than persistence locally.
+    """
+    citation_id = (
+        ctx.self_knowledge.citation.id
+        if ctx.self_knowledge.citation is not None
+        else None
+    )
+    if not ctx.self_knowledge.available or ctx.self_knowledge.value is None:
+        return UncertaintyItem(
+            kind="track_record",
+            statement=(
+                "Plattformens egen prognosskicklighet är obevisad lokalt — "
+                "ingen lagrad verifiering ("
+                + ctx.self_knowledge.reason
+                + ")."
+            ),
+            citation_id=citation_id,
+        )
+    sk = ctx.self_knowledge.value
+    if not sk.archive_available:
+        return UncertaintyItem(
+            kind="track_record",
+            statement=(
+                f"Plattformens track record saknas: {sk.verdict}. "
+                f"{sk.detail}"
+            ),
+            citation_id=citation_id,
+        )
+    if sk.total_pairs == 0:
+        return UncertaintyItem(
+            kind="track_record",
+            statement=(
+                "Arkivet är tomt — plattformen har ingen egen track record "
+                "ännu; alla skicklighetsutsagor nedan är obevisade lokalt."
+            ),
+            citation_id=citation_id,
+        )
+    worse = [
+        s for s in sk.coverage_by_variable.values()
+        if s.verdict == "sämre_än_persistens"
+    ]
+    if worse:
+        worst_names = ", ".join(sorted(s.variable for s in worse))
+        return UncertaintyItem(
+            kind="track_record",
+            statement=(
+                f"Plattformens track record: {sk.verdict}. Varning — "
+                f"{worst_names} är sämre än persistens lokalt. {sk.detail}"
+            ),
+            citation_id=citation_id,
+        )
+    return UncertaintyItem(
+        kind="track_record",
+        statement=f"Plattformens track record: {sk.verdict}. {sk.detail}",
+        citation_id=citation_id,
+    )
 
 
 def _warnings_from_state(ctx: BriefingContext) -> list[str]:
@@ -717,6 +797,24 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
             "Satellit-nowcast av växande celler (Himawari/SatCORPS) är ännu "
             "inte integrerad i konvektionsutsikten — kommande kalibrering."
         )
+    # Fas 3: if the briefing just emitted a convection warning but the
+    # platform has no local CAPE/LI pairs to verify against, SAY SO.
+    if conv_value is not None and conv_value.worst_severity is not None:
+        sk = ctx.self_knowledge.value if ctx.self_knowledge.available else None
+        unverified = (
+            sk is None
+            or not sk.archive_available
+            or sk.coverage_by_variable.get("cape") is None
+            or sk.coverage_by_variable["cape"].sample_count == 0
+            or sk.coverage_by_variable.get("lifted_index") is None
+            or sk.coverage_by_variable["lifted_index"].sample_count == 0
+        )
+        if unverified:
+            warnings.append(
+                "Konvektionsindexen är INTE verifierade på denna plattform "
+                "(inga lagrade CAPE/LI-par) — behandla varningen som "
+                "vägledning, inte som en kalibrerad siffra."
+            )
 
     unknowns = list(STATIC_UNKNOWNS) + ctx.tool_gaps()
 

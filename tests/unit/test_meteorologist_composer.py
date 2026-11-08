@@ -93,7 +93,28 @@ def test_risk_ahead_fills_six_sections_even_when_everything_is_unavailable() -> 
 def test_uncertainty_fallback_is_unproven_when_no_evidence() -> None:
     briefing = compose(QuestionKind.RISK_AHEAD, _empty_ctx(), asked_at=NOW)
     kinds = {item.kind for item in briefing.uncertainty}
-    assert kinds == {"unproven"}
+    # Fas 3: the track-record row is obligatory in every briefing. The
+    # unproven fallback still appears when nothing else is available.
+    assert kinds == {"unproven", "track_record"}
+
+
+def test_track_record_item_is_present_in_every_briefing_kind() -> None:
+    """Fas 3: self-knowledge must lead the uncertainty section.
+
+    When no archive summary is available the item still appears, with
+    kind='track_record' and a statement that says the skill is obevisad
+    lokalt - so the user never reads a briefing that silently hides what
+    the platform does not know about itself.
+    """
+    for kind in (
+        QuestionKind.RISK_AHEAD,
+        QuestionKind.FORECAST_RELIABILITY,
+        QuestionKind.MORNING_BRIEFING,
+    ):
+        briefing = compose(kind, _empty_ctx(), asked_at=NOW, variable="ghi")
+        first = briefing.uncertainty[0]
+        assert first.kind == "track_record"
+        assert "obevisad lokalt" in first.statement
 
 
 def test_ensemble_spread_populates_uncertainty_with_citation() -> None:

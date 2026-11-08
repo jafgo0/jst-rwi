@@ -34,6 +34,7 @@ from rwi.contracts import (
 from rwi.core.position import ActiveState
 from rwi.core.timebase import TimeWindow
 from rwi.meteorologist.contract import Citation
+from rwi.meteorologist.self_knowledge import SelfKnowledgeSummary
 
 T = TypeVar("T")
 
@@ -508,6 +509,32 @@ def _convection_verdict(
     return headline + ": " + ", ".join(parts) + when
 
 
+def platform_self_knowledge(
+    summary: SelfKnowledgeSummary | None,
+) -> ToolResult[SelfKnowledgeSummary]:
+    """Shape a self-knowledge summary as a tool result.
+
+    ``None`` means the context assembler did not compute one (e.g. no
+    settings handed in a unit test). An actual summary with
+    ``archive_available=False`` is still ok at this layer - it is the
+    engine's honest answer and the composer surfaces it as a
+    track-record line saying the platform has no local evidence yet.
+    """
+    if summary is None:
+        return ToolResult.unavailable(
+            "självkännedom beräknades inte (ingen arkivkoppling)"
+        )
+    citation = Citation(
+        id="self_knowledge",
+        tool="platform_self_knowledge",
+        source_module="rwi.meteorologist.self_knowledge",
+        description=summary.verdict,
+        valid_time_utc=summary.newest_pair_utc,
+        retrieved_at_utc=summary.newest_pair_utc,
+    )
+    return ToolResult.ok(summary, summary.verdict, citation)
+
+
 __all__ = [
     "ConvectionOutlook",
     "ToolResult",
@@ -517,6 +544,7 @@ __all__ = [
     "ensemble_summary",
     "irradiance_forecast",
     "model_disagreements",
+    "platform_self_knowledge",
     "route_weather_ahead",
     "solar_day",
     "verification_skill",
