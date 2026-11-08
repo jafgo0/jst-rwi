@@ -94,6 +94,16 @@ class Settings(BaseSettings):
     # clock corruption and is rejected.
     telemetry_future_grace_s: float = 5.0
 
+    # Meteorologist LLM adapter (Fas 1 free-form endpoint, /api/meteorologist/ask).
+    # None keeps the adapter disabled and /ask answers 501 with a clear capability
+    # message. The adapter is a CLASSIFIER only: it picks a question kind and a
+    # variable from the user's free-text question and hands those to the
+    # deterministic composer. No numbers are read from the model's response, so
+    # a hallucinating model cannot invent a weather value. Keep secrets in the
+    # environment (RWI_ANTHROPIC_API_KEY), never in the repository.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-haiku-5-5"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

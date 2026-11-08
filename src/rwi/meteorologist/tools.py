@@ -1,0 +1,302 @@
+"""Tool adapters for the meteorologist layer.
+
+Each tool is a pure function that takes an already-computed structured
+output from one engine and packages it into a :class:`ToolResult` the
+composer can consume. The tools RECKON NOTHING - they neither aggregate
+across engines nor invent a value. When the engine returned nothing, the
+tool returns :meth:`ToolResult.unavailable` with the reason.
+
+The split between "fetch" (done by the API router) and "shape" (done
+here) exists so the composer is fully testable against fixtures: unit
+tests feed it :class:`ToolResult` objects directly, with no network.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import TypeVar
+
+from rwi.contracts import (
+    Alert,
+    EnsembleSummary,
+    ModelDisagreement,
+    PowerEstimate,
+    RouteWeatherForecast,
+    SolarDayEvents,
+    VerificationScore,
+)
+from rwi.core.position import ActiveState
+from rwi.meteorologist.contract import Citation
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class ToolResult[T]:
+    """One tool invocation's output.
+
+    ``value`` is ``None`` iff the tool could not answer. ``reason`` is
+    filled in both cases - as the explanation of why there is no value,
+    or as a one-line description of what the value contains.
+    ``citation`` is ``None`` only when ``value`` is ``None``: a value is
+    always traceable.
+    """
+
+    value: T | None
+    reason: str
+    citation: Citation | None
+
+    @property
+    def available(self) -> bool:
+        return self.value is not None
+
+    @classmethod
+    def unavailable(cls, reason: str) -> ToolResult[T]:
+        return cls(value=None, reason=reason, citation=None)
+
+    @classmethod
+    def ok(cls, value: T, reason: str, citation: Citation) -> ToolResult[T]:
+        return cls(value=value, reason=reason, citation=citation)
+
+
+def _state_citation(state: ActiveState) -> Citation:
+    fix_time = state.fix.received_at_utc if state.fix is not None else None
+    return Citation(
+        id="state",
+        tool="where_and_when",
+        source_module="rwi.core.state",
+        description=f"active state in mode {state.mode.value}",
+        valid_time_utc=fix_time,
+        retrieved_at_utc=fix_time,
+    )
+
+
+def where_and_when(state: ActiveState) -> ToolResult[ActiveState]:
+    """Report the active position/time state.
+
+    Returns the whole :class:`ActiveState` so downstream tools can read
+    position, heading, selected time and suspect-fix state in one place.
+    When no position is available the tool reports unavailable with the
+    mode as the reason - the state object itself is never fabricated.
+    """
+    if state.fix is None:
+        return ToolResult.unavailable(
+            f"ingen position tillgänglig (mode {state.mode.value})"
+        )
+    return ToolResult.ok(
+        state,
+        f"aktiv position i mode {state.mode.value}",
+        _state_citation(state),
+    )
+
+
+def solar_day(events: SolarDayEvents | None) -> ToolResult[SolarDayEvents]:
+    """Shape a :class:`SolarDayEvents` as a tool result.
+
+    ``None`` means the caller could not compute it (typically because
+    there is no active position); polar day/night are still valid
+    results and come through with their flags intact.
+    """
+    if events is None:
+        return ToolResult.unavailable(
+            "soldag-händelser saknas: ingen position, ingen kalkyl"
+        )
+    citation = Citation(
+        id="solar_day",
+        tool="solar_day",
+        source_module="rwi.solar.geometry",
+        description=f"soldag {events.local_date} vid {events.point.latitude_deg:.3f}, "
+        f"{events.point.longitude_deg:.3f}",
+        valid_time_utc=events.solar_noon_utc,
+    )
+    return ToolResult.ok(events, f"soldag {events.local_date}", citation)
+
+
+def route_weather_ahead(
+    forecast: RouteWeatherForecast | None,
+) -> ToolResult[RouteWeatherForecast]:
+    """Shape a :class:`RouteWeatherForecast` as a tool result."""
+    if forecast is None or not forecast.samples:
+        return ToolResult.unavailable(
+            "ingen ruttprognos: antingen saknas rutt/position eller provider svarade inte"
+        )
+    valid_time = forecast.samples[0].trajectory_point.eta_utc
+    citation = Citation(
+        id="route_weather",
+        tool="route_weather_ahead",
+        source_module="rwi.api.integration",
+        description=f"ruttprognos från {forecast.provider}, "
+        f"{len(forecast.samples)} punkter",
+        valid_time_utc=valid_time,
+        retrieved_at_utc=forecast.generated_at_utc,
+        provider=forecast.provider,
+    )
+    return ToolResult.ok(
+        forecast,
+        f"{len(forecast.samples)} punkter längs rutten från {forecast.provider}",
+        citation,
+    )
+
+
+def irradiance_forecast(
+    estimates: Sequence[PowerEstimate] | None,
+) -> ToolResult[list[PowerEstimate]]:
+    """Shape a power-estimate series (irradiance + array power) as a tool result."""
+    if not estimates:
+        return ToolResult.unavailable(
+            "ingen irradians-/effektprognos: provider saknar GHI/DNI/DHI eller rutt saknas"
+        )
+    first = estimates[0]
+    citation = Citation(
+        id="irradiance",
+        tool="irradiance_forecast",
+        source_module="rwi.energy.array",
+        description=f"effektserie, {len(estimates)} steg",
+        valid_time_utc=first.time_utc,
+        retrieved_at_utc=first.provenance.retrieved_at_utc,
+        provider=first.provenance.provider,
+        model_init_time_utc=first.provenance.model_init_time_utc,
+    )
+    return ToolResult.ok(
+        list(estimates),
+        f"effektserie om {len(estimates)} steg",
+        citation,
+    )
+
+
+def ensemble_summary(
+    summaries: Sequence[EnsembleSummary] | None, *, variable: str
+) -> ToolResult[list[EnsembleSummary]]:
+    """Shape an ensemble summary list as a tool result.
+
+    An empty or ``None`` input is reported as unavailable with the
+    variable named, so the composer can distinguish 'no ensemble data
+    for GHI' from 'no ensemble data at all'.
+    """
+    if not summaries:
+        return ToolResult.unavailable(
+            f"ingen ensemblesammanfattning för {variable}"
+        )
+    first = summaries[0]
+    citation = Citation(
+        id=f"ensemble_{variable}",
+        tool="ensemble_summary",
+        source_module="rwi.ensemble.summary",
+        description=f"ensemble för {variable}: "
+        f"{first.member_count} medlemmar, {len(summaries)} giltiga tider",
+        valid_time_utc=first.valid_time_utc,
+        provider=first.provider,
+        model_name=first.model_name,
+    )
+    return ToolResult.ok(
+        list(summaries),
+        f"ensemble ({first.member_count} medlemmar) för {variable}",
+        citation,
+    )
+
+
+def model_disagreements(
+    items: Sequence[ModelDisagreement] | None, *, variable: str
+) -> ToolResult[list[ModelDisagreement]]:
+    """Shape model-disagreement entries. Empty = models agree, not 'no data'."""
+    if items is None:
+        return ToolResult.unavailable(
+            f"ingen modell-jämförelse för {variable}: färre än två källor"
+        )
+    significant = [d for d in items if d.is_significant]
+    if not significant:
+        citation = Citation(
+            id=f"fusion_{variable}",
+            tool="model_disagreements",
+            source_module="rwi.fusion.compare",
+            description=f"modellenighet för {variable}: ingen signifikant avvikelse",
+        )
+        return ToolResult.ok(
+            [],
+            f"modellerna är överens om {variable} inom tröskeln",
+            citation,
+        )
+    first = significant[0]
+    citation = Citation(
+        id=f"fusion_{variable}",
+        tool="model_disagreements",
+        source_module="rwi.fusion.compare",
+        description=f"{len(significant)} signifikanta avvikelser för {variable}",
+        valid_time_utc=first.valid_time_utc,
+    )
+    return ToolResult.ok(
+        list(significant),
+        f"{len(significant)} signifikanta modellavvikelser för {variable}",
+        citation,
+    )
+
+
+def verification_skill(
+    score: VerificationScore | None, *, variable: str, lead_time_s: float
+) -> ToolResult[VerificationScore]:
+    """Shape a verification score as a tool result.
+
+    A ``None`` score is reported as unavailable with the variable and
+    lead time named. A score with too few samples returns the value with
+    a reason that says the skill is provisional - the composer then
+    emits an ``kind='unproven'`` uncertainty item rather than quoting
+    the number as if it were established skill.
+    """
+    if score is None:
+        return ToolResult.unavailable(
+            f"ingen verifierad skicklighet för {variable} vid lead-tid "
+            f"{lead_time_s / 3600:.0f} h"
+        )
+    citation = Citation(
+        id=f"verification_{variable}",
+        tool="verification_skill",
+        source_module="rwi.verification.metrics",
+        description=f"verifiering av {variable} över "
+        f"{score.sample_count} par ({score.provider})",
+        provider=score.provider,
+        model_name=score.model_name,
+    )
+    sample_qualifier = "provisorisk" if not score.is_meaningful else "etablerad"
+    return ToolResult.ok(
+        score,
+        f"{sample_qualifier} skicklighet, {score.sample_count} par",
+        citation,
+    )
+
+
+def active_alerts(alerts: Sequence[Alert] | None) -> ToolResult[list[Alert]]:
+    """Shape a list of alerts (sorted by caller) as a tool result.
+
+    An empty list is 'no active alerts' - a positive statement - not
+    'alerts unavailable'. ``None`` means the alerts engine could not
+    run (typically missing weather data).
+    """
+    if alerts is None:
+        return ToolResult.unavailable(
+            "varningsmotorn kunde inte köras (saknad väderdata eller position)"
+        )
+    citation = Citation(
+        id="alerts",
+        tool="active_alerts",
+        source_module="rwi.alerts.rules",
+        description=f"{len(alerts)} aktiva varningar",
+    )
+    return ToolResult.ok(
+        list(alerts),
+        f"{len(alerts)} aktiva varningar",
+        citation,
+    )
+
+
+__all__ = [
+    "ToolResult",
+    "active_alerts",
+    "ensemble_summary",
+    "irradiance_forecast",
+    "model_disagreements",
+    "route_weather_ahead",
+    "solar_day",
+    "verification_skill",
+    "where_and_when",
+]
