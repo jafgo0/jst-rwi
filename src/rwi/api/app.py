@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from rwi import __version__
 from rwi.api.capability import capability_status, import_errors, require_attr
 from rwi.api.errors import register_error_handlers
+from rwi.api.product import ProductVersionMiddleware
 from rwi.api.routers import (
     alerts,
     energy,
@@ -137,7 +138,9 @@ def create_app() -> FastAPI:
         allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "null"],
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
+        expose_headers=["X-Rwi-Product-Version", "X-Rwi-Product-Tier"],
     )
+    app.add_middleware(ProductVersionMiddleware, version=__version__)
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(state.router)

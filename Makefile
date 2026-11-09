@@ -2,7 +2,7 @@
 VENV := .venv
 PY := $(VENV)/bin/python
 
-.PHONY: setup lint typecheck test test-network test-science api dashboard check clean
+.PHONY: setup lint typecheck test test-network test-science api dashboard check clean product-schema
 
 setup:
 	uv venv --python 3.12 $(VENV)
@@ -27,6 +27,9 @@ test-science:
 	$(VENV)/bin/pytest tests -q -m science --durations=0
 
 check: lint typecheck test
+
+product-schema:
+	$(PY) scripts/export_product_schema.py
 
 api:
 	$(VENV)/bin/uvicorn rwi.api.app:app --reload --port 8000

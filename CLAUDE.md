@@ -51,6 +51,14 @@ would relax one.
 | Vehicle dynamics / strategy | `src/rwi/vehicle/**`, `src/rwi/strategy/**`, matching tests |
 | Core / contracts / API / alerts | `src/rwi/core/**`, `src/rwi/contracts.py`, `src/rwi/config.py`, `src/rwi/api/**`, `src/rwi/alerts/**` |
 | Dashboard | `web/**` |
+| Product contract (strategy repo surface) | `docs/PRODUCT_CONTRACT.md`, `docs/product/openapi.v0.json`, `src/rwi/api/product.py`, `src/rwi/client/**`, `scripts/export_product_schema.py` |
+
+**Product-contract rail:** editing a route under `/api/meteorologist`,
+`/api/route`, `/api/solar`, `/api/forecast-quality`, `/api/state`,
+`/api/weather`, `/api/alerts` or `/api/energy` means the STABLE surface
+moved. In the same PR: bump `version` in `pyproject.toml`, run
+`make product-schema`, commit `docs/product/openapi.v0.json`. The pin
+test (`tests/unit/test_product_schema_pin.py`) fails loudly otherwise.
 
 If a change needs a new shared type, **do not edit `src/rwi/contracts.py`
 yourself** — report that a contract change is needed and wait. Contracts are

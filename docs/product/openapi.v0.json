@@ -1,0 +1,5645 @@
+{
+  "components": {
+    "schemas": {
+      "ActiveState": {
+        "properties": {
+          "fix": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PositionFix"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heading_deg": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 360.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PositionMode"
+          },
+          "route_distance_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suspect_fix": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PositionFix"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "Alert": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AlertCategory"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "distance_along_route_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issued_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "recommended_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "severity": {
+            "$ref": "#/components/schemas/AlertSeverity"
+          },
+          "valid_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "category",
+          "headline",
+          "detail",
+          "issued_at_utc",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "AlertCategory": {
+        "enum": [
+          "wind",
+          "gust",
+          "crosswind",
+          "precipitation",
+          "thunderstorm",
+          "visibility",
+          "heat",
+          "irradiance_drop",
+          "energy_deficit",
+          "data_quality",
+          "position",
+          "provider"
+        ],
+        "type": "string"
+      },
+      "AlertSeverity": {
+        "enum": [
+          "info",
+          "watch",
+          "warning",
+          "critical"
+        ],
+        "type": "string"
+      },
+      "ArchiveStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "capture_enabled": {
+            "default": false,
+            "type": "boolean"
+          },
+          "capture_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "type": "object"
+      },
+      "ArrayConfig": {
+        "properties": {
+          "albedo": {
+            "default": 0.2,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "angular_response": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "area_m2": {
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          "cell_efficiency_stc": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.5,
+            "type": "number"
+          },
+          "mounting": {
+            "default": "horizontal",
+            "enum": [
+              "horizontal",
+              "fixed_tilt",
+              "vehicle_relative"
+            ],
+            "type": "string"
+          },
+          "mppt_efficiency": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "noct_c": {
+            "default": 48.0,
+            "type": "number"
+          },
+          "parameter_source": {
+            "default": "assumed",
+            "enum": [
+              "measured",
+              "datasheet",
+              "assumed"
+            ],
+            "type": "string"
+          },
+          "source_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surface_azimuth_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surface_tilt_deg": {
+            "default": 0.0,
+            "maximum": 90.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "temperature_coefficient_pmax_per_c": {
+            "maximum": 0.0,
+            "type": "number"
+          },
+          "wiring_efficiency": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "area_m2",
+          "cell_efficiency_stc",
+          "temperature_coefficient_pmax_per_c",
+          "mppt_efficiency",
+          "wiring_efficiency"
+        ],
+        "type": "object"
+      },
+      "ArrayConfigResponse": {
+        "properties": {
+          "albedo": {
+            "type": "number"
+          },
+          "angular_response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "area_m2": {
+            "type": "number"
+          },
+          "cell_efficiency_stc": {
+            "type": "number"
+          },
+          "mounting": {
+            "type": "string"
+          },
+          "mppt_efficiency": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "noct_c": {
+            "type": "number"
+          },
+          "parameter_source": {
+            "type": "string"
+          },
+          "source_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surface_azimuth_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surface_tilt_deg": {
+            "type": "number"
+          },
+          "temperature_coefficient_pmax_per_c": {
+            "type": "number"
+          },
+          "wiring_efficiency": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "area_m2",
+          "cell_efficiency_stc",
+          "temperature_coefficient_pmax_per_c",
+          "mppt_efficiency",
+          "wiring_efficiency",
+          "mounting",
+          "surface_tilt_deg",
+          "surface_azimuth_deg",
+          "noct_c",
+          "albedo",
+          "parameter_source",
+          "source_notes",
+          "angular_response"
+        ],
+        "type": "object"
+      },
+      "Briefing": {
+        "properties": {
+          "asked_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assessment": {
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "type": "array"
+          },
+          "operational_consequences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question": {
+            "type": "string"
+          },
+          "question_kind": {
+            "$ref": "#/components/schemas/QuestionKind"
+          },
+          "supporting_data": {
+            "items": {
+              "$ref": "#/components/schemas/DataPoint"
+            },
+            "type": "array"
+          },
+          "uncertainty": {
+            "items": {
+              "$ref": "#/components/schemas/UncertaintyItem"
+            },
+            "type": "array"
+          },
+          "unknowns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings_and_limits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "watch_next": {
+            "items": {
+              "$ref": "#/components/schemas/WatchItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "question_kind",
+          "question",
+          "asked_at_utc",
+          "assessment",
+          "uncertainty"
+        ],
+        "type": "object"
+      },
+      "CaptureTriggerResponse": {
+        "properties": {
+          "failures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forecast_rows": {
+            "type": "integer"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "observation_rows": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "summary",
+          "forecast_rows",
+          "observation_rows",
+          "failures",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "Citation": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model_init_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrieved_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_module": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "valid_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "source_module",
+          "description"
+        ],
+        "type": "object"
+      },
+      "CloudFieldResponse": {
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "band": {
+            "type": "string"
+          },
+          "bounds": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "cloud_index": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "image_age_s": {
+            "type": "number"
+          },
+          "motion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudMotion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "satellite": {
+            "type": "string"
+          },
+          "shape": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "slot_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "unusable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slot_time_utc",
+          "image_age_s",
+          "bounds",
+          "shape",
+          "cloud_index",
+          "usable",
+          "satellite",
+          "band"
+        ],
+        "type": "object"
+      },
+      "CloudMotion": {
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "direction_to_deg": {
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "from_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "speed_m_s": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "to_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "u_east_m_s": {
+            "type": "number"
+          },
+          "v_north_m_s": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "from_time_utc",
+          "to_time_utc",
+          "u_east_m_s",
+          "v_north_m_s",
+          "speed_m_s",
+          "direction_to_deg",
+          "confidence",
+          "method",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "DataKind": {
+        "enum": [
+          "observation",
+          "analysis",
+          "forecast",
+          "clear_sky_model",
+          "physical_model",
+          "simulation",
+          "derived",
+          "climatology"
+        ],
+        "type": "string"
+      },
+      "DataPoint": {
+        "properties": {
+          "citation_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "valid_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "unit",
+          "citation_id"
+        ],
+        "type": "object"
+      },
+      "EnergyEstimate": {
+        "properties": {
+          "energy_wh": {
+            "type": "number"
+          },
+          "integration_method": {
+            "default": "trapezoidal",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "sample_count": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "uncertainty_wh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window": {
+            "$ref": "#/components/schemas/TimeWindow"
+          }
+        },
+        "required": [
+          "window",
+          "energy_wh",
+          "sample_count",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "EnergyForecastResponse": {
+        "properties": {
+          "array": {
+            "$ref": "#/components/schemas/ArrayConfig"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnergyEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/PowerEstimate"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "weather_kind": {
+            "$ref": "#/components/schemas/DataKind"
+          },
+          "weather_provider": {
+            "type": "string"
+          },
+          "weather_retrieved_at_utc": {}
+        },
+        "required": [
+          "estimates",
+          "energy",
+          "array",
+          "notes",
+          "weather_provider",
+          "weather_kind",
+          "weather_retrieved_at_utc"
+        ],
+        "type": "object"
+      },
+      "EnsembleResponse": {
+        "properties": {
+          "caveat": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/EnsembleSummary"
+            },
+            "type": "array"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summaries",
+          "variable",
+          "member_count",
+          "model_name",
+          "caveat"
+        ],
+        "type": "object"
+      },
+      "EnsembleSummary": {
+        "properties": {
+          "maximum": {
+            "type": "number"
+          },
+          "mean": {
+            "type": "number"
+          },
+          "median": {
+            "type": "number"
+          },
+          "member_count": {
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "minimum": {
+            "type": "number"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "percentiles": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "standard_deviation": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "valid_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "valid_time_utc",
+          "point",
+          "unit",
+          "member_count",
+          "mean",
+          "median",
+          "minimum",
+          "maximum",
+          "standard_deviation",
+          "percentiles",
+          "provider",
+          "model_name",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "FixQuality": {
+        "enum": [
+          "no_fix",
+          "gps",
+          "dgps",
+          "rtk",
+          "manual",
+          "simulated",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "GeoPoint": {
+        "properties": {
+          "elevation_m": {
+            "anyOf": [
+              {
+                "maximum": 9000.0,
+                "minimum": -500.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latitude_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "type": "number"
+          },
+          "longitude_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude_deg",
+          "longitude_deg"
+        ],
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object"
+          },
+          "freshness_limits_s": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "network_enabled": {
+            "type": "boolean"
+          },
+          "provider_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderHealth"
+            },
+            "type": "array"
+          },
+          "server_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unavailable_modules": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "uptime_s": {
+            "type": "number"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "server_time_utc",
+          "uptime_s",
+          "capabilities",
+          "unavailable_modules",
+          "providers",
+          "provider_errors",
+          "network_enabled",
+          "freshness_limits_s"
+        ],
+        "type": "object"
+      },
+      "IrradianceComponents": {
+        "properties": {
+          "clearness_index": {
+            "anyOf": [
+              {
+                "maximum": 1.5,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dhi_w_m2": {
+            "maximum": 900.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "dni_w_m2": {
+            "maximum": 1400.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "ghi_w_m2": {
+            "maximum": 1600.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataKind"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityFlag",
+            "default": "ok"
+          },
+          "solar_elevation_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time_utc",
+          "point",
+          "ghi_w_m2",
+          "dni_w_m2",
+          "dhi_w_m2",
+          "kind",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "IrradianceNowcast": {
+        "properties": {
+          "clear_sky_ghi_w_m2": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "clear_sky_index": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "ghi_w_m2": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "horizon_s": {
+            "type": "number"
+          },
+          "issued_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataKind",
+            "default": "derived"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "method": {
+            "type": "string"
+          },
+          "motion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudMotion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "valid_times_utc": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "validation_status": {
+            "default": "NOT VALIDATED: no ground-truth irradiance measurement exists for this platform, so the error of this nowcast is unknown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "point",
+          "issued_at_utc",
+          "valid_times_utc",
+          "ghi_w_m2",
+          "clear_sky_ghi_w_m2",
+          "clear_sky_index",
+          "horizon_s",
+          "motion",
+          "method",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "Measured": {
+        "properties": {
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityFlag",
+            "default": "ok"
+          },
+          "uncertainty": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Uncertainty"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "value",
+          "unit",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "ModelComparison": {
+        "properties": {
+          "disagreements": {
+            "items": {
+              "$ref": "#/components/schemas/ModelDisagreement"
+            },
+            "type": "array"
+          },
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "preference_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preferred_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series_by_model": {
+            "additionalProperties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "point",
+          "variable",
+          "generated_at_utc",
+          "series_by_model"
+        ],
+        "type": "object"
+      },
+      "ModelDisagreement": {
+        "properties": {
+          "is_significant": {
+            "type": "boolean"
+          },
+          "mean": {
+            "type": "number"
+          },
+          "median": {
+            "type": "number"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "spread": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "standard_deviation": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "valid_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "values_by_model": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "valid_time_utc",
+          "point",
+          "unit",
+          "values_by_model",
+          "spread",
+          "standard_deviation",
+          "mean",
+          "median",
+          "is_significant",
+          "threshold",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "POAIrradiance": {
+        "properties": {
+          "albedo": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "aoi_deg": {
+            "maximum": 180.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "poa_direct_w_m2": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "poa_global_w_m2": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "poa_ground_diffuse_w_m2": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "poa_sky_diffuse_w_m2": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "surface_azimuth_deg": {
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "surface_tilt_deg": {
+            "maximum": 90.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "transposition_model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "time_utc",
+          "poa_global_w_m2",
+          "poa_direct_w_m2",
+          "poa_sky_diffuse_w_m2",
+          "poa_ground_diffuse_w_m2",
+          "aoi_deg",
+          "surface_tilt_deg",
+          "surface_azimuth_deg",
+          "albedo",
+          "transposition_model",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "PositionFix": {
+        "properties": {
+          "accuracy_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "course_deg": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 360.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fix_quality": {
+            "$ref": "#/components/schemas/FixQuality",
+            "default": "unknown"
+          },
+          "gps_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PositionMode"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "received_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "satellites": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "speed_mps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "point",
+          "mode",
+          "source",
+          "received_at_utc"
+        ],
+        "type": "object"
+      },
+      "PositionMode": {
+        "enum": [
+          "live_gps",
+          "manual",
+          "route_sim",
+          "historical_replay"
+        ],
+        "type": "string"
+      },
+      "PositionRequest": {
+        "properties": {
+          "accuracy_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "elevation_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fix_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FixQuality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gps_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heading_deg": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 360.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latitude_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "type": "number"
+          },
+          "longitude_deg": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PositionMode"
+          },
+          "route_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "default": "operator",
+            "type": "string"
+          },
+          "speed_mps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "latitude_deg",
+          "longitude_deg"
+        ],
+        "type": "object"
+      },
+      "PowerEstimate": {
+        "properties": {
+          "air_temperature_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "array": {
+            "$ref": "#/components/schemas/ArrayConfig"
+          },
+          "cell_temperature_c": {
+            "type": "number"
+          },
+          "cell_temperature_model": {
+            "type": "string"
+          },
+          "dc_power_w": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "effective_efficiency": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "net_power_w": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "poa": {
+            "$ref": "#/components/schemas/POAIrradiance"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "wind_speed_mps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "time_utc",
+          "poa",
+          "cell_temperature_c",
+          "air_temperature_c",
+          "wind_speed_mps",
+          "dc_power_w",
+          "net_power_w",
+          "effective_efficiency",
+          "array",
+          "cell_temperature_model",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "ProgressResponse": {
+        "properties": {
+          "distance_remaining_m": {
+            "type": "number"
+          },
+          "next_control_stop_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_control_stop_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_waypoint_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_waypoint_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projection": {
+            "$ref": "#/components/schemas/RouteProjection"
+          },
+          "route_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_id",
+          "projection",
+          "distance_remaining_m",
+          "next_waypoint_name",
+          "next_waypoint_distance_m",
+          "next_control_stop_name",
+          "next_control_stop_distance_m"
+        ],
+        "type": "object"
+      },
+      "Provenance": {
+        "properties": {
+          "dataset": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataKind"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_init_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observation_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "processing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requested_point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrieved_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spatial_resolution_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temporal_resolution_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valid_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "dataset",
+          "kind",
+          "retrieved_at_utc"
+        ],
+        "type": "object"
+      },
+      "ProviderCapabilities": {
+        "properties": {
+          "attribution": {
+            "type": "string"
+          },
+          "datasets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "documentation_url": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "max_forecast_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requires_api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "spatial_resolution_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supports_archive": {
+            "type": "boolean"
+          },
+          "supports_ensemble": {
+            "type": "boolean"
+          },
+          "supports_forecast": {
+            "type": "boolean"
+          },
+          "supports_observations": {
+            "type": "boolean"
+          },
+          "update_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "provider",
+          "datasets",
+          "supports_observations",
+          "supports_forecast",
+          "supports_ensemble",
+          "supports_archive",
+          "variables",
+          "max_forecast_hours",
+          "spatial_resolution_km",
+          "update_interval_s",
+          "license",
+          "attribution",
+          "documentation_url"
+        ],
+        "type": "object"
+      },
+      "ProviderHealth": {
+        "properties": {
+          "checked_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reachable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "reachable",
+          "checked_at_utc"
+        ],
+        "type": "object"
+      },
+      "QualityFlag": {
+        "enum": [
+          "ok",
+          "stale",
+          "missing",
+          "out_of_range",
+          "rate_implausible",
+          "sensor_suspect",
+          "unvalidated",
+          "interpolated"
+        ],
+        "type": "string"
+      },
+      "QuestionKind": {
+        "enum": [
+          "risk_ahead",
+          "forecast_reliability",
+          "morning_briefing",
+          "free_form"
+        ],
+        "type": "string"
+      },
+      "Recommendation": {
+        "properties": {
+          "alternatives": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "confidence": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
+          "energy_impact_wh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "recommended_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reevaluate_after_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "safety_and_regulatory_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "time_impact_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uncertainty_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "headline",
+          "rationale",
+          "recommended_scenario",
+          "confidence",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "RelativeWind": {
+        "properties": {
+          "apparent_speed_mps": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "crosswind_mps": {
+            "type": "number"
+          },
+          "headwind_mps": {
+            "type": "number"
+          },
+          "yaw_angle_deg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "headwind_mps",
+          "crosswind_mps",
+          "apparent_speed_mps",
+          "yaw_angle_deg"
+        ],
+        "type": "object"
+      },
+      "Route": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "source_description": {
+            "type": "string"
+          },
+          "total_distance_m": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "waypoints": {
+            "items": {
+              "$ref": "#/components/schemas/RouteWaypoint"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "waypoints",
+          "total_distance_m",
+          "provenance",
+          "source_description"
+        ],
+        "type": "object"
+      },
+      "RouteProjection": {
+        "properties": {
+          "cross_track_m": {
+            "type": "number"
+          },
+          "distance_along_m": {
+            "type": "number"
+          },
+          "heading_deg": {
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "is_on_route": {
+            "type": "boolean"
+          },
+          "point_on_route": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "segment_index": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "tolerance_m": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "distance_along_m",
+          "cross_track_m",
+          "segment_index",
+          "point_on_route",
+          "heading_deg",
+          "is_on_route",
+          "tolerance_m"
+        ],
+        "type": "object"
+      },
+      "RouteSummary": {
+        "properties": {
+          "control_stop_count": {
+            "type": "integer"
+          },
+          "elevation_status": {
+            "type": "string"
+          },
+          "has_elevation": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provenance_label": {
+            "type": "string"
+          },
+          "source_description": {
+            "type": "string"
+          },
+          "total_distance_m": {
+            "type": "number"
+          },
+          "waypoint_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "total_distance_m",
+          "waypoint_count",
+          "control_stop_count",
+          "source_description",
+          "provenance_label",
+          "has_elevation",
+          "elevation_status"
+        ],
+        "type": "object"
+      },
+      "RouteWaypoint": {
+        "properties": {
+          "cumulative_distance_m": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WaypointKind",
+            "default": "waypoint"
+          },
+          "mandatory_dwell_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          }
+        },
+        "required": [
+          "point",
+          "cumulative_distance_m"
+        ],
+        "type": "object"
+      },
+      "RouteWeatherForecast": {
+        "properties": {
+          "assumptions": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/RouteWeatherSample"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "route_id",
+          "generated_at_utc",
+          "samples",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "RouteWeatherResponse": {
+        "properties": {
+          "forecast": {
+            "$ref": "#/components/schemas/RouteWeatherForecast"
+          },
+          "local_arrival_times": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "forecast",
+          "local_arrival_times"
+        ],
+        "type": "object"
+      },
+      "RouteWeatherSample": {
+        "properties": {
+          "lead_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relative_wind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelativeWind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series_point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "trajectory_point": {
+            "$ref": "#/components/schemas/TrajectoryPoint"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Measured"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "trajectory_point",
+          "series_point",
+          "values"
+        ],
+        "type": "object"
+      },
+      "SatelliteStatus": {
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "bytes_per_slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cadence_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caveat": {
+            "default": "Satellite irradiance is a retrieval, not a ground measurement, and no ground-truth irradiance exists in this platform, so its error is unknown.",
+            "type": "string"
+          },
+          "image_age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_slot_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "satellite": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tiles_for_route": {
+            "items": {
+              "$ref": "#/components/schemas/SatelliteTile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "type": "object"
+      },
+      "SatelliteTile": {
+        "properties": {
+          "band": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "published_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "satellite": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tile_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "satellite",
+          "band",
+          "tile_id",
+          "slot_time_utc",
+          "key"
+        ],
+        "type": "object"
+      },
+      "ScenarioConstraintViolation": {
+        "properties": {
+          "constraint": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocking",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "constraint",
+          "detail",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "ScenarioResponse": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "assumptions": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "data_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "human_review_required": {
+            "default": true,
+            "type": "boolean"
+          },
+          "optimal_constant_speed_kmh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "optimal_is_feasible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/Recommendation"
+          },
+          "regulatory_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioResult"
+            },
+            "type": "array"
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/VehicleConfig"
+          }
+        },
+        "required": [
+          "scenarios",
+          "recommendation",
+          "optimal_constant_speed_kmh",
+          "optimal_is_feasible",
+          "vehicle",
+          "alerts"
+        ],
+        "type": "object"
+      },
+      "ScenarioResult": {
+        "properties": {
+          "arrival_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assumptions": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "distance_m": {
+            "type": "number"
+          },
+          "end_soc_fraction": {
+            "type": "number"
+          },
+          "energy_consumed_wh": {
+            "type": "number"
+          },
+          "energy_generated_wh": {
+            "type": "number"
+          },
+          "feasible": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "net_energy_wh": {
+            "type": "number"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "start_soc_fraction": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "target_speed_kmh": {
+            "type": "number"
+          },
+          "travel_time_s": {
+            "type": "number"
+          },
+          "uncertainty_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioConstraintViolation"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "target_speed_kmh",
+          "distance_m",
+          "energy_generated_wh",
+          "energy_consumed_wh",
+          "net_energy_wh",
+          "start_soc_fraction",
+          "end_soc_fraction",
+          "arrival_utc",
+          "travel_time_s",
+          "feasible",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "SolarDayEvents": {
+        "properties": {
+          "day_length_s": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "is_polar_day": {
+            "default": false,
+            "type": "boolean"
+          },
+          "is_polar_night": {
+            "default": false,
+            "type": "boolean"
+          },
+          "local_date": {
+            "type": "string"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "solar_noon_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sunrise_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sunset_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transit_elevation_deg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "point",
+          "local_date",
+          "timezone_name",
+          "sunrise_utc",
+          "sunset_utc",
+          "solar_noon_utc",
+          "transit_elevation_deg",
+          "day_length_s",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "SolarPosition": {
+        "properties": {
+          "air_mass": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "apparent_elevation_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "type": "number"
+          },
+          "apparent_zenith_deg": {
+            "maximum": 180.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "azimuth_deg": {
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "declination_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "elevation_deg": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "type": "number"
+          },
+          "equation_of_time_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "zenith_deg": {
+            "maximum": 180.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "point",
+          "time_utc",
+          "elevation_deg",
+          "apparent_elevation_deg",
+          "azimuth_deg",
+          "zenith_deg",
+          "apparent_zenith_deg",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "StateResponse": {
+        "properties": {
+          "effective_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "is_simulated": {
+            "type": "boolean"
+          },
+          "local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position_age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position_available": {
+            "type": "boolean"
+          },
+          "server_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ActiveState"
+          },
+          "suspect_fix": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuspectFixReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "utc_offset_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "effective_time_utc",
+          "local_time",
+          "timezone_name",
+          "utc_offset_hours",
+          "position_available",
+          "is_simulated",
+          "position_age_s",
+          "server_time_utc"
+        ],
+        "type": "object"
+      },
+      "SuspectFixReport": {
+        "properties": {
+          "implied_speed_mps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jump_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latitude_deg": {
+            "type": "number"
+          },
+          "longitude_deg": {
+            "type": "number"
+          },
+          "received_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "latitude_deg",
+          "longitude_deg",
+          "received_at_utc",
+          "implied_speed_mps",
+          "jump_m"
+        ],
+        "type": "object"
+      },
+      "TimeRequest": {
+        "properties": {
+          "selected_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TimeWindow": {
+        "properties": {
+          "end_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "start_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_utc",
+          "end_utc"
+        ],
+        "type": "object"
+      },
+      "Trajectory": {
+        "properties": {
+          "assumptions": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrajectoryPoint"
+            },
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "route_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_id",
+          "generated_at_utc",
+          "points",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "TrajectoryPoint": {
+        "properties": {
+          "distance_m": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "eta_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grade": {
+            "default": 0.0,
+            "type": "number"
+          },
+          "heading_deg": {
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "speed_mps": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "waypoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteWaypoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "distance_m",
+          "point",
+          "eta_utc",
+          "heading_deg",
+          "speed_mps"
+        ],
+        "type": "object"
+      },
+      "Uncertainty": {
+        "properties": {
+          "interval_probability": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "standard_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UncertaintyItem": {
+        "properties": {
+          "citation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "enum": [
+              "ensemble_spread",
+              "model_disagreement",
+              "verified_skill",
+              "unproven",
+              "data_gap",
+              "track_record"
+            ],
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "statement"
+        ],
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "type": "object"
+          },
+          "input": {},
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "type": "object"
+      },
+      "VehicleConfig": {
+        "properties": {
+          "auxiliary_power_w": {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "battery_capacity_wh": {
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          "battery_reserve_fraction": {
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "battery_round_trip_efficiency": {
+            "default": 0.95,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "type": "number"
+          },
+          "drag_area_cda_m2": {
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          "drivetrain_efficiency": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "type": "number"
+          },
+          "mass_kg": {
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          "max_legal_speed_kmh": {
+            "default": 130.0,
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parameter_source": {
+            "default": "assumed",
+            "enum": [
+              "measured",
+              "datasheet",
+              "assumed"
+            ],
+            "type": "string"
+          },
+          "rolling_resistance_coefficient": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.05,
+            "type": "number"
+          },
+          "source_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "yaw_drag_sensitivity_per_deg": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "mass_kg",
+          "drag_area_cda_m2",
+          "rolling_resistance_coefficient",
+          "drivetrain_efficiency",
+          "auxiliary_power_w",
+          "battery_capacity_wh",
+          "battery_reserve_fraction"
+        ],
+        "type": "object"
+      },
+      "VerificationReport": {
+        "properties": {
+          "computed_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pair_count": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationScore"
+            },
+            "type": "array"
+          },
+          "variables": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "scores",
+          "computed_at_utc",
+          "period",
+          "pair_count"
+        ],
+        "type": "object"
+      },
+      "VerificationScore": {
+        "properties": {
+          "bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lead_time_bucket_s": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "mean_absolute_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mean_forecast": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mean_observed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "persistence_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "root_mean_square_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_count": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "skill_vs_persistence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "provider",
+          "model_name",
+          "lead_time_bucket_s",
+          "sample_count",
+          "mean_absolute_error",
+          "root_mean_square_error",
+          "unit",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "WatchItem": {
+        "properties": {
+          "trigger": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "when",
+          "trigger",
+          "why"
+        ],
+        "type": "object"
+      },
+      "WaypointKind": {
+        "enum": [
+          "start",
+          "waypoint",
+          "control_stop",
+          "finish",
+          "town",
+          "hazard"
+        ],
+        "type": "string"
+      },
+      "WeatherSeries": {
+        "properties": {
+          "dataset": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataKind"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_init_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requested_point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrieved_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spatial_resolution_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherStep"
+            },
+            "type": "array"
+          },
+          "temporal_resolution_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "point",
+          "provider",
+          "dataset",
+          "kind",
+          "retrieved_at_utc"
+        ],
+        "type": "object"
+      },
+      "WeatherStep": {
+        "properties": {
+          "valid_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Measured"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "valid_time_utc",
+          "values"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {},
+  "openapi_subset": "product-v1",
+  "paths": {
+    "/api/alerts": {
+      "get": {
+        "operationId": "read_alerts_api_alerts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 6.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 48.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Alert"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/energy/array": {
+      "get": {
+        "operationId": "read_array_config_api_energy_array_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrayConfigResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/energy/forecast": {
+      "get": {
+        "operationId": "read_energy_forecast_api_energy_forecast_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 120.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "heading_deg",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 360.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnergyForecastResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/forecast/archive": {
+      "get": {
+        "operationId": "read_archive_status_api_forecast_archive_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveStatus"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "forecast intelligence"
+        ]
+      }
+    },
+    "/api/forecast/capture": {
+      "post": {
+        "operationId": "trigger_capture_api_forecast_capture_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sites",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureTriggerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "forecast intelligence"
+        ]
+      }
+    },
+    "/api/forecast/ensemble": {
+      "get": {
+        "operationId": "read_ensemble_api_forecast_ensemble_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "variable",
+            "required": false,
+            "schema": {
+              "default": "ghi",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 48.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 240.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnsembleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "forecast intelligence"
+        ]
+      }
+    },
+    "/api/forecast/models": {
+      "get": {
+        "operationId": "read_model_comparison_api_forecast_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "variable",
+            "required": false,
+            "schema": {
+              "default": "cloud_cover",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 48.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 240.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "models",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "forecast intelligence"
+        ]
+      }
+    },
+    "/api/forecast/verification": {
+      "get": {
+        "operationId": "read_verification_api_forecast_verification_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "variables",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 400.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "forecast intelligence"
+        ]
+      }
+    },
+    "/api/meteorologist/ask": {
+      "post": {
+        "operationId": "ask_api_meteorologist_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Briefing"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meteorologist"
+        ]
+      }
+    },
+    "/api/meteorologist/forecast-reliability": {
+      "get": {
+        "operationId": "forecast_reliability_api_meteorologist_forecast_reliability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "variable",
+            "required": false,
+            "schema": {
+              "default": "ghi",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 6.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 48.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Briefing"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meteorologist"
+        ]
+      }
+    },
+    "/api/meteorologist/morning-briefing": {
+      "get": {
+        "operationId": "morning_briefing_api_meteorologist_morning_briefing_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 12.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 24.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Briefing"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meteorologist"
+        ]
+      }
+    },
+    "/api/meteorologist/risk-ahead": {
+      "get": {
+        "operationId": "risk_ahead_api_meteorologist_risk_ahead_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 12.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 48.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Briefing"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meteorologist"
+        ]
+      }
+    },
+    "/api/route": {
+      "get": {
+        "operationId": "list_routes_api_route_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RouteSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/route/{route_id}": {
+      "get": {
+        "operationId": "read_route_api_route__route_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Route"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/route/{route_id}/geojson": {
+      "get": {
+        "operationId": "read_route_geojson_api_route__route_id__geojson_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/route/{route_id}/progress": {
+      "get": {
+        "operationId": "read_progress_api_route__route_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/route/{route_id}/trajectory": {
+      "get": {
+        "operationId": "read_trajectory_api_route__route_id__trajectory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "speed_kmh",
+            "required": false,
+            "schema": {
+              "default": 80.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 130.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_distance_m",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 240.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trajectory"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/route/{route_id}/weather": {
+      "get": {
+        "operationId": "read_route_weather_api_route__route_id__weather_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "speed_kmh",
+            "required": false,
+            "schema": {
+              "default": 80.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 130.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_distance_m",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 240.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteWeatherResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "route"
+        ]
+      }
+    },
+    "/api/solar/clearsky": {
+      "get": {
+        "operationId": "read_clear_sky_api_solar_clearsky_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IrradianceComponents"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "solar"
+        ]
+      }
+    },
+    "/api/solar/clearsky/day": {
+      "get": {
+        "operationId": "read_clear_sky_day_api_solar_clearsky_day_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "step_s",
+            "required": false,
+            "schema": {
+              "default": 1800,
+              "maximum": 10800,
+              "minimum": 60,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IrradianceComponents"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "solar"
+        ]
+      }
+    },
+    "/api/solar/day": {
+      "get": {
+        "operationId": "read_solar_day_api_solar_day_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolarDayEvents"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "solar"
+        ]
+      }
+    },
+    "/api/solar/position": {
+      "get": {
+        "operationId": "read_solar_position_api_solar_position_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolarPosition"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "solar"
+        ]
+      }
+    },
+    "/api/state": {
+      "get": {
+        "operationId": "read_state_api_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "state"
+        ]
+      }
+    },
+    "/api/state/position": {
+      "post": {
+        "operationId": "set_position_api_state_position_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Telemetry-Secret",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "state"
+        ]
+      }
+    },
+    "/api/state/time": {
+      "post": {
+        "operationId": "set_time_api_state_time_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "state"
+        ]
+      }
+    },
+    "/api/weather/forecast": {
+      "get": {
+        "operationId": "read_forecast_api_weather_forecast_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 48.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 384.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "variables",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherSeries"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "weather"
+        ]
+      }
+    },
+    "/api/weather/observable": {
+      "get": {
+        "operationId": "read_observable_variables_api_weather_observable_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "weather"
+        ]
+      }
+    },
+    "/api/weather/observations": {
+      "get": {
+        "operationId": "read_observations_api_weather_observations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90.0,
+                  "minimum": -90.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180.0,
+                  "minimum": -180.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "elev",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 6.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 168.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "variables",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherSeries"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "weather"
+        ]
+      }
+    },
+    "/api/weather/providers": {
+      "get": {
+        "operationId": "read_provider_capabilities_api_weather_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderCapabilities"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "weather"
+        ]
+      }
+    },
+    "/api/weather/variables": {
+      "get": {
+        "operationId": "read_variables_api_weather_variables_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "weather"
+        ]
+      }
+    }
+  }
+}
