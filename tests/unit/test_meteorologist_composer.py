@@ -303,3 +303,116 @@ def test_deterministic_prose_passes_the_numeric_guard() -> None:
         ]
     )
     check_prose(prose, briefing)
+
+
+# ----------------------------------------------------------------------------- synoptic (#10, #14)
+
+from datetime import timedelta  # noqa: E402
+
+from rwi.alerts.synoptic import (  # noqa: E402
+    DEFAULT_THRESHOLDS,
+    FrontSignature,
+    MeridionalSegment,
+    PressureTendency,
+    SynopticAnalysis,
+)
+
+
+def _syn_prov() -> Provenance:
+    return Provenance(
+        provider="rwi", dataset="synoptic", kind=DataKind.DERIVED, retrieved_at_utc=NOW
+    )
+
+
+def _syn_analysis(*, with_front: bool, missing: tuple[str, ...] = ()) -> SynopticAnalysis:
+    pos = GeoPoint(latitude_deg=-29.02, longitude_deg=134.75)
+    front = FrontSignature(
+        name="Coober Pedy",
+        position=pos,
+        route_distance_m=2_176_900.0,
+        passage_time_utc=NOW + timedelta(hours=9),
+        criteria_met=("pressure_trough", "wind_shift", "temperature_drop", "dewpoint_drop"),
+        criteria_evaluated=("pressure_trough", "wind_shift", "temperature_drop", "dewpoint_drop"),
+        strength="signature",
+        dp_rise_pa=153.7,
+        wind_shift_deg=107.3,
+        dt_24h_k=-6.4,
+        dtd_k=-8.2,
+        provenance=_syn_prov(),
+    )
+    tend = (
+        PressureTendency("Alice Springs", pos, NOW, 100810.0, -41.0, -213.5, _syn_prov()),
+        PressureTendency("Coober Pedy", pos, NOW, 100950.0, -77.0, -388.2, _syn_prov()),
+    )
+    seg = MeridionalSegment("Alice Springs", "Coober Pedy", NOW, 140.0, 590.4, 23.71)
+    return SynopticAnalysis(
+        issued_at_utc=NOW,
+        points=("Alice Springs", "Coober Pedy", "Port Augusta"),
+        missing=missing,
+        tendencies=tend,
+        meridional_profile=(seg,),
+        fronts=(front,) if with_front else (),
+        front_speed_m_s=11.34 if with_front else None,
+        front_direction="southward" if with_front else None,
+        thresholds=DEFAULT_THRESHOLDS,
+        provider="openmeteo",
+        model_name="ecmwf_ifs025",
+    )
+
+
+def _prose(b: object) -> str:
+    from rwi.meteorologist import Briefing
+
+    assert isinstance(b, Briefing)
+    return " ".join(
+        [
+            b.assessment,
+            *(dp.label for dp in b.supporting_data),
+            *(u.statement for u in b.uncertainty),
+            *b.operational_consequences,
+            *(w.what + " " + w.when + " " + w.trigger for w in b.watch_next),
+            *b.warnings_and_limits,
+        ]
+    )
+
+
+def test_morning_briefing_reports_front_with_cited_numbers() -> None:
+    ctx = _empty_ctx()
+    ctx.synoptic = mt.synoptic_outlook(
+        _syn_analysis(with_front=True, missing=("Tennant Creek",)), now=NOW, horizon_s=86400
+    )
+    b = compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=NOW)
+    assert "Frontsignatur i modellen vid Coober Pedy" in b.assessment
+    # order: convection sentence before the front sentence
+    assert b.assessment.index("Konvektions") < b.assessment.index("Frontsignatur")
+    syn = [dp for dp in b.supporting_data if dp.citation_id == "synoptic_outlook"]
+    values = {dp.value for dp in syn}
+    assert {153.7, 107.3, -6.4, -8.2, 11.3, -388.2, 23.7} <= values
+    assert any(c.id == "synoptic_outlook" for c in b.citations)
+    assert any(w.what == "Frontpassage Coober Pedy" for w in b.watch_next)
+    text = " ".join(b.warnings_and_limits)
+    needles = (
+        "MODELLFRONTER", "okalibrerade tröskelvärden", "höjdfält", "värmetråg", "Tennant Creek"
+    )
+    for needle in needles:
+        assert needle in text
+    assert any(u.citation_id == "synoptic_outlook" and u.kind == "unproven" for u in b.uncertainty)
+    assert not any("synoptisk analys saknas" in u for u in b.unknowns)
+    check_prose(_prose(b), b)
+
+
+def test_morning_briefing_without_front_says_so_and_passes_guard() -> None:
+    ctx = _empty_ctx()
+    ctx.synoptic = mt.synoptic_outlook(_syn_analysis(with_front=False), now=NOW, horizon_s=86400)
+    b = compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=NOW)
+    assert "Ingen frontsignatur" in b.assessment
+    assert not any(w.what.startswith("Frontpassage") for w in b.watch_next)
+    assert not any("frontpassagen" in c for c in b.operational_consequences)
+    check_prose(_prose(b), b)
+
+
+def test_morning_briefing_lists_synoptic_gap_when_unavailable() -> None:
+    b = compose(QuestionKind.MORNING_BRIEFING, _empty_ctx(), asked_at=NOW)
+    assert any(u.startswith("synoptisk analys saknas") for u in b.unknowns)
+    assert "Frontsignatur" not in b.assessment
+    assert "MODELLFRONTER" not in " ".join(b.warnings_and_limits)

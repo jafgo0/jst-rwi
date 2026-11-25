@@ -14,9 +14,9 @@ tests feed it :class:`ToolResult` objects directly, with no network.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -35,6 +35,9 @@ from rwi.core.position import ActiveState
 from rwi.core.timebase import TimeWindow
 from rwi.meteorologist.contract import Citation
 from rwi.meteorologist.self_knowledge import SelfKnowledgeSummary
+
+if TYPE_CHECKING:  # typing only: the layer receives the engine output, never runs it
+    from rwi.alerts.synoptic import SynopticAnalysis
 
 T = TypeVar("T")
 
@@ -456,6 +459,50 @@ def wind_outlook(
     return ToolResult.ok(outlook, verdict, citation)
 
 
+def synoptic_outlook(
+    analysis: SynopticAnalysis | None,
+    *,
+    now: datetime,
+    horizon_s: float,
+) -> ToolResult[SynopticAnalysis]:
+    """Shape a :class:`~rwi.alerts.synoptic.SynopticAnalysis` for the composer.
+
+    Keeps only front signatures inside ``[now, now + horizon_s]``. It does not
+    compute anything: speed, tendencies and the profile are the engine's.
+    """
+    if analysis is None:
+        return ToolResult.unavailable("ingen synoptisk analys hämtad")
+    if not analysis.available:
+        missing = ", ".join(analysis.missing) or "alla"
+        return ToolResult.unavailable(
+            f"för få ruttpunkter för synoptisk analys (saknas: {missing})"
+        )
+    limit = now + timedelta(seconds=horizon_s)
+    fronts = tuple(f for f in analysis.fronts if now <= f.passage_time_utc <= limit)
+    shaped = replace(analysis, fronts=fronts)
+    signatures = [f for f in fronts if f.strength == "signature"]
+    if signatures:
+        names = ", ".join(dict.fromkeys(f.name for f in signatures))
+        verdict = f"frontsignatur i modellen vid {names}"
+    elif fronts:
+        names = ", ".join(dict.fromkeys(f.name for f in fronts))
+        verdict = f"möjlig front (bara två kriterier uppfyllda) vid {names}"
+    else:
+        verdict = "ingen frontsignatur längs rutten i horisonten"
+    citation = Citation(
+        id="synoptic_outlook",
+        tool="synoptic_outlook",
+        source_module="rwi.alerts.synoptic",
+        description=verdict,
+        valid_time_utc=fronts[0].passage_time_utc if fronts else None,
+        retrieved_at_utc=now,
+        provider=analysis.provider,
+        model_name=analysis.model_name,
+        model_init_time_utc=analysis.model_init_time_utc,
+    )
+    return ToolResult.ok(shaped, verdict, citation)
+
+
 def _severity_rank(s: AlertSeverity) -> int:
     return {
         AlertSeverity.INFO: 0,
@@ -547,6 +594,7 @@ __all__ = [
     "platform_self_knowledge",
     "route_weather_ahead",
     "solar_day",
+    "synoptic_outlook",
     "verification_skill",
     "where_and_when",
     "wind_outlook",

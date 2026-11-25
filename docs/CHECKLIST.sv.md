@@ -35,7 +35,7 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 ## Master-prompten fas 1–4 (klart 2026-11-08 – 11-25)
 
 - [x] **Fas 1: AI-meteorologlagret** (`rwi.meteorologist`) — svar i sex delar, citerar motorerna, hittar inte på siffror. Fritextsvar kräver `RWI_ANTHROPIC_API_KEY`.
-- [x] **Fas 2: Synoptisk morgonbriefing** — konvektionsvarning först (`rwi.alerts.convection`, CAPE/LI/PoP), sedan vind. Läser inga tryckfält ännu.
+- [x] **Fas 2: Synoptisk morgonbriefing** — konvektionsvarning först (`rwi.alerts.convection`, CAPE/LI/PoP), sedan fronter och tryckfält längs rutten (#10/#14 steg A, yta), sedan vind.
 - [x] **Fas 3: Självkännedom** — varje briefing visar historisk bias/skicklighet, eller "oprövad" där data saknas.
 - [x] **Fas 4: Produktkontrakt mot strategi-repot** (`docs/PRODUCT_CONTRACT.md`, `docs/product/openapi.v0.json`).
 - [x] **Meteo-vy** i dashboarden för briefingarna.
@@ -62,7 +62,7 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 - [ ] **ARPANSA 1-min markmätning** — alternativ grundsanning för Alice Springs; registrering krävs
 - [ ] **Live forecast capture en säsong** — infrastruktur finns, behöver tid (en varm månad räcker)
 - [ ] **Live-GPS** (#29, #33, #79) — kräver att teamets telemetri-protokoll är spikat
-- [ ] **Synoptisk analys av tryckfält** (#10, #14) — briefingen läser bara vind och konvektion; fronter/cirkulation saknas
+- [ ] **Synoptisk analys, steg B** (#10, #14) — steg A klart (`rwi.alerts.synoptic`: MSLP-tendens, meridionalprofil, frontsignatur och fronthastighet över de 11 namngivna ruttpunkterna). Kvar: höjdfält (tråg i höjden, styrflöde), kalibrering av frontkriterierna mot analyserade kartor från tävlingsveckor
 
 ## Oförklarade signaler (vårt eget eftersläpning)
 

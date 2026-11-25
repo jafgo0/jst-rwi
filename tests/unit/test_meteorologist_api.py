@@ -9,10 +9,33 @@ Fas 1 covers:
 
 from __future__ import annotations
 
+import math
+from collections.abc import Iterator
+from datetime import timedelta
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
+from rwi.alerts.synoptic import SYNOPTIC_VARIABLES
 from rwi.api.app import create_app
+from rwi.api.routers import meteorologist as met_router
 from rwi.config import get_settings
+from rwi.contracts import WeatherSeries, WeatherStep
+from rwi.core.provenance import DataKind, Provenance, measured
+
+
+@pytest.fixture(autouse=True)
+def _offline_synoptic(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Unit tests never touch the network: the synoptic fetch fails by default."""
+
+    async def refuse(*_a: Any, **_k: Any) -> Any:
+        raise ConnectionError("offline in unit tests")
+
+    monkeypatch.setattr("rwi.providers.registry.fetch_with_fallback", refuse)
+    met_router._reset_synoptic_cache()
+    yield
+    met_router._reset_synoptic_cache()
 
 
 def _client() -> TestClient:
@@ -117,3 +140,110 @@ def test_ask_with_injected_classifier_returns_a_briefing() -> None:
 
 # get_settings is cached; make sure tests don't leak state via the cache.
 get_settings.cache_clear()
+
+
+# ----------------------------------------------------------------------------- synoptic (#10, #14)
+
+
+def _synthetic_series(point: Any, window: Any) -> WeatherSeries:
+    """Ridge north of -28 deg; south of it a cold front arriving later further south.
+
+    Front hour (from window start, which is now - 24 h) grows 4 h per degree of
+    latitude south of -29, so Coober Pedy -> Port Augusta is a southward front.
+    """
+    lat = point.latitude_deg
+    front_h = 30 + round(4 * (-lat - 29.0)) if lat < -28.0 else None
+    steps = []
+    t0 = window.start_utc.replace(minute=0, second=0, microsecond=0)
+    for h in range(int((window.end_utc - t0).total_seconds() // 3600)):
+        t = t0 + timedelta(hours=h)
+        prov = Provenance(
+            provider="openmeteo",
+            dataset="forecast",
+            kind=DataKind.FORECAST,
+            retrieved_at_utc=t0,
+            valid_time_utc=t,
+            point=point,
+        )
+        diurnal = 25.0 + 6.0 * math.sin((h - 6) / 24.0 * 2.0 * math.pi)
+        if front_h is None:
+            vals = {
+                "pressure_msl": 102000.0 + 2.0 * h,
+                "wind_direction_10m": 120.0,
+                "wind_speed_10m": 5.0,
+                "temperature_2m": diurnal,
+                "dew_point_2m": 5.0,
+            }
+        else:
+            vals = {
+                "pressure_msl": 101000.0 + 50.0 * abs(h - front_h),
+                "wind_direction_10m": 330.0 if h < front_h else 220.0,
+                "wind_speed_10m": 6.0,
+                "temperature_2m": diurnal - (6.0 if h > front_h else 0.0),
+                "dew_point_2m": 10.0 if h < front_h else 2.0,
+            }
+        steps.append(
+            WeatherStep(
+                valid_time_utc=t,
+                values={k: measured(k, v, prov) for k, v in vals.items()},
+            )
+        )
+    return WeatherSeries(
+        point=point,
+        requested_point=point,
+        provider="openmeteo",
+        dataset="forecast",
+        kind=DataKind.FORECAST,
+        model_name="ecmwf_ifs025",
+        retrieved_at_utc=t0,
+        temporal_resolution_s=3600.0,
+        steps=steps,
+    )
+
+
+def _fake_fetch(calls: list[Any]) -> Any:
+    async def fetch(_providers: Any, point: Any, window: Any, variables: Any, *, kind: Any) -> Any:
+        if tuple(variables) != SYNOPTIC_VARIABLES:  # platform-position fetches of other tools
+            raise ConnectionError("offline in unit tests")
+        calls.append((point, window, tuple(variables), kind))
+        if -20.0 < point.latitude_deg < -19.0:  # Tennant Creek
+            raise TimeoutError("HTTP 503")
+        return _synthetic_series(point, window)
+
+    return fetch
+
+
+def test_morning_briefing_reports_front_and_failed_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Any] = []
+    monkeypatch.setattr("rwi.providers.registry.fetch_with_fallback", _fake_fetch(calls))
+    with _client() as client:
+        response = client.get("/api/meteorologist/morning-briefing", params={"hours": 24})
+    assert response.status_code == 200
+    body = response.json()
+    # 11 named waypoints: start, nine control stops, finish.
+    assert len(calls) == 11
+    _point, window, variables, kind = calls[0]
+    assert kind is DataKind.FORECAST
+    assert "pressure_msl" in variables and "dew_point_2m" in variables
+    assert window.end_utc - window.start_utc == timedelta(hours=72)
+    text = response.text
+    assert "front" in body["assessment"].lower()
+    assert "Coober Pedy" in text
+    assert "Tennant Creek" in text  # the failed point is reported, not hidden
+    assert "Control Stop" not in text
+
+
+def test_morning_briefing_synoptic_is_cached_between_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Any] = []
+    monkeypatch.setattr("rwi.providers.registry.fetch_with_fallback", _fake_fetch(calls))
+    with _client() as client:
+        client.get("/api/meteorologist/morning-briefing")
+        client.get("/api/meteorologist/morning-briefing")
+    assert len(calls) == 11
+
+
+def test_morning_briefing_lists_synoptic_gap_when_offline() -> None:
+    with _client() as client:
+        response = client.get("/api/meteorologist/morning-briefing")
+    assert response.status_code == 200
+    assert "synoptisk" in " ".join(response.json()["unknowns"]).lower()

@@ -13,8 +13,10 @@ through the tool layer rather than invent values.
 
 from __future__ import annotations
 
-from datetime import timedelta
-from typing import Annotated, Any
+import asyncio
+from collections.abc import Sequence
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -40,6 +42,10 @@ from rwi.meteorologist import (
 from rwi.meteorologist import tools as mt
 from rwi.meteorologist.llm import AdapterUnavailable, build_classifier
 from rwi.meteorologist.self_knowledge import platform_confidence
+
+if TYPE_CHECKING:
+    from rwi.alerts.synoptic import RoutePointSeries, SynopticAnalysis
+    from rwi.contracts import Route
 
 router = APIRouter(prefix="/api/meteorologist", tags=["meteorologist"])
 
@@ -235,6 +241,115 @@ async def _assemble_context(
     )
 
 
+# ----------------------------------------------------------------------------- synoptic (#10, #14)
+
+SYNOPTIC_LOOKBACK_H = 24.0
+"""Model look-back so the front rules can compare with the same hour the day before."""
+SYNOPTIC_AHEAD_H = 48.0
+"""Covers the longest briefing horizon (24 h) plus a full 24 h tendency after it."""
+SYNOPTIC_POINT_TIMEOUT_S = 20.0
+SYNOPTIC_CACHE_TTL_S = 600.0
+"""Open-Meteo updates hourly; ten minutes avoids eleven fetches per dashboard poll."""
+
+_synoptic_cache: tuple[datetime, SynopticAnalysis] | None = None
+_synoptic_lock = asyncio.Lock()
+
+
+def _reset_synoptic_cache() -> None:
+    """Drop the cached analysis (tests; each TestClient runs its own event loop)."""
+    global _synoptic_cache, _synoptic_lock
+    _synoptic_cache = None
+    _synoptic_lock = asyncio.Lock()
+
+
+def _synoptic_points(route: Route) -> list[tuple[str, float, Any]]:
+    """Named route waypoints (start, control stops, finish) in route order."""
+    out: list[tuple[str, float, Any]] = []
+    for w in route.waypoints:
+        if not w.name or w.kind.value == "waypoint":
+            continue
+        name = w.name.removesuffix(" Control Stop")
+        out.append((name, w.cumulative_distance_m, w.point))
+    return out
+
+
+async def _fetch_route_series(
+    fetch: Any,
+    providers: Any,
+    points: Sequence[tuple[str, float, Any]],
+    window: TimeWindow,
+) -> list[RoutePointSeries]:
+    """One forecast per point, in parallel; a failed point is recorded, not fatal."""
+    from rwi.alerts.synoptic import SYNOPTIC_VARIABLES, RoutePointSeries
+
+    async def one(point: Any) -> Any:
+        return await asyncio.wait_for(
+            fetch(providers, point, window, SYNOPTIC_VARIABLES, kind=DataKind.FORECAST),
+            timeout=SYNOPTIC_POINT_TIMEOUT_S,
+        )
+
+    results = await asyncio.gather(*(one(p) for _, _, p in points), return_exceptions=True)
+    out: list[RoutePointSeries] = []
+    for (name, dist, point), res in zip(points, results, strict=True):
+        if isinstance(res, BaseException):
+            reason = f"{type(res).__name__}: {res}".rstrip(": ")
+            out.append(RoutePointSeries(name, dist, point, None, reason))
+        else:
+            out.append(RoutePointSeries(name, dist, point, res))
+    return out
+
+
+async def _synoptic_result(
+    settings: Settings, now: datetime, hours: float
+) -> ToolResult[Any]:
+    """Route-scale surface analysis for the morning briefing, cached briefly.
+
+    Every failure becomes ``ToolResult.unavailable`` with the reason; the
+    composer then lists it under unknowns instead of claiming a calm day.
+    """
+    global _synoptic_cache
+    horizon_s = hours * 3600.0
+    try:
+        analyse_route: Any = require_attr(
+            "rwi.alerts.synoptic", "analyse_route", capability="synoptic analysis"
+        )
+        async with _synoptic_lock:
+            cached = _synoptic_cache
+            if cached is not None and (now - cached[0]).total_seconds() < SYNOPTIC_CACHE_TTL_S:
+                return mt.synoptic_outlook(cached[1], now=now, horizon_s=horizon_s)
+            load_route: Any = require_attr(
+                "rwi.route.bwsc", "load_bwsc_route", capability="BWSC route"
+            )
+            available: Any = require_attr(
+                "rwi.providers.registry", "available_providers", capability="weather providers"
+            )
+            close: Any = require_attr(
+                "rwi.providers.registry", "close_providers", capability="weather providers"
+            )
+            fetch: Any = require_attr(
+                "rwi.providers.registry", "fetch_with_fallback", capability="weather providers"
+            )
+            window = TimeWindow(
+                start_utc=now - timedelta(hours=SYNOPTIC_LOOKBACK_H),
+                end_utc=now + timedelta(hours=SYNOPTIC_AHEAD_H),
+            )
+            providers = available(settings)
+            try:
+                series = await _fetch_route_series(
+                    fetch, providers, _synoptic_points(load_route()), window
+                )
+            finally:
+                await close(providers)
+            analysis: SynopticAnalysis = analyse_route(series, now=now)
+            if analysis.available:
+                _synoptic_cache = (now, analysis)
+    except Exception as exc:
+        return ToolResult.unavailable(
+            f"synoptisk analys misslyckades: {type(exc).__name__}: {exc}"
+        )
+    return mt.synoptic_outlook(analysis, now=now, horizon_s=horizon_s)
+
+
 @router.get("/risk-ahead", response_model=Briefing)
 async def risk_ahead(
     store: StoreDep,
@@ -269,9 +384,14 @@ async def morning_briefing(
     settings: SettingsDep,
     hours: Annotated[float, Query(gt=0.0, le=24.0)] = 12.0,
 ) -> Any:
-    """Stub morning briefing (Fas 1 shell; Fas 2 fills the synoptic text)."""
-    ctx = await _assemble_context(store, settings, hours)
-    return compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=utc_now())
+    """Synoptic morning briefing: convection, fronts along the route (#10, #14), wind."""
+    now = utc_now()
+    ctx, synoptic = await asyncio.gather(
+        _assemble_context(store, settings, hours),
+        _synoptic_result(settings, now, hours),
+    )
+    ctx.synoptic = synoptic
+    return compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=now)
 
 
 @router.post("/ask", response_model=Briefing)

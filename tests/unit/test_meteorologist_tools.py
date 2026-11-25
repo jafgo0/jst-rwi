@@ -292,3 +292,98 @@ def test_wind_outlook_extracts_peak_gust_window() -> None:
     assert out is not None
     assert out.peak_gust_mps == 18.5
     assert out.dominant_direction_deg == 220.0
+
+
+# ---------------------------------------------------------------- synoptic_outlook (#10, #14)
+
+from rwi.alerts.synoptic import (  # noqa: E402
+    DEFAULT_THRESHOLDS,
+    FrontSignature,
+    SynopticAnalysis,
+)
+
+
+def _front_sig(name: str, h: float, strength: str = "signature") -> FrontSignature:
+    t = NOW + timedelta(hours=h)
+    return FrontSignature(
+        name=name,
+        position=GeoPoint(latitude_deg=-29.0, longitude_deg=134.75),
+        route_distance_m=2_180_000.0,
+        passage_time_utc=t,
+        criteria_met=("pressure_trough", "wind_shift", "dewpoint_drop"),
+        criteria_evaluated=("pressure_trough", "wind_shift", "dewpoint_drop"),
+        strength=strength,  # type: ignore[arg-type]
+        dp_rise_pa=150.0,
+        wind_shift_deg=110.0,
+        dt_24h_k=None,
+        dtd_k=-8.0,
+        provenance=Provenance(
+            provider="rwi", dataset="synoptic", kind=DataKind.DERIVED, retrieved_at_utc=NOW
+        ),
+    )
+
+
+def _analysis(
+    *fronts: FrontSignature, points: tuple[str, ...] = ("A", "B", "C")
+) -> SynopticAnalysis:
+    return SynopticAnalysis(
+        issued_at_utc=NOW,
+        points=points,
+        missing=(),
+        tendencies=(),
+        meridional_profile=(),
+        fronts=fronts,
+        front_speed_m_s=None,
+        front_direction=None,
+        thresholds=DEFAULT_THRESHOLDS,
+        provider="openmeteo",
+        model_name="ecmwf_ifs025",
+    )
+
+
+def test_synoptic_outlook_none_is_unavailable() -> None:
+    assert not mt.synoptic_outlook(None, now=NOW, horizon_s=86400).available
+
+
+def test_synoptic_outlook_too_few_points_is_unavailable_and_names_missing() -> None:
+    a = SynopticAnalysis(
+        issued_at_utc=NOW,
+        points=("A",),
+        missing=("B", "C"),
+        tendencies=(),
+        meridional_profile=(),
+        fronts=(),
+        front_speed_m_s=None,
+        front_direction=None,
+        thresholds=DEFAULT_THRESHOLDS,
+    )
+    r = mt.synoptic_outlook(a, now=NOW, horizon_s=86400)
+    assert not r.available
+    assert "B, C" in r.reason
+
+
+def test_synoptic_outlook_filters_to_horizon_and_cites_engine() -> None:
+    r = mt.synoptic_outlook(
+        _analysis(_front_sig("Coober Pedy", 6), _front_sig("Adelaide", 40)),
+        now=NOW,
+        horizon_s=24 * 3600,
+    )
+    assert r.available and r.value is not None and r.citation is not None
+    assert [f.name for f in r.value.fronts] == ["Coober Pedy"]
+    assert "Coober Pedy" in r.reason and "Adelaide" not in r.reason
+    assert r.citation.source_module == "rwi.alerts.synoptic"
+    assert r.citation.model_name == "ecmwf_ifs025"
+    assert r.citation.valid_time_utc == NOW + timedelta(hours=6)
+
+
+def test_synoptic_outlook_without_fronts_says_so() -> None:
+    r = mt.synoptic_outlook(_analysis(), now=NOW, horizon_s=86400)
+    assert r.available
+    assert "ingen frontsignatur" in r.reason
+
+
+def test_synoptic_outlook_possible_only() -> None:
+    r = mt.synoptic_outlook(
+        _analysis(_front_sig("Alice Springs", 3, "possible")), now=NOW, horizon_s=86400
+    )
+    assert r.reason.startswith("möjlig front")

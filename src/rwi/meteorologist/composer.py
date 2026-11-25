@@ -18,6 +18,7 @@ and by :mod:`rwi.meteorologist.numeric_guard` on rendered output):
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from rwi.contracts import (
     Alert,
@@ -40,6 +41,9 @@ from rwi.meteorologist.contract import (
 )
 from rwi.meteorologist.self_knowledge import SelfKnowledgeSummary
 from rwi.meteorologist.tools import ConvectionOutlook, ToolResult, WindOutlook
+
+if TYPE_CHECKING:
+    from rwi.alerts.synoptic import SynopticAnalysis
 
 STATIC_UNKNOWNS: tuple[str, ...] = (
     "Ingen pyranometer eller arraytelemetri — modellerad irradians kan inte "
@@ -72,6 +76,7 @@ class BriefingContext:
         convection: ToolResult[ConvectionOutlook] | None = None,
         wind: ToolResult[WindOutlook] | None = None,
         self_knowledge: ToolResult[SelfKnowledgeSummary] | None = None,
+        synoptic: ToolResult[SynopticAnalysis] | None = None,
     ) -> None:
         self.state = state
         self.solar_day = solar_day
@@ -99,6 +104,10 @@ class BriefingContext:
                 "självkännedom beräknades inte för denna fråga"
             )
         )
+        # #10/#14: pressure-field analysis along the route (morning briefing).
+        self.synoptic: ToolResult[SynopticAnalysis] = synoptic or ToolResult.unavailable(
+            "synoptisk analys är inte beräknad för denna fråga"
+        )
 
     def available_citations(self) -> list[Citation]:
         """Return citations from every tool that produced a value."""
@@ -115,6 +124,7 @@ class BriefingContext:
             self.convection,
             self.wind,
             self.self_knowledge,
+            self.synoptic,
         ]
         return [r.citation for r in results if r.citation is not None]
 
@@ -133,6 +143,7 @@ class BriefingContext:
             (self.convection, "konvektions-utsikt"),
             (self.wind, "vindutsikt"),
             (self.self_knowledge, "självkännedom (arkiv)"),
+            (self.synoptic, "synoptisk analys"),
         ]
         return [f"{label} saknas: {r.reason}" for r, label in pairs if not r.available]
 
@@ -607,6 +618,179 @@ def _compose_forecast_reliability(
     )
 
 
+class _SynopticSections:
+    """Section fragments contributed by the synoptic tool (#10, #14)."""
+
+    def __init__(self) -> None:
+        self.assessment: str | None = None
+        self.supporting: list[DataPoint] = []
+        self.consequences: list[str] = []
+        self.watch: list[WatchItem] = []
+        self.warnings: list[str] = []
+        self.uncertainty: list[UncertaintyItem] = []
+
+
+MAX_FRONTS_IN_BRIEFING = 4
+
+
+def _synoptic_sections(ctx: BriefingContext) -> _SynopticSections:
+    """Pick values out of the synoptic analysis; computes nothing new.
+
+    Only selections (first fronts, largest fall, steepest segment) and
+    display rounding happen here - every value comes from the engine.
+    """
+    out = _SynopticSections()
+    res = ctx.synoptic
+    a = res.value if res.available else None
+    if a is None or res.citation is None:
+        return out
+    cid = res.citation.id
+    fronts = a.fronts[:MAX_FRONTS_IN_BRIEFING]
+    signatures = [f for f in fronts if f.strength == "signature"]
+
+    if signatures:
+        first = signatures[0]
+        out.assessment = (
+            f"Frontsignatur i modellen vid {first.name} runt "
+            f"{first.passage_time_utc.isoformat()}."
+        )
+    elif fronts:
+        out.assessment = (
+            f"Möjlig front i modellen vid {fronts[0].name} runt "
+            f"{fronts[0].passage_time_utc.isoformat()} (svag signatur)."
+        )
+    else:
+        out.assessment = "Ingen frontsignatur längs rutten i horisonten."
+
+    for f in fronts:
+        if f.dp_rise_pa is not None:
+            out.supporting.append(
+                DataPoint(
+                    label=f"tryckstegring efter tråget, {f.name}",
+                    value=round(f.dp_rise_pa, 1),
+                    unit="Pa",
+                    valid_time_utc=f.passage_time_utc,
+                    citation_id=cid,
+                )
+            )
+        if f.wind_shift_deg is not None:
+            out.supporting.append(
+                DataPoint(
+                    label=f"vindvridning vid passagen, {f.name}",
+                    value=round(f.wind_shift_deg, 1),
+                    unit="grader",
+                    valid_time_utc=f.passage_time_utc,
+                    citation_id=cid,
+                )
+            )
+        if f.dt_24h_k is not None:
+            out.supporting.append(
+                DataPoint(
+                    label=f"temperaturändring mot samma tid dygnet före, {f.name}",
+                    value=round(f.dt_24h_k, 1),
+                    unit="K",
+                    valid_time_utc=f.passage_time_utc,
+                    citation_id=cid,
+                )
+            )
+        if f.dtd_k is not None:
+            out.supporting.append(
+                DataPoint(
+                    label=f"daggpunktsändring över passagen, {f.name}",
+                    value=round(f.dtd_k, 1),
+                    unit="K",
+                    valid_time_utc=f.passage_time_utc,
+                    citation_id=cid,
+                )
+            )
+        out.watch.append(
+            WatchItem(
+                what=f"Frontpassage {f.name}",
+                when=f.passage_time_utc.isoformat(),
+                trigger="tryckminimum följt av stigande tryck och vindvridning mot sydväst",
+                why="Vind och temperatur skiftar; sidvind och kylning ändrar energibudgeten.",
+            )
+        )
+    if a.front_speed_m_s is not None and a.front_direction is not None:
+        out.supporting.append(
+            DataPoint(
+                label=(
+                    "frontens förflyttning längs rutten "
+                    + ("söderut" if a.front_direction == "southward" else "norrut")
+                ),
+                value=round(a.front_speed_m_s, 1),
+                unit="m/s",
+                citation_id=cid,
+            )
+        )
+    falls = [t for t in a.tendencies if t.dp_24h_pa is not None]
+    if falls:
+        deepest = min(falls, key=lambda t: t.dp_24h_pa or 0.0)
+        out.supporting.append(
+            DataPoint(
+                label=f"tryckändring kommande dygn (största fall), {deepest.name}",
+                value=round(deepest.dp_24h_pa or 0.0, 1),
+                unit="Pa",
+                valid_time_utc=deepest.valid_time_utc,
+                citation_id=cid,
+            )
+        )
+    if a.meridional_profile:
+        steep = max(a.meridional_profile, key=lambda s: abs(s.gradient_pa_per_100km))
+        out.supporting.append(
+            DataPoint(
+                label=f"nord-syd-tryckgradient, {steep.north} till {steep.south}",
+                value=round(steep.gradient_pa_per_100km, 1),
+                unit="Pa/100 km",
+                valid_time_utc=steep.valid_time_utc,
+                citation_id=cid,
+            )
+        )
+
+    if fronts:
+        out.consequences.append(
+            "Räkna med vindvridning och byig vind vid frontpassagen; "
+            "sidvinds- och motvindskomponenten byter tecken med kursen."
+        )
+        out.consequences.append(
+            "Kallare luft bakom fronten sänker celltemperaturen men moln i "
+            "frontzonen kan sänka instrålningen — kontrollera irradiansprognosen "
+            "för samma tidsfönster."
+        )
+
+    out.warnings.append(
+        "Fronterna är MODELLFRONTER ur punktprognoser längs rutten, inte "
+        "analyserade fronter från BoM:s synoptiska kartor."
+    )
+    out.warnings.append(
+        "Frontkriterierna är okalibrerade tröskelvärden (läroboksvärden) och "
+        "inte verifierade mot Stuart Highway."
+    )
+    out.warnings.append(
+        "Inga höjdfält (mellannivå i troposfären) används — tråg i höjden och styrflödet syns inte."
+    )
+    out.warnings.append(
+        "Ett värmetråg i inlandet kan ge tryckminimum och vindvridning utan "
+        "att vara en front; det skiljs bara delvis ut av temperatur- och "
+        "daggpunktskriterierna."
+    )
+    if a.missing:
+        out.warnings.append(
+            "Ruttpunkter utan data i den synoptiska analysen: " + ", ".join(a.missing) + "."
+        )
+    out.uncertainty.append(
+        UncertaintyItem(
+            kind="unproven",
+            statement=(
+                "Frontdetekteringens träffsäkerhet är inte verifierad på denna "
+                "plattform — inga lagrade frontpassager att jämföra mot."
+            ),
+            citation_id=cid,
+        )
+    )
+    return out
+
+
 def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Briefing:
     """Synoptic morning briefing. Convection first, then everything else.
 
@@ -642,6 +826,9 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
         assessment_parts.append("Stabil atmosfär i dagens horisont, ingen konvektionsrisk.")
     else:
         assessment_parts.append("Konvektions-utsikt kunde inte beräknas (saknad data).")
+    syn = _synoptic_sections(ctx)
+    if syn.assessment is not None:
+        assessment_parts.append(syn.assessment)
     if wind_value is not None and wind_value.peak_gust_mps is not None:
         assessment_parts.append(
             f"Topp byvind {wind_value.peak_gust_mps:.1f} m/s."
@@ -711,6 +898,7 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
                     citation_id=wind_citation_id,
                 )
             )
+    supporting.extend(syn.supporting)
     if ctx.solar_day.available and ctx.solar_day.value is not None:
         supporting.extend(_solar_day_data(ctx.solar_day.value))
     if ctx.irradiance.available and ctx.irradiance.value is not None:
@@ -744,6 +932,7 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
             "Granska fordonets stabilitetsbudget mot topp-byvinden; "
             "sidvindskomponenten beror på kursen."
         )
+    consequences.extend(syn.consequences)
 
     # --- Section 5: watch_next (next things to monitor, with trigger).
     if conv_value is not None and conv_value.peak_window is not None:
@@ -755,6 +944,7 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
                 why="Markerar när ett säkert stopp kan bli nödvändigt.",
             )
         )
+    watch.extend(syn.watch)
     if wind_value is not None and wind_value.peak_window is not None:
         watch.append(
             WatchItem(
@@ -785,7 +975,7 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
         "eftermiddagskonvektion i inlandet är notoriskt svår att tajma."
     )
     warnings.append(
-        "Konvektionströsklarna är GENERISKA (Galway 1956, SPC, AMS); de är "
+        "Konvektionströsklarna är GENERISKA (Galways lyftindex, SPC, AMS); de är "
         "inte kalibrerade mot Stuart Highway torrsäsong."
     )
     warnings.append(
@@ -816,6 +1006,8 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
                 "vägledning, inte som en kalibrerad siffra."
             )
 
+    warnings.extend(syn.warnings)
+
     unknowns = list(STATIC_UNKNOWNS) + ctx.tool_gaps()
 
     return Briefing(
@@ -826,7 +1018,8 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
         supporting_data=supporting,
         uncertainty=_uncertainty_section(
             ctx, variables_of_interest=("ghi", "wind_speed_10m")
-        ),
+        )
+        + syn.uncertainty,
         operational_consequences=consequences,
         watch_next=watch,
         warnings_and_limits=warnings,
