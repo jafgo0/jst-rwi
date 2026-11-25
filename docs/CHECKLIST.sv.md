@@ -62,7 +62,7 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 - [ ] **ARPANSA 1-min markmätning** — alternativ grundsanning för Alice Springs; registrering krävs
 - [ ] **Live forecast capture en säsong** — infrastruktur finns, behöver tid (en varm månad räcker)
 - [ ] **Live-GPS** (#29, #33, #79) — kräver att teamets telemetri-protokoll är spikat
-- [ ] **Synoptisk analys, steg B** (#10, #14) — steg A klart (`rwi.alerts.synoptic`: MSLP-tendens, meridionalprofil, frontsignatur och fronthastighet över de 11 namngivna ruttpunkterna). Steg B mot ERA5 klart: tråget räknas nu på 24 h-detrendat tryck, så tidvattenlåsningen är borta; trösklarna är oförändrade (`docs/validation/synoptic-calibration.md`). Kvar: kalibrering av trösklarna mot analyserade kartor (BoM) eller stationsdata från tävlingsveckor. Höjdfält (500 hPa, styrflöde) är bortvalda tills vidare
+- [ ] **Synoptisk analys, steg B** (#10, #14) — steg A klart (`rwi.alerts.synoptic`: MSLP-tendens, meridionalprofil, frontsignatur och fronthastighet över de 11 namngivna ruttpunkterna). Steg B mot ERA5 klart: tråget räknas nu på 24 h-detrendat tryck, så tidvattenlåsningen är borta; trösklarna är oförändrade (`docs/validation/synoptic-calibration.md`). Stationskörning klar (6 ISD-stationer 2023–2025): reglerna slår till ~67 ggr/år/station även i Darwin och är låsta till dygnscykeln, så de är inte frontspecifika; ingen enskild tröskel hjälper, trösklarna oförändrade. Kvar: nytt kriterium (tid-på-dygnet-spärr eller meridionalt mönster) och facit mot BoM-analyskartor med ritade fronter. Inga 2025-tävlingsveckodata med tryck finns (drive-system har bara Solcast-skattningar). Höjdfält (500 hPa, styrflöde) är bortvalda tills vidare
 
 ## Oförklarade signaler (vårt eget eftersläpning)
 

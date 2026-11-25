@@ -4,8 +4,10 @@
 atmospheric tide, not fronts. Its trough test now runs on the 24 h pressure
 difference `p(t) - p(t-24h)`, which removes that locking. Agreement between the
 forecast and ERA5 at event level is low (CSI ≤ 0.22), and the sample is too
-small to tune thresholds on. `SynopticAnalysis.calibrated` therefore stays
-`False`.
+small to tune thresholds on. Against station observations (§3) the rules fire
+about 67 times per year per station, Darwin included, and stay locked to the
+diurnal cycle, so they are not front-specific. `SynopticAnalysis.calibrated`
+therefore stays `False`.
 
 Script: `scripts/validation/synoptic_calibration.py` (reads
 `data/archive/rwi.sqlite3` read-only and fetches ERA5 through the existing
@@ -93,6 +95,46 @@ Distinct ERA5 events per site (N→S): raw 2 4 7 9 7 7 6 · detrended 0 4 4 7 4 
   average. Agreement on individual events is poor, as expected for a pointwise
   surface detector run on the model's own fields.
 
+### 3. Station observations (NOAA ISD, archived BoM), 2026-11-25
+
+Script: `scripts/validation/synoptic_obs_calibration.py`. ISD rows are parsed by
+`rwi.alerts.synoptic_obs` (`tests/unit/test_alerts_synoptic_obs.py`) and put on
+an hourly grid with no interpolation. The same detector then runs on the
+observations. An hour is scored only where the station has pressure at t-3..t+3
+and at t-24 h.
+
+The six stations, north to south, are Darwin 94120, Tennant Creek 94238, Alice
+Springs 94326, Woomera 94659, Port Augusta 95666 and Adelaide 94672. The period
+is ISD 2023-01-01 to 2025-08-24. ISD has no 2025 Sep–Nov data yet, so "season"
+here means Sep–Nov 2023–2024. ERA5 is matched to the observations with ±6 h
+tolerance.
+
+| variant | obs events | per station N→S | /yr/station | R1 (p1) | R2 (p2) | ERA5 vs obs CSI | season CSI |
+|---|---|---|---|---|---|---|---|
+| raw | 1997 | 216 278 374 376 412 341 | 125.7 | 0.14 (5e-17) | 0.66 (~0) | 0.33 | 0.38 |
+| detrended (default) | 1062 | 103 140 187 191 236 205 | 66.9 | 0.23 (1.6e-24) | 0.07 (0.011) | 0.25 | 0.29 |
+| + wind shift | 638 | 63 66 111 121 144 133 | 40.2 | 0.33 (2e-32) | 0.14 (3e-6) | 0.25 | 0.28 |
+| + signature | 144 | 15 18 20 22 37 32 | 9.1 | 0.17 (0.019) | 0.03 (0.84) | 0.13 | 0.15 |
+
+- **The detector is not front-specific in observations.** The default variant
+  fires about 67 times per year per station, Darwin included (103 events in
+  2.6 years). Darwin sees essentially no mid-latitude cold fronts, so most of
+  these are something else.
+- **Detrending removes the tide but not the day.** p2 falls from ~0 to 0.011,
+  but the diurnal harmonic is strong (R1 0.23, p1 1.6e-24). The probable causes
+  are the sea breeze at the coastal stations, the diurnal turning of the wind,
+  and dewpoint mixing-out across the window. This is an interpretation, not
+  tested here.
+- **One-at-a-time threshold sweep.** The parameters swept were dp 50/150/200 Pa,
+  shift 45/90°, dT 2/4/5 K, dTd 2/4/5 K and min wind 1/3 m/s. CSI stays between
+  0.20 and 0.27. Stricter dp or dT raises R1 instead of lowering it. No single
+  threshold removes the diurnal locking.
+- **Forecast against archived BoM observations.** These are 272 `ecmwf_ifs025`
+  run-site pairs, November 2026. The detrended variant scores CSI 0.11, 0.21 and
+  0.00 for the 0–24, 24–48 and 48–72 h leads, from 0–4 observed events per
+  station. That sample is too small to support any conclusion. Only the counts
+  are given here, because the BoM licence covers internal use only.
+
 ## Decisions
 
 1. **Keep `pressure_detrend_24h = True`** as the default. Evidence: p2 goes from
@@ -109,14 +151,24 @@ Distinct ERA5 events per site (N→S): raw 2 4 7 9 7 7 6 · detrended 0 4 4 7 4 
 5. **Leave the thresholds unchanged and keep `calibrated = False`.** There are
    about 3 weeks of archived November runs with 0–7 events per site. Tuning on
    that would be fitting noise.
+6. **The thresholds stay unchanged after the observation run (§3).** The sweep
+   finds no setting that is clearly better. A front-specific fix would mean a new
+   criterion, such as a time-of-day guard or a requirement for a meridional
+   pattern across neighbouring points. That is design work and will be decided
+   separately, not done as threshold tuning.
 
 ## Limits
 
-- **ERA5 is a reanalysis, not an observation.** These results show how well the
-  forecast reproduces what the same rules find in the analysis. They do not show
-  that the rules find real fronts. That needs analysed charts (BoM MSLP analyses)
-  or station data, so the rows stay at *tested*, not *validated against real
-  data*.
+- **There is no independent front truth.** ERA5 is a reanalysis. The station
+  comparison in §3 runs the *same rules* on observations, so it shows that the
+  rules fire on diurnal signals. It does not show which events are real fronts.
+  Validation needs analysed charts (BoM MSLP analyses) with fronts drawn on
+  them, so the rows stay at *tested*, not *validated against real data*.
+- **There are no race-week 2025 observations with pressure.** ISD ends at
+  2025-08-24. The team's drive-system repo contains only Solcast "estimated
+  actuals" for 2025-08-23..31 (temperature, GHI and wind, no MSLP or dewpoint),
+  and Solcast is modelled data, not a station. Its `darwin.csv` is an OpenWeather
+  history covering 1979–2021.
 - **Pooled counts are not independent.** Consecutive runs overlap in valid time,
   so the same ERA5 event is scored by several runs. The effective sample is much
   smaller than the hit/miss totals suggest.
