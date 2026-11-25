@@ -111,12 +111,46 @@ def test_ideal_front_is_signature_with_all_four_criteria() -> None:
         "pressure_trough", "wind_shift", "temperature_drop", "dewpoint_drop"
     }
     assert f.passage_time_utc == NOW + timedelta(hours=30)
-    assert f.dp_rise_pa == pytest.approx(150.0)
+    assert f.dp_rise_pa == pytest.approx(150.0)  # raw MSLP rise, not the detrended one
     assert f.wind_shift_deg == pytest.approx(110.0)
     assert f.dt_24h_k == pytest.approx(-6.0)
     assert f.dtd_k == pytest.approx(-8.0)
     assert f.provenance.kind is DataKind.DERIVED
     assert "openmeteo" in (f.provenance.processing or "")
+
+
+def _tide_with_front(at: int = 40) -> WeatherSeries:
+    """Wind shift + drying at ``at`` with no synoptic trough; MSLP is a pure 12 h
+    tide (1.5 hPa amplitude) whose minimum falls on ``at``."""
+    return _series(
+        _pt(-20.0),
+        70,
+        pressure_msl=lambda h: 101000.0 - 150.0 * math.cos((h - at) / 12.0 * 2.0 * math.pi),
+        wind_direction_10m=lambda h: 330.0 if h < at else 220.0,
+        wind_speed_10m=lambda h: 6.0,
+        temperature_2m=_diurnal,
+        dew_point_2m=lambda h: 10.0 if h < at else 2.0,
+    )
+
+
+def test_detrend_rejects_semidiurnal_tide_trough() -> None:
+    """Calibration finding (docs/validation/synoptic-calibration.md): the 12 h tide
+    alone makes a 'trough' on raw MSLP; the 24 h difference cancels it."""
+    raw = SynopticThresholds(pressure_detrend_24h=False)
+    (f_raw,) = detect_front_passages(_rp("A", 0, _tide_with_front()), raw, now=NOW)
+    assert "pressure_trough" in f_raw.criteria_met
+    (f,) = detect_front_passages(_rp("A", 0, _tide_with_front()), now=NOW)
+    assert "pressure_trough" in f.criteria_evaluated
+    assert "pressure_trough" not in f.criteria_met
+    assert set(f.criteria_met) == {"wind_shift", "dewpoint_drop"}
+
+
+def test_detrended_trough_not_evaluated_without_24h_history() -> None:
+    """Unknown, not 'no trough': too little history for p(t) - p(t-24h)."""
+    fronts = detect_front_passages(_rp("A", 0, _front(_pt(-30.0), at=10)), now=NOW)
+    assert fronts
+    assert all("pressure_trough" not in f.criteria_evaluated for f in fronts)
+    assert all(f.dp_rise_pa is None for f in fronts)
 
 
 def test_stable_ridge_has_no_front() -> None:
@@ -153,7 +187,10 @@ def test_thermodynamic_only_drop_is_not_a_front() -> None:
 
 
 def test_temperature_not_evaluated_without_24h_history() -> None:
-    fronts = detect_front_passages(_rp("A", 0, _front(_pt(-30.0), at=10)), now=NOW)
+    # Raw MSLP so the trough is evaluable this early; the detrended trough would
+    # also lack its 24 h history (see test_detrended_trough_not_evaluated_...).
+    raw = SynopticThresholds(pressure_detrend_24h=False)
+    fronts = detect_front_passages(_rp("A", 0, _front(_pt(-30.0), at=10)), raw, now=NOW)
     assert len(fronts) == 1
     assert "temperature_drop" not in fronts[0].criteria_evaluated
     assert fronts[0].dt_24h_k is None
@@ -237,13 +274,15 @@ def test_single_point_front_gives_no_speed() -> None:
 
 
 def test_analyse_route_end_to_end_with_one_failed_point() -> None:
+    # 24 h look-back before "now", as the router fetches it, so the detrended
+    # trough test has its history at both fronts.
     pts = [
-        _rp("Port Augusta", 2700, _front(_pt(-32.5), at=40)),
-        _rp("Coober Pedy", 2180, _front(_pt(-29.0), at=26)),
+        _rp("Port Augusta", 2700, _front(_pt(-32.5), at=64, hours=90)),
+        _rp("Coober Pedy", 2180, _front(_pt(-29.0), at=50, hours=90)),
         _rp("Alice Springs", 1490, _ridge(_pt(-23.7))),
         RoutePointSeries("Tennant Creek", 986_000.0, _pt(-19.6), None, "HTTP 503"),
     ]
-    a = analyse_route(pts, now=NOW)
+    a = analyse_route(pts, now=NOW + timedelta(hours=24))
     assert a.available
     assert a.points == ("Alice Springs", "Coober Pedy", "Port Augusta")
     assert a.missing == ("Tennant Creek",)

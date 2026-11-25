@@ -14,8 +14,15 @@ What this engine does (step A, surface fields only):
 * **Front passage signatures** per point, from four surface criteria taken
   from textbook cold-front structure (southern hemisphere):
 
-  1. ``pressure_trough``: a local MSLP minimum followed by a rise of at least
-     ``front_dp_rise_pa_3h`` within ``half_window_h``.
+  1. ``pressure_trough``: a local minimum followed by a rise of at least
+     ``front_dp_rise_pa_3h`` within ``half_window_h``. By default
+     (``pressure_detrend_24h``) the test runs on the 24 h difference
+     ``p(t) - p(t-24h)``, which cancels the diurnal and semidiurnal
+     atmospheric tide. On raw MSLP, ERA5 detections locked to two local-time
+     bands 12 h apart (Rayleigh test on the 12 h harmonic, p = 5e-40; after
+     detrending p = 0.51, see docs/validation/synoptic-calibration.md).
+     Without 24 h of history over the whole window the criterion is *not
+     evaluated*. ``dp_rise_pa`` is always the raw MSLP rise.
   2. ``wind_shift``: 10 m wind goes from the N-NW sector to the S-SW sector
      (backing through W in the southern hemisphere), turning by at least
      ``front_wind_shift_deg``. Directions in light winds (below
@@ -105,6 +112,8 @@ class SynopticThresholds:
     front_dtd_drop_k: float = 3.0
     min_wind_m_s: float = 2.0
     half_window_h: int = 3
+    pressure_detrend_24h: bool = True
+    """Run the trough test on ``p(t) - p(t-24h)`` so the semidiurnal tide cancels."""
     dedupe_h: int = 6
     max_pairing_h: int = 24
     max_front_speed_m_s: float = 30.0
@@ -308,6 +317,13 @@ def detect_front_passages(
     day = timedelta(hours=24)
     hourly = [timedelta(hours=k) for k in range(-thr.half_window_h, thr.half_window_h + 1)]
 
+    def _p(tt: datetime) -> float | None:
+        v = idx.get(tt, "pressure_msl")
+        if v is None or not thr.pressure_detrend_24h:
+            return v
+        prev = idx.get(tt - day, "pressure_msl")
+        return None if prev is None else v - prev
+
     candidates: list[FrontSignature] = []
     for step in series.steps:
         t = step.valid_time_utc
@@ -317,16 +333,21 @@ def detect_front_passages(
         met: list[str] = []
         evaluated: list[str] = []
 
-        # 1. pressure trough then rise
+        # 1. pressure trough then rise. With detrending the test runs on the 24 h
+        # difference, which removes the (24 h and 12 h periodic) atmospheric tide
+        # that otherwise puts a "trough" at the same local hour every afternoon.
+        # The test needs the whole window: a truncated one makes its first hour a
+        # spurious "minimum". dp_rise_pa reports the raw MSLP rise, not the
+        # rise of the difference.
         dp_rise: float | None = None
-        p_t = step.value("pressure_msl")
-        p_after = idx.get(after, "pressure_msl")
-        if p_t is not None and p_after is not None:
+        window = [_p(t + k) for k in hourly]
+        raw_t, raw_after = idx.get(t, "pressure_msl"), idx.get(after, "pressure_msl")
+        if raw_t is not None and raw_after is not None and None not in window:
             evaluated.append("pressure_trough")
-            dp_rise = p_after - p_t
-            window = [idx.get(t + k, "pressure_msl") for k in hourly]
-            window_vals = [v for v in window if v is not None]
-            if p_t <= min(window_vals) and dp_rise >= thr.front_dp_rise_pa_3h:
+            dp_rise = raw_after - raw_t
+            vals = [v for v in window if v is not None]
+            d_t, d_rise = vals[thr.half_window_h], vals[-1] - vals[thr.half_window_h]
+            if d_t <= min(vals) and d_rise >= thr.front_dp_rise_pa_3h:
                 met.append("pressure_trough")
 
         # 2. wind shift N-NW -> S-SW
