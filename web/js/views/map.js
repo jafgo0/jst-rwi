@@ -60,7 +60,7 @@ export function create(root) {
   /* ---------------------------------------------------------------- map setup */
   const ML = /** @type {any} */ (window).maplibregl;
   if (!ML) {
-    mapDiv.append(h("div", { class: "state error" }, h("h3", null, "Map library not loaded"), "MapLibre GL JS 4.7.1 could not be loaded from the CDN (offline?). The rest of the dashboard still works."));
+    mapDiv.append(h("div", { class: "state error" }, h("h3", null, "Map library not loaded"), "MapLibre GL JS 4.7.1 could not be loaded from vendor/maplibre-gl-4.7.1/. The rest of the dashboard still works."));
   } else {
     map = new ML.Map({ container: mapDiv, style: mapStyleUrl(), center: [0, 0], zoom: 1, attributionControl: { compact: true }, hash: false });
     // The initial [0,0] zoom-1 view is only a world view, not a position or default location.

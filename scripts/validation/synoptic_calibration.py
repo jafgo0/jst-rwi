@@ -44,8 +44,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from rwi.alerts.synoptic import (
     DEFAULT_THRESHOLDS,
-    FrontSignature,
     SYNOPTIC_VARIABLES,
+    FrontSignature,
     RoutePointSeries,
     SynopticThresholds,
     detect_front_passages,

@@ -189,7 +189,7 @@ export class ApiError extends Error {
 
 /**
  * @param {string} path  e.g. "/api/state"
- * @param {{method?:string, params?:Object, body?:any, timeoutMs?:number}} [o]
+ * @param {{method?:string, params?:Object, body?:any, timeoutMs?:number, headers?:Object}} [o]
  */
 async function request(path, o = {}) {
   const method = o.method || "GET";
@@ -206,7 +206,7 @@ async function request(path, o = {}) {
     resp = await fetch(url, {
       method,
       signal: ctl.signal,
-      headers: o.body ? { "Content-Type": "application/json", Accept: "application/json" } : { Accept: "application/json" },
+      headers: { ...(o.body ? { "Content-Type": "application/json" } : {}), Accept: "application/json", ...(o.headers || {}) },
       body: o.body ? JSON.stringify(o.body) : undefined,
       cache: "no-store",
     });
@@ -291,7 +291,8 @@ export const api = {
   /** @returns {Promise<ActiveState>} */
   state: async () => normaliseState(await request("/api/state")),
   /** Operator action: set the active position (explicit coordinates only). */
-  setPosition: (body) => request("/api/state/position", { method: "POST", body }),
+  // `headers` carries X-Telemetry-Secret when the caller claims mode=live_gps.
+  setPosition: (body, headers) => request("/api/state/position", { method: "POST", body, headers }),
   /** Operator action: freeze (ISO string) or release (null) the selected time. */
   setTime: (selectedTimeUtc) => request("/api/state/time", { method: "POST", body: { selected_time_utc: selectedTimeUtc } }),
 

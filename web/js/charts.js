@@ -32,7 +32,7 @@ export function makeChart(container, spec) {
   const U = /** @type {any} */ (window).uPlot;
   container.replaceChildren();
   const hasData = spec.x.length > 0 && spec.series.some((s) => s.values.some((v) => v !== null && v !== undefined));
-  if (!U) { container.append(h("div", { class: "state error" }, h("h3", null, "Chart library not loaded"), "uPlot 1.6.31 could not be loaded from the CDN.")); return { destroy() {} }; }
+  if (!U) { container.append(h("div", { class: "state error" }, h("h3", null, "Chart library not loaded"), "uPlot 1.6.31 could not be loaded from vendor/uplot-1.6.31/.")); return { destroy() {} }; }
   if (!hasData) { container.append(h("div", { class: "state" }, spec.emptyText || "No data points to plot.")); return { destroy() {} }; }
 
   const text = cssVar("--text-dim"), grid = cssVar("--border"), accent = cssVar("--accent");

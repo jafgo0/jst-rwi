@@ -53,4 +53,14 @@ window.RWI_CONFIG = {
   freshnessDefaultsS: { observation: 1800, forecast: 10800, gps: 30 },
 
   defaultSpeedKmh: 80,
+
+  /*
+   * Live position from this computer's location services ("Use computer
+   * location" under Operator controls). It is sent as mode=live_gps with
+   * source=computer_location_services and fix_quality=unknown, so it is never
+   * passed off as a GNSS receiver fix. sharedSecret must equal the backend's
+   * RWI_TELEMETRY_SHARED_SECRET; without it the backend answers 403.
+   * Keep the real value in config.js (gitignored), never in this template.
+   */
+  telemetry: { sharedSecret: "", computerLocationIntervalS: 10 },
 };
