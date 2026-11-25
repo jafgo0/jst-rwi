@@ -57,7 +57,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 10 | Atmospheric Circulation | scientific foundation | Synoptic context for pre-race briefing | Qualitative reading of NWP pressure/wind fields | NWP fields | n/a - design standard (briefing notes) | Briefing cites model run and valid time | P2 | not started |
 | 11 | Turbulence | scientific foundation | Gust loading and stability | Use provider gusts; no turbulence model | wind_gusts_10m | n/a - design standard (gusts handled under #23) | n/a (covered by gust tests) | P2 | not started |
 | 12 | Boundary Layer Meteorology | scientific foundation | 10 m wind differs from wind at vehicle height | Log-law height factor | 10 m wind, roughness | `rwi.energy.thermal.log_wind_height_factor` | Factor equals log-law reference; vehicle-height drag correction not yet modelled | P1 | tested |
-| 13 | Convection | scientific foundation | Afternoon convection gives rapid irradiance changes and storms | Instability flags from NWP; weather code | CAPE/instability if offered by provider | None yet (planned inside alerts/forecast) | Flag raised on a known convective case in fixtures | P1 | not started |
+| 13 | Convection | scientific foundation | Afternoon convection gives rapid irradiance changes and storms | Instability flags from NWP; weather code | CAPE / lifted index / precipitation probability (Open-Meteo) | `rwi.alerts.convection`; cited by `rwi.meteorologist` briefing | Flag raised on a known convective case in fixtures | P1 | tested |
 | 14 | Weather Fronts | scientific foundation | Wind shifts and cloud bands, mainly at the SA end | Qualitative from pressure/wind fields | NWP fields | n/a - design standard (briefing notes) | Briefing cites model run | P2 | not started |
 | 15 | Thunderstorms | scientific foundation | Severe gusts, rain and lightning hazard | Weather-code and gust/precipitation rules | weather_code, gusts, precipitation | `rwi.alerts.rules` (thunderstorm category in contract) | Alert on fixture with storm code; no alert without data | P1 | tested |
 | 16 | Climatology | scientific foundation | Priors and sanity bounds; turbidity climatology | pvlib Linke-turbidity climatology; route climatology later | Bundled turbidity file; archive (later) | `rwi.solar.clearsky` (turbidity only) | Climatology labelled `climatology`, never as forecast | P1 | implementing |
@@ -158,7 +158,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 91 | Patience | professional-behaviour standard | No conclusions from too little data | Minimum-sample rules; 'insufficient data' state | n/a | n/a - design standard | No skill claim below sample threshold | P2 | not started |
 | 92 | Responsibility | professional-behaviour standard | Consequences of wrong information | Severity grading; safety/regulatory notes; no vehicle commands | n/a | n/a - design standard (`rwi.alerts`, `Recommendation`) | No endpoint writes to the vehicle | P0 | implementing |
 | 93 | Objectivity | professional-behaviour standard | Choose by evidence | Model weights from verified metrics only | n/a | n/a - design standard (selection policy) | Selection rule documented and tested | P1 | not started |
-| 94 | Self-Criticism | professional-behaviour standard | Own errors must be visible | Verification reports; known-issues log | n/a | n/a - design standard (verification report) | Report generated per session | P1 | not started |
+| 94 | Self-Criticism | professional-behaviour standard | Own errors must be visible | Verification reports; known-issues log | n/a | `rwi.meteorologist.self_knowledge` (from `rwi.verification`) | Report generated per session | P1 | tested |
 | 95 | Prioritization | professional-behaviour standard | Surface what matters for the race | Alert severity ordering; command-centre ordering | n/a | `rwi.alerts.rules` (`sort_alerts`), `web/` | Ordering test | P1 | tested |
 | 96 | Risk Awareness | professional-behaviour standard | Hazards tied to penalties and safety | Thresholds linked to Regulation clauses (3.31.6, 2.19.3) | n/a | `rwi.alerts.rules` | Each alert cites its trigger values | P0 | tested |
 | 97 | Continuous Learning | professional-behaviour standard | Improve only with validated evidence | Leakage-safe evaluation before adopting any change | n/a | n/a - design standard | Change log with before/after metrics | R&D | not started |
@@ -321,7 +321,7 @@ P0 items at 'tested' or higher (14): #4 Wind Dynamics, #8 Solar Radiation, #29 S
 3. **Telemetry ingestion and live-GPS source adapter** (#29, 33 live mode, 79).
 4. **Satellite processing and nowcasting** (#31, 104, 120).
 5. **Automation / scheduled refresh** (#74) and the update-interval policy (#90, 124).
-6. **AI assistant layer** (master specification section 12): not a numbered competency but a Phase 5 deliverable; it reads structured outputs only.
+6. **AI assistant layer** (master specification section 12): not a numbered competency. Built as `rwi.meteorologist` (2026-11-08): six-part answers, numeric guard, tool citations; free-text LLM answers need `RWI_ANTHROPIC_API_KEY`. It reads structured outputs only.
 
 ## 7. Items blocked on inputs the team or organisers must supply
 
@@ -377,3 +377,7 @@ Hand corrections made after generation, by the integrator, with the evidence:
 | 2026-11-02 | #103 Cloud Shadow Prediction: not started -> **implementing** | parallax computed (3.4-8.6 km) but the shadow offset h*tan(zenith) is not modelled |
 | 2026-11-02 | #104 Cloud Movement Tracking: not started -> **tested** | phase correlation; 6 px shift recovered as 5.98 px, direction exact |
 | 2026-11-02 | #120 Satellite-Based Nowcasting: not started -> **tested** | satellite nowcast end to end, unvalidated against ground truth |
+| 2026-11-25 | #13 Convection: not started -> **tested** | `rwi.alerts.convection` (CAPE/LI/PoP bands, Galway 1956 sign) with `tests/unit/test_alerts_convection.py`; the synoptic briefing puts it first. Thresholds are generic, not calibrated to Stuart Highway climatology; CIN not used. |
+| 2026-11-25 | #94 Self-Criticism: not started -> **tested** | `rwi.meteorologist.self_knowledge` attaches historical bias / skill vs persistence to every briefing and says "oprövad" where no pairs exist (`tests/unit/test_meteorologist_self_knowledge.py`). |
+| 2026-11-25 | #10 Atmospheric Circulation, #14 Weather Fronts: **unchanged, not started** | The morning briefing reads wind and convection indices only; no pressure-field analysis exists, so neither row can claim more. |
+| 2026-11-25 | #129 Forecast Performance Monitoring: **unchanged, implementing** | Skill now reaches the briefing, but there is still no season of recorded forecast/observation pairs. |

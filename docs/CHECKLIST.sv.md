@@ -1,12 +1,12 @@
 # Checklista: JST-RWI meteorolog-sida
 
-Statusbild 2026-11-07. Scope = det meteorolog-lagret äger (väder, sol,
+Statusbild 2026-11-25 (först 2026-11-07). Scope = det meteorolog-lagret äger (väder, sol,
 satellit, validering). Strategi / batteri / telemetri ligger utanför.
 Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 
 ## Klart och fungerande
 
-- [x] **Dashboard i webbläsare** — alla vyer (Command, Solar, Forecast, Route, Strategy, Alerts, History)
+- [x] **Dashboard i webbläsare** — alla 9 vyer, inkl. Meteo (Command, Solar, Forecast, Route, Strategy, Meteo, Alerts, History)
 - [x] **Live-väderprognos** via Open-Meteo (ECMWF-IFS reanalys + prognos)
 - [x] **Observationer** via BoM-stationer (72 h bakåt)
 - [x] **Solgeometri** — sunrise, solar noon, sunset, elevation/azimuth
@@ -32,6 +32,14 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 - [x] **Aerosol-hypotes testad och avfärdad** (MERRA-2 M2T1NXAER vid Alice Springs)
 - [x] **GHI-bias-chip** på Solar-vyn (tänds bara när 3 modeller håller med och median ≥15 W/m²)
 
+## Master-prompten fas 1–4 (klart 2026-11-08 – 11-25)
+
+- [x] **Fas 1: AI-meteorologlagret** (`rwi.meteorologist`) — svar i sex delar, citerar motorerna, hittar inte på siffror. Fritextsvar kräver `RWI_ANTHROPIC_API_KEY`.
+- [x] **Fas 2: Synoptisk morgonbriefing** — konvektionsvarning först (`rwi.alerts.convection`, CAPE/LI/PoP), sedan vind. Läser inga tryckfält ännu.
+- [x] **Fas 3: Självkännedom** — varje briefing visar historisk bias/skicklighet, eller "oprövad" där data saknas.
+- [x] **Fas 4: Produktkontrakt mot strategi-repot** (`docs/PRODUCT_CONTRACT.md`, `docs/product/openapi.v0.json`).
+- [x] **Meteo-vy** i dashboarden för briefingarna.
+
 ## Kvar att göra — meteorolog-scope
 
 ### Enkla vinster (1–4 h var)
@@ -43,7 +51,7 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 
 ### Medelstora (dag var)
 
-- [ ] **Konvektionsvarning** (#13) — flagga baserad på CAPE/weather code + rörlig satellit-cell för eftermiddagsceller
+- [ ] **Konvektionsvarning, steg 2** (#13) — indexflaggan finns; kvar: rörlig satellit-cell för eftermiddagsceller, CIN, kalibrering mot Stuart Highway
 - [ ] **Sensor-kalibrering** (#34) — drift-detektering mot clear-sky-bound för BoM-stationer
 - [ ] **Historisk ruttanalys** (#37, #128) — archive-query per ruttpunkt, labelled historical
 - [ ] **AIFS som fjärde prognoskälla** (#70) — jämför med ECMWF, inga påståenden före bevis
@@ -54,7 +62,7 @@ Grund: `docs/REQUIREMENTS.md` + det här sessionsflödet.
 - [ ] **ARPANSA 1-min markmätning** — alternativ grundsanning för Alice Springs; registrering krävs
 - [ ] **Live forecast capture en säsong** — infrastruktur finns, behöver tid (en varm månad räcker)
 - [ ] **Live-GPS** (#29, #33, #79) — kräver att teamets telemetri-protokoll är spikat
-- [ ] **AI-assistent-lager** (Phase 5) — läser strukturerad output, kommer sist
+- [ ] **Synoptisk analys av tryckfält** (#10, #14) — briefingen läser bara vind och konvektion; fronter/cirkulation saknas
 
 ## Oförklarade signaler (vårt eget eftersläpning)
 
