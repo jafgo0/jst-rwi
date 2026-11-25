@@ -211,6 +211,32 @@ def test_light_wind_direction_is_not_used() -> None:
     assert detect_front_passages(_rp("A", 0, s), now=NOW) == []
 
 
+def _shift_only(d_before: float, d_after: float) -> WeatherSeries:
+    """Flat MSLP (no trough), cooling and drying at hour 30, wind d_before -> d_after."""
+    return _series(
+        _pt(-30.0),
+        60,
+        pressure_msl=lambda h: 101000.0,
+        wind_direction_10m=lambda h: d_before if h < 30 else d_after,
+        wind_speed_10m=lambda h: 6.0,
+        temperature_2m=lambda h: _diurnal(h) - (6.0 if h > 30 else 0.0),
+        dew_point_2m=lambda h: 10.0 if h < 30 else 2.0,
+    )
+
+
+def test_backing_wind_shift_is_met() -> None:
+    # NW (300) -> SW (200): -100 deg, counter-clockwise through W
+    fronts = detect_front_passages(_rp("A", 0, _shift_only(300.0, 200.0)), now=NOW)
+    assert fronts and all("wind_shift" in f.criteria_met for f in fronts)
+    assert all("pressure_trough" not in f.criteria_met for f in fronts)
+
+
+def test_veering_wind_shift_between_same_sectors_is_rejected() -> None:
+    # NNE (20) -> SSE (160): both in the sectors, 140 deg, but clockwise through E
+    fronts = detect_front_passages(_rp("A", 0, _shift_only(20.0, 160.0)), now=NOW)
+    assert fronts == []  # no kinematic criterion left
+
+
 def test_missing_pressure_is_unknown_not_zero() -> None:
     s = _series(_pt(-30.0), 30, temperature_2m=_diurnal)
     assert pressure_tendency("A", s, now=NOW) is None

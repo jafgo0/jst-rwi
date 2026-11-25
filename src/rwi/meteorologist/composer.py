@@ -632,6 +632,21 @@ class _SynopticSections:
 
 MAX_FRONTS_IN_BRIEFING = 4
 
+_FRONT_CRITERION_TEXT = {
+    "pressure_trough": "tryckminimum följt av stigande tryck",
+    "wind_shift": "vinden backar från nordväst till sydväst",
+    "temperature_drop": "kallare än samma tid dygnet före",
+    "dewpoint_drop": "fallande daggpunkt",
+}
+
+
+def _front_trigger(criteria_met: tuple[str, ...]) -> str:
+    """What to watch for: only the criteria that actually held for this front."""
+    parts = [_FRONT_CRITERION_TEXT[c] for c in criteria_met if c in _FRONT_CRITERION_TEXT]
+    if len(parts) <= 1:
+        return parts[0] if parts else "frontsignatur i modellen"
+    return ", ".join(parts[:-1]) + " och " + parts[-1]
+
 
 def _synoptic_sections(ctx: BriefingContext) -> _SynopticSections:
     """Pick values out of the synoptic analysis; computes nothing new.
@@ -663,7 +678,9 @@ def _synoptic_sections(ctx: BriefingContext) -> _SynopticSections:
         out.assessment = "Ingen frontsignatur längs rutten i horisonten."
 
     for f in fronts:
-        if f.dp_rise_pa is not None:
+        # dp_rise_pa is the raw rise whether or not a trough was found; only
+        # call it "after the trough" when the trough criterion actually held.
+        if f.dp_rise_pa is not None and "pressure_trough" in f.criteria_met:
             out.supporting.append(
                 DataPoint(
                     label=f"tryckstegring efter tråget, {f.name}",
@@ -707,7 +724,7 @@ def _synoptic_sections(ctx: BriefingContext) -> _SynopticSections:
             WatchItem(
                 what=f"Frontpassage {f.name}",
                 when=f.passage_time_utc.isoformat(),
-                trigger="tryckminimum följt av stigande tryck och vindvridning mot sydväst",
+                trigger=_front_trigger(f.criteria_met),
                 why="Vind och temperatur skiftar; sidvind och kylning ändrar energibudgeten.",
             )
         )

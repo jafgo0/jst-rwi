@@ -5,7 +5,7 @@ atmospheric tide, not fronts. Its trough test now runs on the 24 h pressure
 difference `p(t) - p(t-24h)`, which removes that locking. Agreement between the
 forecast and ERA5 at event level is low (CSI ≤ 0.22), and the sample is too
 small to tune thresholds on. Against station observations (§3) the rules fire
-about 67 times per year per station, Darwin included, and stay locked to the
+about 63 times per year per station, Darwin included, and stay locked to the
 diurnal cycle, so they are not front-specific. `SynopticAnalysis.calibrated`
 therefore stays `False`.
 
@@ -14,7 +14,7 @@ Script: `scripts/validation/synoptic_calibration.py` (reads
 providers). Scoring helpers: `rwi.alerts.synoptic_calibration`, tested in
 `tests/unit/test_alerts_synoptic_calibration.py`. The numbers below come from the
 run after the last detector change (whole-window trough test,
-`dp_rise_pa` = raw MSLP rise).
+`dp_rise_pa` = raw MSLP rise, wind shift must back through W).
 
 ## Method
 
@@ -54,8 +54,8 @@ scored against ERA5 up to 2026-11-19 23 UTC.
 | Variant | n | Per point (N→S) | Signature | R1 | p1 | R2 | Mode (12 h) | p2 |
 |---|---|---|---|---|---|---|---|---|
 | raw | 179 | 10 8 8 14 16 23 22 21 24 19 14 | 24 | 0.16 | 1.1e-2 | **0.67** | 3.2 h | **5.5e-40** |
-| detrended | 109 | 3 6 6 5 14 15 13 12 11 16 8 | 13 | 0.12 | 2.1e-1 | 0.09 | 6.5 h | 3.9e-1 |
-| detrended + wind_shift | 47 | 1 0 0 2 5 6 8 6 7 8 4 | 7 | 0.34 | 3.6e-3 | 0.27 | 4.8 h | 2.8e-2 |
+| detrended | 108 | 3 6 6 4 14 15 13 12 11 16 8 | 13 | 0.13 | 1.6e-1 | 0.10 | 6.7 h | 3.6e-1 |
+| detrended + wind_shift | 46 | 1 0 0 1 5 6 8 6 7 8 4 | 7 | 0.37 | 1.6e-3 | 0.27 | 4.9 h | 3.6e-2 |
 | detrended + signature | 13 | 0 0 0 0 0 2 4 2 2 2 1 | 13 | 0.29 | 3.3e-1 | 0.16 | 10.7 h | 7.2e-1 |
 
 - **Raw:** R2 = 0.67 means two thirds of the detections cluster around about
@@ -64,20 +64,20 @@ scored against ERA5 up to 2026-11-19 23 UTC.
   each.
 - **Detrended:** no significant locking on either harmonic. A 12 h-periodic
   signal cancels exactly in a 24 h difference, and the 24 h part largely does.
-- **Requiring a wind shift:** this brings back diurnal locking (p1 = 0.004).
+- **Requiring a wind shift:** this brings back diurnal locking (p1 = 0.002).
   That fits sea-breeze and nocturnal wind turning, so it is not a cleaner front
   filter.
 
 ### 2. `ecmwf_ifs025` archived runs vs ERA5 (±6 h)
 
-Distinct ERA5 events per site (N→S): raw 2 4 7 9 7 7 6 · detrended 0 4 4 7 4 3 2
+Distinct ERA5 events per site (N→S): raw 2 4 7 8 7 7 6 · detrended 0 4 4 7 4 3 2
 · detrended + wind_shift 0 0 1 4 1 1 1 · detrended + signature 0 0 0 1 1 0 0.
 
 | Variant | Lead h | Hits | Misses | False alarms | POD | FAR | CSI | Mean dt h | MAE dt h |
 |---|---|---|---|---|---|---|---|---|---|
 | raw | 0–24 | 14 | 15 | 13 | 0.48 | 0.48 | 0.33 | −0.21 | 0.64 |
-| raw | 24–48 | 33 | 33 | 52 | 0.50 | 0.61 | 0.28 | −0.12 | 1.09 |
-| raw | 48–72 | 10 | 27 | 25 | 0.27 | 0.71 | 0.16 | 0.40 | 1.40 |
+| raw | 24–48 | 33 | 30 | 52 | 0.52 | 0.61 | 0.29 | −0.12 | 1.09 |
+| raw | 48–72 | 10 | 25 | 25 | 0.29 | 0.71 | 0.17 | 0.40 | 1.40 |
 | detrended | 0–24 | 4 | 22 | 16 | 0.15 | 0.80 | 0.10 | 1.75 | 1.75 |
 | detrended | 24–48 | 14 | 39 | 25 | 0.26 | 0.64 | 0.18 | 1.50 | 2.64 |
 | detrended | 48–72 | 3 | 15 | 9 | 0.17 | 0.75 | 0.11 | 0.33 | 1.67 |
@@ -111,23 +111,23 @@ tolerance.
 
 | variant | obs events | per station N→S | /yr/station | R1 (p1) | R2 (p2) | ERA5 vs obs CSI | season CSI |
 |---|---|---|---|---|---|---|---|
-| raw | 1997 | 216 278 374 376 412 341 | 125.7 | 0.14 (5e-17) | 0.66 (~0) | 0.33 | 0.38 |
-| detrended (default) | 1062 | 103 140 187 191 236 205 | 66.9 | 0.23 (1.6e-24) | 0.07 (0.011) | 0.25 | 0.29 |
-| + wind shift | 638 | 63 66 111 121 144 133 | 40.2 | 0.33 (2e-32) | 0.14 (3e-6) | 0.25 | 0.28 |
-| + signature | 144 | 15 18 20 22 37 32 | 9.1 | 0.17 (0.019) | 0.03 (0.84) | 0.13 | 0.15 |
+| raw | 1914 | 203 260 359 365 395 332 | 120.5 | 0.13 (9e-14) | 0.67 (~0) | 0.33 | 0.38 |
+| detrended (default) | 992 | 93 128 172 181 225 193 | 62.5 | 0.22 (5.5e-21) | 0.05 (0.11) | 0.25 | 0.29 |
+| + wind shift | 558 | 51 52 94 110 130 121 | 35.1 | 0.33 (4e-27) | 0.12 (2e-4) | 0.25 | 0.28 |
+| + signature | 130 | 13 15 18 20 32 32 | 8.2 | 0.16 (0.038) | 0.06 (0.67) | 0.13 | 0.16 |
 
 - **The detector is not front-specific in observations.** The default variant
-  fires about 67 times per year per station, Darwin included (103 events in
+  fires about 63 times per year per station, Darwin included (93 events in
   2.6 years). Darwin sees essentially no mid-latitude cold fronts, so most of
   these are something else.
-- **Detrending removes the tide but not the day.** p2 falls from ~0 to 0.011,
-  but the diurnal harmonic is strong (R1 0.23, p1 1.6e-24). The probable causes
+- **Detrending removes the tide but not the day.** p2 rises from ~0 to 0.11,
+  but the diurnal harmonic is strong (R1 0.22, p1 5.5e-21). The probable causes
   are the sea breeze at the coastal stations, the diurnal turning of the wind,
   and dewpoint mixing-out across the window. This is an interpretation, not
   tested here.
 - **One-at-a-time threshold sweep.** The parameters swept were dp 50/150/200 Pa,
   shift 45/90°, dT 2/4/5 K, dTd 2/4/5 K and min wind 1/3 m/s. CSI stays between
-  0.20 and 0.27. Stricter dp or dT raises R1 instead of lowering it. No single
+  0.21 and 0.27. Stricter dp or dT raises R1 instead of lowering it. No single
   threshold removes the diurnal locking.
 - **Forecast against archived BoM observations.** These are 272 `ecmwf_ifs025`
   run-site pairs, November 2026. The detrended variant scores CSI 0.11, 0.21 and
@@ -138,7 +138,7 @@ tolerance.
 ## Decisions
 
 1. **Keep `pressure_detrend_24h = True`** as the default. Evidence: p2 goes from
-   5.5e-40 to 0.39. Test: `test_detrend_rejects_semidiurnal_tide_trough`.
+   5.5e-40 to 0.36. Test: `test_detrend_rejects_semidiurnal_tide_trough`.
 2. **Do not require a wind shift.** The difference from plain detrended (CSI 0.22
    vs 0.18) rests on 15–28 events per bucket and cannot be told apart from
    noise, and the filter brings back diurnal locking.
@@ -156,6 +156,21 @@ tolerance.
    criterion, such as a time-of-day guard or a requirement for a meridional
    pattern across neighbouring points. That is design work and will be decided
    separately, not done as threshold tuning.
+
+7. **The wind shift must back through W.** The documented criterion is a
+   southern-hemisphere cold front (NW → SW, counter-clockwise), but the code
+   only checked the start and end sectors, so a veering NE → SE turn through E
+   also counted. The check is now enforced. In observations (§3) this removes
+   70 of 1062 default events, 10 of them at Darwin, and diurnal locking stays
+   (p1 5.5e-21). It is a correctness fix, not the fix for the diurnal
+   problem. Tests: `test_backing_wind_shift_is_met`,
+   `test_veering_wind_shift_between_same_sectors_is_rejected`.
+8. **Do not require the raw MSLP to rise.** This was tested as a guard against
+   "troughs" that exist only in the 24 h difference (an echo of a fall the
+   day before). In a scratch run on the same ISD data it brought the
+   semidiurnal locking back (p2 from 0.011 to 2e-12), so it was rejected. The
+   briefing instead shows the rise only when the trough criterion held, and it
+   builds its watch trigger from `criteria_met`.
 
 ## Limits
 

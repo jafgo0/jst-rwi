@@ -20,13 +20,14 @@ What this engine does (step A, surface fields only):
      ``p(t) - p(t-24h)``, which cancels the diurnal and semidiurnal
      atmospheric tide. On raw MSLP, ERA5 detections locked to two local-time
      bands 12 h apart (Rayleigh test on the 12 h harmonic, p = 5e-40; after
-     detrending p = 0.51, see docs/validation/synoptic-calibration.md).
+     detrending p = 0.36, see docs/validation/synoptic-calibration.md).
      Without 24 h of history over the whole window the criterion is *not
      evaluated*. ``dp_rise_pa`` is always the raw MSLP rise.
   2. ``wind_shift``: 10 m wind goes from the N-NW sector to the S-SW sector
-     (backing through W in the southern hemisphere), turning by at least
-     ``front_wind_shift_deg``. Directions in light winds (below
-     ``min_wind_m_s``) are not used.
+     backing (turning counter-clockwise, through W), as a cold front does in
+     the southern hemisphere, by at least ``front_wind_shift_deg``. A veering
+     turn through E between the same sectors is rejected. Directions in light
+     winds (below ``min_wind_m_s``) are not used.
   3. ``temperature_drop``: the 24 h temperature change at the post-passage
      time is at most ``-front_dt_drop_k_24h``. A 24 h difference removes the
      diurnal cycle, so an evening cooling is not mistaken for a front. Without
@@ -220,6 +221,14 @@ def _angular_diff(a: float, b: float) -> float:
     return 360.0 - d if d > 180.0 else d
 
 
+def _signed_turn(a: float, b: float) -> float:
+    """Shortest turn from ``a`` to ``b`` in degrees, in [-180, 180).
+
+    Positive is clockwise (veering), negative counter-clockwise (backing).
+    """
+    return (b - a + 540.0) % 360.0 - 180.0
+
+
 def _provenance(series: WeatherSeries, now: datetime, t: datetime, processing: str) -> Provenance:
     return Provenance(
         provider="rwi",
@@ -350,7 +359,7 @@ def detect_front_passages(
             if d_t <= min(vals) and d_rise >= thr.front_dp_rise_pa_3h:
                 met.append("pressure_trough")
 
-        # 2. wind shift N-NW -> S-SW
+        # 2. wind shift N-NW -> S-SW, backing through W (SH cold front)
         shift: float | None = None
         d0, d1 = idx.get(before, "wind_direction_10m"), idx.get(after, "wind_direction_10m")
         s0, s1 = idx.get(before, "wind_speed_10m"), idx.get(after, "wind_speed_10m")
@@ -367,6 +376,7 @@ def detect_front_passages(
                 _in_sector(d0, _PRE_SECTOR)
                 and _in_sector(d1, _POST_SECTOR)
                 and shift >= thr.front_wind_shift_deg
+                and _signed_turn(d0, d1) < 0.0
             ):
                 met.append("wind_shift")
 

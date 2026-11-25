@@ -401,6 +401,27 @@ def test_morning_briefing_reports_front_with_cited_numbers() -> None:
     check_prose(_prose(b), b)
 
 
+def test_front_without_trough_does_not_cite_rise_after_trough() -> None:
+    import dataclasses
+
+    a = _syn_analysis(with_front=True)
+    f = dataclasses.replace(
+        a.fronts[0], criteria_met=("wind_shift", "temperature_drop"), dp_rise_pa=-10.0
+    )
+    ctx = _empty_ctx()
+    ctx.synoptic = mt.synoptic_outlook(
+        dataclasses.replace(a, fronts=(f,)), now=NOW, horizon_s=86400
+    )
+    b = compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=NOW)
+    assert not any("tryckstegring" in dp.label for dp in b.supporting_data)
+    (w,) = [w for w in b.watch_next if w.what == "Frontpassage Coober Pedy"]
+    assert w.trigger == (
+        "vinden backar från nordväst till sydväst och kallare än samma tid dygnet före"
+    )
+    assert "tryck" not in w.trigger
+    check_prose(_prose(b), b)
+
+
 def test_morning_briefing_without_front_says_so_and_passes_guard() -> None:
     ctx = _empty_ctx()
     ctx.synoptic = mt.synoptic_outlook(_syn_analysis(with_front=False), now=NOW, horizon_s=86400)
