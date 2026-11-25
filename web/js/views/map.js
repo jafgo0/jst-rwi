@@ -51,6 +51,7 @@ export function create(root) {
     h("div", { class: "mapgrid" }, h("div", { style: { display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 } }, mapDiv, notice), side));
 
   /** @type {any} */ let map = null;
+  let resizeObs = null;
   let loaded = false, fitted = false, fittedRoute = false, destroyed = false, styleFallback = false, tileErrors = 0;
   let samples = []; // current sample list for hover lookups
   let lastSig = "";
@@ -64,6 +65,9 @@ export function create(root) {
     map = new ML.Map({ container: mapDiv, style: mapStyleUrl(), center: [0, 0], zoom: 1, attributionControl: { compact: true }, hash: false });
     // The initial [0,0] zoom-1 view is only a world view, not a position or default location.
     /** @type {any} */ (window).__rwiMap = map; // debugging handle
+    // The container gets its final size after mount; without this the canvas stays at its first size and draws nothing.
+    resizeObs = new ResizeObserver(() => map.resize());
+    resizeObs.observe(mapDiv);
     map.addControl(new ML.NavigationControl({ visualizePitch: false }), "top-right");
     map.addControl(new ML.ScaleControl({ unit: "metric" }), "bottom-left");
     // Overlays only need the STYLE, not every tile, so use style.load (the "load" event waits for all tiles).
@@ -125,7 +129,7 @@ export function create(root) {
     } });
     map.addLayer({ id: "stops-circle", type: "circle", source: "stops", paint: { "circle-radius": 6, "circle-color": "#ffffff", "circle-stroke-color": "#7a1fa2", "circle-stroke-width": 3 } });
     if (map.getStyle().glyphs) {
-      map.addLayer({ id: "stops-label", type: "symbol", source: "stops", layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.3], "text-anchor": "top", "text-font": ["Open Sans Semibold"], "text-optional": true },
+      map.addLayer({ id: "stops-label", type: "symbol", source: "stops", layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.3], "text-anchor": "top", "text-font": ["Noto Sans Bold"], "text-optional": true },
         paint: { "text-color": "#3b0f52", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
     }
     map.addLayer({ id: "barbs", type: "symbol", source: "samples", filter: ["has", "barb"], layout: { "icon-image": ["get", "barb"], "icon-rotate": ["get", "from"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-size": 1.35 } });
@@ -367,7 +371,7 @@ export function create(root) {
       refresh();
       paintStatus(); paintLegend();
     },
-    destroy() { destroyed = true; clearTimeout(styleTimer); if (map) map.remove(); },
+    destroy() { destroyed = true; clearTimeout(styleTimer); resizeObs?.disconnect(); if (map) map.remove(); },
   };
 }
 

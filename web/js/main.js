@@ -22,6 +22,7 @@ import * as route from "./views/route.js";
 import * as strategy from "./views/strategy.js";
 import * as alerts from "./views/alerts.js";
 import * as history from "./views/history.js";
+import * as meteorologist from "./views/meteorologist.js";
 
 const VIEWS = [
   { id: "command", title: "Command Center", nav: "Command", mod: command },
@@ -30,6 +31,7 @@ const VIEWS = [
   { id: "forecast", title: "Forecast Center", nav: "Forecast", mod: forecast },
   { id: "route", title: "Route Intelligence", nav: "Route", mod: route },
   { id: "strategy", title: "Energy & Strategy", nav: "Strategy", mod: strategy },
+  { id: "meteorologist", title: "Meteorologist", nav: "Meteo", mod: meteorologist },
   { id: "alerts", title: "Alerts & Risk", nav: "Alerts", mod: alerts },
   { id: "history", title: "Historical Analysis", nav: "History", mod: history },
 ];

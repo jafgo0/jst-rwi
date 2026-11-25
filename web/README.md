@@ -149,7 +149,10 @@ js/views/*.js     one module per view
 `GET /api/route/{id}/weather`, `GET /api/energy/forecast`,
 `GET /api/strategy/scenarios`, `GET /api/regulations`, `GET /api/alerts`,
 `GET /api/forecast/archive`, `GET /api/forecast/verification`, `GET /api/forecast/ensemble`,
-`GET /api/forecast/models`, `POST /api/forecast/capture` (operator button, History view).
+`GET /api/forecast/models`, `POST /api/forecast/capture` (operator button, History view),
+`GET /api/meteorologist/morning-briefing`, `GET /api/meteorologist/risk-ahead`,
+`GET /api/meteorologist/forecast-reliability`, `POST /api/meteorologist/ask` (Meteo view;
+`ask` answers 501 until `RWI_ANTHROPIC_API_KEY` is set).
 
 Not called: `/api/solar/clearsky` (single instant), `/api/weather/variables`,
 `/api/energy/array`, `/api/strategy/vehicle`, `/api/route/{id}` (full route).

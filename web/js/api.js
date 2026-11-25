@@ -382,6 +382,10 @@ export const api = {
   regulations: () => request("/api/regulations"),
   /** @returns {Promise<Alert[]>} */
   alerts: () => request("/api/alerts"),
+  /** GET /api/meteorologist/{kind}: deterministic, cited briefing (no LLM). */
+  briefing: (kind, params) => request(`/api/meteorologist/${kind}`, { params }),
+  /** POST /api/meteorologist/ask: free text; 501 when the LLM classifier is not configured. */
+  ask: (question, hours) => request("/api/meteorologist/ask", { method: "POST", body: { question, hours }, timeoutMs: 30000 }),
 };
 
 /** Every endpoint this UI calls (documentation / footer / README check). */
@@ -391,4 +395,5 @@ export const ENDPOINTS = [
   "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations", "GET /api/forecast/archive", "GET /api/forecast/verification", "GET /api/forecast/ensemble", "GET /api/forecast/models", "POST /api/forecast/capture",
   "GET /api/route", "GET /api/route/{id}/geojson", "GET /api/route/{id}/progress", "GET /api/route/{id}/trajectory", "GET /api/route/{id}/weather",
   "GET /api/energy/forecast", "GET /api/strategy/scenarios", "GET /api/regulations", "GET /api/alerts",
+  "GET /api/meteorologist/morning-briefing", "GET /api/meteorologist/risk-ahead", "GET /api/meteorologist/forecast-reliability", "POST /api/meteorologist/ask",
 ];

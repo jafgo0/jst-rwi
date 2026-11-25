@@ -199,6 +199,9 @@ export async function loadScenarios(force = false) {
   return load("scenarios", { endpoint: "GET /api/strategy/scenarios", paramsKey: `${posKey(p)}|${timeKey()}|${args.speedKmh}|${args.startSoc}|${args.hours}`, ttlMs: 120000, force }, () => api.scenarios(args));
 }
 
+export function loadBriefing(kind, force = false) {
+  return load(`briefing:${kind}`, { endpoint: `GET /api/meteorologist/${kind}`, ttlMs: 60000, force }, () => api.briefing(kind));
+}
 export function loadRegulations(force = false) {
   return load("regulations", { endpoint: "GET /api/regulations", ttlMs: 3600000, force }, () => api.regulations());
 }
