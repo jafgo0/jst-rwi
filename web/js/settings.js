@@ -19,6 +19,9 @@ const DEFAULTS = {
   },
   freshnessDefaultsS: { observation: 1800, forecast: 10800, gps: 30 },
   defaultSpeedKmh: 80,
+  // Shared secret for POST /api/state/position with mode=live_gps (must equal the
+  // backend's RWI_TELEMETRY_SHARED_SECRET). Set it in the gitignored config.js only.
+  telemetry: { sharedSecret: "", computerLocationIntervalS: 10 },
 };
 
 function merge(base, over) {

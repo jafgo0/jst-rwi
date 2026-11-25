@@ -7,6 +7,7 @@
  */
 import { h, replace } from "../dom.js";
 import { api } from "../api.js";
+import { cfg } from "../settings.js";
 import {
   DASH, fmtLatLon, fmtNum, fmtWind, fmtDistanceKm, fmtDuration, fmtUtc, fmtLocal, fmtFraction, fmtEnergyWh, fmtPowerW, compass,
   fixFreshness, freshnessText, toMs, nowMs, VARS, limits, provenanceTitle, kindInfo,
@@ -346,6 +347,75 @@ function sourcesPanel() {
   }));
 }
 
+/* ------------------------------------------------- computer location feed */
+
+// Module-level so the feed survives view re-renders and navigation; it stops only on
+// an explicit Stop, a fatal error (permission denied, 403) or a page reload.
+const geoFeed = { timer: null, busy: false, lastTs: 0, onStatus: null };
+
+function geoStatus(text) { geoFeed.lastText = text; geoFeed.onStatus?.(text); }
+
+function stopGeoFeed(reason) {
+  if (geoFeed.timer) clearInterval(geoFeed.timer);
+  geoFeed.timer = null;
+  geoStatus(reason || "Computer location feed stopped.");
+}
+
+async function postGeoFix(pos) {
+  // Identical timestamps would trip the backend's monotonic gate; skip repeats.
+  if (pos.timestamp <= geoFeed.lastTs) return;
+  const c = pos.coords;
+  const body = {
+    mode: "live_gps",
+    latitude_deg: c.latitude,
+    longitude_deg: c.longitude,
+    gps_time_utc: new Date(pos.timestamp).toISOString(),
+    // Wi-Fi/IP positioning, not a GNSS receiver: say so instead of claiming a GPS fix.
+    source: "computer_location_services",
+    fix_quality: "unknown",
+  };
+  if (Number.isFinite(c.accuracy)) body.accuracy_m = c.accuracy;
+  if (Number.isFinite(c.altitude)) body.elevation_m = c.altitude;
+  if (Number.isFinite(c.speed) && c.speed >= 0) body.speed_mps = c.speed;
+  if (Number.isFinite(c.heading) && c.heading >= 0 && c.heading < 360) body.heading_deg = c.heading;
+  try {
+    await api.setPosition(body, { "X-Telemetry-Secret": cfg.telemetry.sharedSecret });
+    geoFeed.lastTs = pos.timestamp;
+    geoStatus(`Computer location sent ${fmtUtc(body.gps_time_utc, { seconds: true })}: `
+      + `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)} ±${Math.round(c.accuracy)} m `
+      + "(location services, not a GPS receiver).");
+    await loadState(true);
+  } catch (e) {
+    if (e.status === 403) { stopGeoFeed(`Stopped: backend refused live_gps (403). ${e.message}`); return; }
+    geoStatus(`POST /api/state/position failed: ${e.message}`);
+  }
+}
+
+function pollGeo() {
+  if (geoFeed.busy) return;
+  geoFeed.busy = true;
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => { try { await postGeoFix(pos); } finally { geoFeed.busy = false; } },
+    (err) => {
+      geoFeed.busy = false;
+      if (err.code === err.PERMISSION_DENIED) { stopGeoFeed("Stopped: location permission denied. Allow location for this site and the browser in System Settings → Privacy & Security → Location Services."); return; }
+      geoStatus(`Location unavailable (${err.code === err.TIMEOUT ? "timeout" : "no position"}): ${err.message}. Retrying.`);
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
+  );
+}
+
+function startGeoFeed() {
+  if (geoFeed.timer) return;
+  if (!("geolocation" in navigator)) { geoStatus("This browser has no Geolocation API."); return; }
+  if (!window.isSecureContext) { geoStatus("Geolocation needs a secure context: open the dashboard on localhost or over HTTPS."); return; }
+  if (!cfg.telemetry?.sharedSecret) { geoStatus("Set telemetry.sharedSecret in web/config.js (same value as RWI_TELEMETRY_SHARED_SECRET); the backend refuses live_gps without it."); return; }
+  const everyS = Math.max(2, Number(cfg.telemetry.computerLocationIntervalS) || 10);
+  geoFeed.timer = setInterval(pollGeo, everyS * 1000);
+  geoStatus(`Computer location feed running, every ${everyS} s. Waiting for the first fix …`);
+  pollGeo();
+}
+
 /* ---------------------------------------------------------- operator form */
 
 function operatorControls() {
@@ -360,6 +430,12 @@ function operatorControls() {
     time: h("input", { type: "datetime-local", step: "60" }),
   };
   const fld = (label, input) => h("div", { class: "field" }, h("label", null, label), input);
+  const geoLine = h("div", { class: "note", role: "status" }, geoFeed.lastText || "");
+  const geoBtn = h("button", { class: "btn" });
+  const geoLabel = () => { geoBtn.textContent = geoFeed.timer ? "Stop computer location" : "Use computer location (live_gps)"; };
+  geoFeed.onStatus = (t) => { geoLine.textContent = t; geoLabel(); };
+  geoBtn.onclick = () => { if (geoFeed.timer) stopGeoFeed(); else startGeoFeed(); geoLabel(); };
+  geoLabel();
   const doPos = async () => {
     const lat = parseFloat(f.lat.value), lon = parseFloat(f.lon.value);
     if (!(lat >= -90 && lat <= 90) || !(lon >= -180 && lon <= 180)) { status.textContent = "Enter a valid latitude and longitude; the dashboard never supplies defaults."; return; }
@@ -384,6 +460,9 @@ function operatorControls() {
         h("button", { class: "btn primary", onclick: doPos }, "Set position")),
       h("div", { class: "row", style: { marginTop: "8px" } }, fld("Freeze time (UTC)", f.time),
         h("button", { class: "btn", onclick: () => doTime(false) }, "Freeze time"), h("button", { class: "btn", onclick: () => doTime(true) }, "Follow real time")),
+      h("div", { class: "row", style: { marginTop: "8px" } },
+        geoBtn, h("span", { class: "note" }, "Sends this computer's location-services position as mode=live_gps, labelled source=computer_location_services, fix_quality=unknown. Stand-in until a real GPS receiver is connected.")),
+      geoLine,
       status)));
   return { el, sync() {} };
 }

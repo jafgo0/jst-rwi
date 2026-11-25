@@ -1,13 +1,20 @@
 # JST-RWI dashboard (web/)
 
 Operations dashboard for the JU Solar Team race weather platform. Plain HTML,
-ES modules and CSS: **no build step, no npm**. Libraries come from CDNs at exact
-pinned versions with SRI hashes:
+ES modules and CSS: **no build step, no npm**. Libraries are vendored under
+`vendor/` at exact pinned versions and loaded with SRI hashes, so the dashboard
+loads with no internet connection (master prompt §14):
 
-| Library | Version | CDN |
-|---|---|---|
-| MapLibre GL JS (JS + CSS) | 4.7.1 | unpkg.com |
-| uPlot (JS + CSS) | 1.6.31 | cdn.jsdelivr.net/npm |
+| Library | Version | Local path | Upstream source |
+|---|---|---|---|
+| MapLibre GL JS (JS + CSS) | 4.7.1 | `vendor/maplibre-gl-4.7.1/` | unpkg.com/maplibre-gl@4.7.1/dist/ |
+| uPlot (JS + CSS) | 1.6.31 | `vendor/uplot-1.6.31/` | cdn.jsdelivr.net/npm/uplot@1.6.31/dist/ |
+
+Offline, only the **basemap tiles** are missing: the map falls back to a plain
+background with the route and overlays drawn on top, and shows a
+"BASEMAP UNAVAILABLE" banner. Geography is not drawn in that state. To keep
+geography offline, set `map.styleUrl` in `config.js` to a style served from this
+machine (for example a PMTiles extract).
 
 ## Running it
 
@@ -46,6 +53,12 @@ overrides there. The real `config.js` never enters version control.
   `freshness_limits_s` in that response (`store.absorbLimits`) and the footer says
   "(/api/health)"; the fallback is labelled "UI default".
 * `defaultSpeedKmh`: initial value of the operator speed input (not a measurement).
+* `telemetry.sharedSecret`: must equal the backend's `RWI_TELEMETRY_SHARED_SECRET`;
+  needed only for "Use computer location (live_gps)" under Operator controls, which
+  posts this computer's location-services position every
+  `telemetry.computerLocationIntervalS` s (default 10) labelled
+  `source=computer_location_services`, `fix_quality=unknown`. See
+  `docs/OPERATIONS.md` → "Computer location as a stand-in GPS".
 * `map`: see below.
 
 ### Changing the map style or key
@@ -126,7 +139,8 @@ try/catch) and a Local/UTC switch for chart axes in the top bar.
 ## Layout
 
 ```
-index.html        shell, CDN tags (SRI), boot watchdog
+index.html        shell, vendored library tags (SRI), boot watchdog
+vendor/           pinned MapLibre + uPlot builds (see vendor/README.md)
 config.js         user configuration
 css/              base (tokens, themes, chrome), components, views
 js/api.js         the only module that knows endpoints, timeouts, error mapping; JSDoc typedefs

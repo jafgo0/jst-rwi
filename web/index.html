@@ -10,11 +10,11 @@
     /* Apply the saved theme before first paint (storage may be unavailable). */
     try { if (localStorage.getItem("rwi.theme") === "light") document.documentElement.setAttribute("data-theme", "light"); } catch (e) {}
   </script>
-  <!-- Pinned CDN builds (exact versions, SRI-verified): MapLibre GL JS 4.7.1, uPlot 1.6.31 -->
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
-        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css"
-        integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+  <!-- Vendored libraries (exact versions, SRI-verified, served locally so the dashboard works offline): MapLibre GL JS 4.7.1, uPlot 1.6.31. See web/vendor/README.md. -->
+  <link rel="stylesheet" href="vendor/maplibre-gl-4.7.1/maplibre-gl.css"
+        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V">
+  <link rel="stylesheet" href="vendor/uplot-1.6.31/uPlot.min.css"
+        integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/views.css">
@@ -39,10 +39,10 @@
     window.addEventListener("unhandledrejection", function (e) { window.__rwiErrors.push("promise: " + String((e.reason && e.reason.message) || e.reason)); });
   </script>
   <script src="config.js"></script>
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
-          integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"
-          integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
+  <script src="vendor/maplibre-gl-4.7.1/maplibre-gl.js"
+          integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"></script>
+  <script src="vendor/uplot-1.6.31/uPlot.iife.min.js"
+          integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM"></script>
   <script type="module" src="js/main.js"></script>
   <script>
     /* Boot watchdog: ES modules cannot load from file:// in most browsers. */

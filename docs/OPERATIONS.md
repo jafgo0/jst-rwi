@@ -155,6 +155,24 @@ any page reachable on the private network could lie about being the car.
   endpoint cannot; prefer the pipeline for anything beyond operator-driven
   pokes.
 
+#### Computer location as a stand-in GPS
+
+Until the team's own GNSS receiver is wired in, the dashboard can feed the
+laptop's location (Operator controls → "Use computer location (live_gps)").
+It polls the browser Geolocation API every
+`telemetry.computerLocationIntervalS` (default 10 s, inside the 30 s GPS
+freshness limit) and posts `mode=live_gps` with
+`source=computer_location_services` and `fix_quality=unknown`, so no
+consumer can mistake it for a receiver fix. A Mac has no GNSS chip: macOS
+positions by Wi-Fi, typically 20–100 m, and reports no speed or heading.
+
+Setup: put the same random value in `.env` (`RWI_TELEMETRY_SHARED_SECRET`)
+and in the gitignored `web/config.js` (`telemetry.sharedSecret`), restart the
+API, and open the dashboard on `localhost` or HTTPS (Geolocation needs a
+secure context). The browser must be allowed under System Settings → Privacy
+& Security → Location Services. Note that anyone who can load `config.js`
+can read the secret: acceptable on a private LAN, not on a public host.
+
 ### Faster data: what it would take
 
 Live dashboard latency today is bounded by two independent clocks:
