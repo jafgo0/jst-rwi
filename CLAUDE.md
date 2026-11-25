@@ -150,14 +150,3 @@ If any of these is the natural next step, explain why and wait.
 Read `docs/CONTRACTS.md` and the relevant `docs/science/<area>.md` before
 guessing. If the code and `docs/REQUIREMENTS.md` disagree, say so — don't
 silently change one to match the other. Ask once; don't loop.
-
----
-
-## 9. Working alongside other Claude sessions
-
-Several Claude sessions (from different accounts) work in this repo and
-coordinate only through GitHub issues and pull requests. Follow
-`docs/SAMARBETE.sv.md`: one issue per task, claim it with a comment, one
-branch per task, `Closes #<n>` in the PR, the other session reviews, a human
-merges. Before starting work, check open issues and PRs so you don't
-duplicate or collide with another session's lane.
