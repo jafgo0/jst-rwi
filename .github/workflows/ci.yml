@@ -51,3 +51,38 @@ jobs:
 
       - name: Scientific reference tests
         run: .venv/bin/pytest tests -q -m "science" --durations=0
+
+  ml:
+    # ADR 0008 §7: rwi.ml and the AIFS GRIB provider import their heavy
+    # dependencies lazily and their tests importorskip, so the `quality` job
+    # above (no [ml] extra) skips them. This job is where they actually run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create environment
+        run: |
+          uv venv --python 3.12 .venv
+          VIRTUAL_ENV=.venv uv pip install -e ".[dev,ml]"
+
+      - name: ML stack imports
+        # Fails loudly if the extra is broken, instead of every ML test being
+        # importorskipped into a green run that tested nothing.
+        run: |
+          .venv/bin/python -c "import lightgbm, xarray, cfgrib, eccodes, ecmwf.opendata; \
+          print('eccodes', eccodes.codes_get_api_version(), 'lightgbm', lightgbm.__version__)"
+
+      - name: Type check (with ML stubs present)
+        run: .venv/bin/mypy src/rwi
+
+      - name: Tests
+        run: .venv/bin/pytest tests -q -m "not network" -rs --durations=10
+
+      - name: Scientific reference tests
+        run: .venv/bin/pytest tests -q -m "science" -rs --durations=0
