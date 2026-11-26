@@ -48,6 +48,10 @@
     <string>@PROJECT_DIR@</string>
     <key>RWI_LOG_LEVEL</key>
     <string>INFO</string>
+    <!-- Native ECMWF AIFS GRIB capture (ADR 0008). Needs the [ml] extra; one
+         download of tens of MB per 6-hourly run. Set to false to switch off. -->
+    <key>RWI_CAPTURE_AIFS</key>
+    <string>true</string>
   </dict>
 
   <!-- If the machine was asleep when a cycle was due, run it on wake rather

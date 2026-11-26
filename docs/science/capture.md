@@ -184,6 +184,23 @@ entry calling `--once` hourly are all fine. Whichever is chosen, **someone must
 check that it is still running**; silent death of the capture worker is the
 most likely way the team arrives in August with no verification history.
 
+### Current deployment (since 2026-11-26)
+
+A launchd agent on the team's development Mac runs `scripts/capture.sh`
+(`--once --prune`) hourly; the template is
+`deploy/com.jusolarteam.jst-rwi.capture.plist.template` and it sets
+`RWI_CAPTURE_AIFS=true`, so native AIFS is archived alongside Open-Meteo.
+Log: `~/Library/Logs/jst-rwi-capture.log`.
+
+```bash
+launchctl print gui/$(id -u)/com.jusolarteam.jst-rwi.capture      # status, runs, last exit
+launchctl kickstart -k gui/$(id -u)/com.jusolarteam.jst-rwi.capture  # run a cycle now
+```
+
+Limitation: a laptop that sleeps does not capture. launchd runs a missed cycle
+on wake, but hours asleep are gaps in the history. For weeks-long unattended
+capture the job belongs on an always-on machine.
+
 ## Expected growth
 
 One cycle at one site with three models over a 48 h horizon writes roughly
@@ -205,7 +222,7 @@ the retention policy keeps bounded.
 | Model run times | tested — probed across 7 models; only ECMWF reports one, and the capture list now reflects that |
 | AI-versus-physics benchmark (AIFS vs IFS) | not started — the data is now being captured; a score needs forecasts to reach their valid time |
 | Retention enforcement (`enforce_retention`) | tested |
-| Native ECMWF AIFS capture (`--aifs`) | tested — fake gridded source only; never run against data.ecmwf.int from the worker |
+| Native ECMWF AIFS capture (`--aifs`) | tested — fake gridded source in tests; enabled in the hourly launchd job from 2026-11-26 |
 | Continuous operation over weeks | not started |
 
 Nothing here is "validated against real data" in the sense that matters: the
