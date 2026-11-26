@@ -108,3 +108,48 @@ def test_unknown_units_are_refused_not_guessed(monkeypatch):
     monkeypatch.setattr(ecmwf_aifs, "_CONVERT", table)
     with pytest.raises(ProviderUnavailableError, match="unexpected units"):
         run_from_grib([FIXTURE], BOX, retrieved_at_utc=RETRIEVED)
+
+
+async def test_a_downloaded_run_is_reused_with_its_original_retrieval_time(tmp_path, monkeypatch):
+    import shutil
+
+    from rwi.providers.ecmwf_aifs import AifsOpenDataSource
+
+    calls: list[Path] = []
+
+    def fake_download(self, init, steps, params, target):
+        calls.append(target)
+        shutil.copyfile(FIXTURE, target)
+
+    monkeypatch.setattr(AifsOpenDataSource, "_download", fake_download)
+    fields = list(AIFS_PARAMS.values())
+    first = AifsOpenDataSource(download_dir=tmp_path, clock=lambda: RETRIEVED)
+    run1 = await first.fetch_run(INIT, [0, 6, 12, 18, 24], fields, BOX)
+    assert len(calls) == 1 and calls[0].suffix == ".part"
+    (grib,) = tmp_path.glob("*.grib2")
+    assert not list(tmp_path.glob("*.part"))
+    assert run1.retrieved_at_utc == RETRIEVED
+
+    # A new process (as with hourly --once) finds the file and does not download again.
+    later = AifsOpenDataSource(download_dir=tmp_path, clock=lambda: RETRIEVED + timedelta(hours=5))
+    run2 = await later.fetch_run(INIT, [0, 6, 12, 18, 24], fields, BOX)
+    assert len(calls) == 1
+    assert run2.retrieved_at_utc == datetime.fromtimestamp(grib.stat().st_mtime, tz=UTC)
+
+    # Different steps are a different request, never served from the other file.
+    await later.fetch_run(INIT, [0, 6], fields, BOX)
+    assert len(calls) == 2
+
+
+async def test_a_failed_download_leaves_no_file_that_would_be_reused(tmp_path, monkeypatch):
+    from rwi.providers.ecmwf_aifs import AifsOpenDataSource
+
+    def broken_download(self, init, steps, params, target):
+        target.write_bytes(b"trunc")
+        raise ProviderUnavailableError("ecmwf: AIFS download failed: reset")
+
+    monkeypatch.setattr(AifsOpenDataSource, "_download", broken_download)
+    src = AifsOpenDataSource(download_dir=tmp_path)
+    with pytest.raises(ProviderUnavailableError):
+        await src.fetch_run(INIT, [0, 6], list(AIFS_PARAMS.values()), BOX)
+    assert not list(tmp_path.glob("*.grib2"))

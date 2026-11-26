@@ -74,15 +74,18 @@ AIFS open-data GRIB feed (`rwi.providers.ecmwf_aifs`) at every site, labelled
 
 - One download per run, not per site: gridded capture runs after the per-site
   work and interpolates the same run to every site; a later cycle within the
-  same run reuses it from memory. With `--once` from cron nothing persists
-  between processes, so every hourly invocation downloads again — prefer the
-  long-running loop for AIFS.
+  same run reuses it from memory. Across processes (hourly `--once` from
+  launchd or cron) the newest GRIB file stays in `cache_dir/aifs-capture` and
+  is reused when the run, steps and parameters match, so a new download happens
+  once per 6-hourly run, not once per cycle. A reused file keeps its file time as
+  `retrieved_at_utc`; it is never restamped as fresh.
 - Only the variables the feed carries are requested; the rest of the variable
   list is not counted as a failure.
 - If the run cannot be fetched, that is one recorded failure plus a note, and
   the remaining sites are not retried; the Open-Meteo capture is unaffected.
-- The worker keeps the two newest runs in memory and deletes decoded GRIB files
-  from `cache_dir/aifs-capture` after every cycle.
+- Downloads go to a `.part` file and are renamed only when complete, so an
+  interrupted download is never reused. After every cycle the worker keeps the
+  two newest runs in memory and only the newest GRIB file on disk (tens of MB).
 - Downloading needs `ecmwf-opendata` (the `[ml]` extra); without it every cycle
   records a `ProviderUnavailableError` failure rather than inventing values.
 

@@ -10,6 +10,7 @@ so the core platform (and ``make check``) runs without them.
 """
 
 import asyncio
+import hashlib
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -220,11 +221,19 @@ class AifsOpenDataSource:
         init = ensure_utc(init_time)
         workdir = self._dir or Path(tempfile.mkdtemp(prefix="rwi-aifs-"))
         workdir.mkdir(parents=True, exist_ok=True)
-        target = workdir / f"aifs_{init:%Y%m%dT%H}Z.grib2"
-        await asyncio.to_thread(self._download, init, list(steps_h), params, target)
-        return await asyncio.to_thread(
-            run_from_grib, [target], bbox, retrieved_at_utc=self._clock()
-        )
+        steps = list(steps_h)
+        key = hashlib.sha256(f"{steps}|{sorted(params)}".encode()).hexdigest()[:8]
+        target = workdir / f"aifs_{init:%Y%m%dT%H}Z_{key}.grib2"
+        if target.is_file():
+            # Same run, steps and params already on disk (an earlier --once process):
+            # reuse it, and keep the time it was actually retrieved as provenance.
+            retrieved = datetime.fromtimestamp(target.stat().st_mtime, tz=UTC)
+        else:
+            partial = target.with_suffix(".part")
+            await asyncio.to_thread(self._download, init, steps, params, partial)
+            partial.replace(target)  # only a complete download ever gets the final name
+            retrieved = self._clock()
+        return await asyncio.to_thread(run_from_grib, [target], bbox, retrieved_at_utc=retrieved)
 
     def _download(self, init: datetime, steps: list[int], params: list[str], target: Path) -> None:
         try:

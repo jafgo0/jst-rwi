@@ -196,11 +196,17 @@ class GriddedCapture:
     keep_runs: int = 2
 
     def tidy(self) -> None:
-        """Drop all but the newest runs from memory and decoded GRIB files from disk."""
+        """Drop all but the newest runs from memory, and all but the newest GRIB file from disk.
+
+        The newest file is kept so a following ``--once`` process reuses it instead of
+        downloading the same run again; file names start with the run time, so the
+        lexicographically last one is the newest. Interrupted downloads are removed.
+        """
         for init in sorted(self.run_cache)[: -self.keep_runs or None]:
             del self.run_cache[init]
         if self.download_dir is not None and self.download_dir.is_dir():
-            for grib in self.download_dir.glob("*.grib2"):
+            stale = sorted(self.download_dir.glob("*.grib2"))[:-1]
+            for grib in [*stale, *self.download_dir.glob("*.part")]:
                 try:
                     grib.unlink()
                 except OSError as exc:

@@ -433,15 +433,16 @@ async def test_an_unavailable_gridded_run_is_one_failure_not_a_lost_cycle(tmp_pa
     assert any("no run this cycle" in n for n in result.notes)
 
 
-def test_tidy_keeps_only_the_newest_runs_and_drops_grib_files(tmp_path: Any) -> None:
+def test_tidy_keeps_only_the_newest_run_in_memory_and_on_disk(tmp_path: Any) -> None:
     from rwi.capture.worker import GriddedCapture
 
-    (tmp_path / "aifs_20270823T00Z.grib2").write_bytes(b"x")
+    for name in ("aifs_20270822T18Z_ab.grib2", "aifs_20270823T00Z_ab.grib2", "x.part"):
+        (tmp_path / name).write_bytes(b"x")
     cache = {NOW - timedelta(hours=6 * i): object() for i in range(4)}
     g = GriddedCapture(name="x", provider=None, run_cache=cache, download_dir=tmp_path)
     g.tidy()
     assert sorted(cache) == [NOW - timedelta(hours=6), NOW]
-    assert not list(tmp_path.glob("*.grib2"))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["aifs_20270823T00Z_ab.grib2"]
 
 
 def test_aifs_capture_covers_every_site_without_touching_the_network(tmp_path: Any) -> None:
