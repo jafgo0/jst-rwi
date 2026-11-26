@@ -1,6 +1,6 @@
 # Requirements traceability matrix: 130 competencies
 
-Generated 2026-11-01 from the repository state on disk (see section 2 for how status is decided). This is the traceability matrix required by the master specification (sections 4 and 19, step 2): one row per competency, numbered as in the master prompt.
+Generated 2026-11-01 and re-derived 2026-11-26 from the repository state on disk (see section 2 for how status is decided). This is the traceability matrix required by the master specification (sections 4 and 19, step 2): one row per competency, numbered as in the master prompt.
 
 ## 1. How to read this document
 
@@ -21,21 +21,30 @@ Status was derived from the files on disk, not from intentions:
 * **validated against real data**, **operationally ready**: used by no row. There is no vehicle telemetry and no recorded forecast/observation history, so nothing can honestly claim either. (Correction, verified live 2026-11-02: a real observation source *does* now exist - `rwi.providers.bom` returns BoM station measurements, confirmed end to end through `GET /api/weather/observations` against Darwin Airport. That still does not make any row 'validated against real data': validation needs a *comparison* of model against measurement over time, which has not been done.)
 * A row that needs several modules takes the *least* advanced of them, so a row whose weather input does not exist cannot read 'tested' merely because its solar-geometry half does.
 
-Snapshot of the modules on the generation date:
+Snapshot of the modules on 2026-11-26 (worktree code, `PYTHONPATH=src`, non-network tests; 1152 pass in total):
 
-| Module | Code files | Test files | Result | Derived status |
-|---|---|---|---|---|
-| `core` | 10 | 7 | 72 passed in 0.30s | tested |
-| `solar` | 4 | 3 | 57 passed in 3.38s | tested |
-| `providers` | 4 | 0 | - | implementing |
-| `quality` | 2 | 0 | - | implementing |
-| `route` | 1 | 0 | - | implementing |
-| `energy` | 4 | 5 | 48 passed in 2.39s | tested |
-| `vehicle` | 2 | 2 | 44 passed in 0.99s | tested |
-| `strategy` | 2 | 0 | - | implementing |
-| `alerts` | 1 | 1 | 16 passed in 0.04s | tested |
-| `api` | 11 | 1 | 12 passed, 1 warning in 3.45s | tested |
-| `web` | 23 | 0 | - | implementing |
+| Module | Test files | Result | Derived status |
+|---|---|---|---|
+| `core` | 7 | 75 passed | tested |
+| `solar` | 3 | 57 passed | tested |
+| `providers` | 5 | 92 passed | tested |
+| `quality` | 1 | 36 passed | tested |
+| `route` | 5 | 93 passed | tested |
+| `energy` | 7 | 71 passed | tested |
+| `vehicle` | 2 | 47 passed | tested |
+| `strategy` | 3 | 72 passed | tested |
+| `alerts` | 5 | 73 passed | tested |
+| `api` | 5 | 45 passed | tested |
+| `archive` | 8 | 44 passed | tested |
+| `ensemble` | 4 | 45 passed | tested |
+| `fusion` | 2 | 51 passed | tested |
+| `verification` | 3 | 70 passed | tested |
+| `satellite` | 9 | 208 passed, 3 skipped | tested |
+| `telemetry` | 2 | 21 passed | tested |
+| `meteorologist` | 6 | 69 passed | tested |
+| `validation` | 1 | 6 passed | tested |
+| `capture` | 1 | 15 passed | tested |
+| `web` | 0 | - (no front-end tests) | implementing |
 
 Caveat: a module marked *tested* may still implement only part of its contracted API (check `docs/CONTRACTS.md`). The rows that depend on the missing parts are marked lower through the 'least advanced' rule only where the dependency is another module; missing functions inside a tested module are not detected by this scan.
 
@@ -49,7 +58,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 2 | Thermodynamics | scientific foundation | Air density sets drag; cell temperature sets PV derate | Ideal-gas air density; Faiman/NOCT cell-temperature models | T2m, surface pressure, humidity, wind | `rwi.energy.thermal`; `rwi.vehicle.dynamics` (density) | Cell temperature reproduces pvlib/published example; density matches standard-atmosphere reference | P1 | tested |
 | 3 | Atmospheric Pressure | scientific foundation | Needed for air density; QC and synoptic indicator | Surface vs MSL pressure; reduction by elevation | surface_pressure, pressure_msl, elevation | Variables only in `rwi.core.variables`; use in `rwi.vehicle.dynamics` | Range/unit tests; barometric reduction matches formula | P1 | tested |
 | 4 | Wind Dynamics | scientific foundation | Head and cross wind drive drag and stability | Wind vector algebra; 'from' convention; apparent wind | 10 m wind speed/direction, vehicle heading | `rwi.core.wind` | Sign tests for head/tail/cross in the cardinal cases; u,v round trip | P0 | tested |
-| 5 | Atmospheric Humidity | scientific foundation | Minor effect on air density; fog/cloud diagnosis | Dew point, vapour pressure (Magnus) | RH2m, dew point | Variables only in `rwi.core.variables`; no analysis code | Dew point within 0.1 K of Magnus reference | P2 | not started |
+| 5 | Atmospheric Humidity | scientific foundation | Minor effect on air density; fog/cloud diagnosis | Dew point, vapour pressure (Magnus) | RH2m, dew point | `rwi.providers.openmeteo` maps `dew_point_2m` and `relative_humidity_2m`; `rwi.quality` flags dew point above air temperature; no Magnus computation | Dew point within 0.1 K of Magnus reference | P2 | implementing |
 | 6 | Cloud Physics | scientific foundation | Clouds dominate irradiance variability | Cloud-cover layers; clearness index as the diagnostic | cloud_cover (low/mid/high), GHI | Clearness index in `rwi.solar.decomposition`; no cloud model | Clearness index reproduces reference; no cloud-shadow claims | P1 | implementing |
 | 7 | Precipitation Physics | scientific foundation | Rain affects safety, visibility and irradiance | Rate/accumulation thresholds, phase from weather code | precipitation, probability, weather_code | `rwi.alerts.rules` (precipitation) | Alert fires at stated threshold on fixture and not on stale data | P1 | tested |
 | 8 | Solar Radiation | operational requirement | Irradiance is the vehicle's fuel | NREL SPA geometry, Ineichen-Perez clear sky, Erbs/DISC/DIRINT decomposition (pvlib) | Position, time, Linke turbidity (bundled) | `rwi.solar.geometry`, `.clearsky`, `.decomposition` | Zero at night; clear-sky GHI vs published reference for named place/time; clear-sky never labelled measured | P0 | tested |
@@ -64,31 +73,31 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 17 | Topographic Effects | scientific foundation | Route is mostly flat; ranges near Port Augusta; gradient affects energy | Elevation profile and grade along route | Route elevation | `rwi.route` (elevation_profile) | Elevation profile within tolerance of source; grade sign tests | P2 | implementing |
 | 18 | Ocean-Atmosphere Interaction | scientific foundation | Regional influence at the southern end only | Not modelled | n/a | n/a - design standard | n/a | P2 | not started |
 | 19 | Atmospheric Chemistry | scientific foundation | Dust/smoke change direct vs diffuse light | Turbidity parameter in clear sky; aerosol data R&D | Linke turbidity; AOD (not sourced) | `rwi.solar.clearsky` (turbidity parameter) | DNI responds monotonically to turbidity in test; AOD source unvalidated | P2 | implementing |
-| 20 | Mathematics and Statistics | scientific foundation | Basis of uncertainty, verification and calibration | MAE/RMSE/bias, interval and probabilistic scores, hand-checked | Any paired series | `rwi.energy.series.compare_with_measured`; planned verification module (not in CONTRACTS.md) | Metrics equal hand-computed examples | P0 | implementing |
+| 20 | Mathematics and Statistics | scientific foundation | Basis of uncertainty, verification and calibration | MAE/RMSE/bias, interval and probabilistic scores, hand-checked | Any paired series | `rwi.verification` (metrics, calibration, report), `rwi.energy.series.compare_with_measured` | Metrics equal hand-computed examples | P0 | tested |
 
 ### B. Observation and real-time analysis (21-40)
 
 | # | Competency | Category | Relevance to solar racing | Method / approach | Data requirement | Software component | Validation criterion | Priority | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| 21 | Temperature Analysis | operational requirement | Cell temperature, air density, battery thermal inputs | Range, rate-of-change, unit checks | temperature_2m | `rwi.quality` | Impossible/jump values flagged, never deleted | P0 | implementing |
-| 22 | Wind Analysis | operational requirement | Measured wind feeds relative-wind and alerts | Vector decomposition and range checks | wind speed/direction | `rwi.core.wind`, `rwi.quality` | Sign tests; out-of-range flagged | P0 | implementing |
-| 23 | Wind Gust Analysis | operational requirement | Gusts above 100 km/h are possible (Reg 2.19.3 note); stability | Gust threshold alerts; gust factor | wind_gusts_10m | `rwi.alerts.rules`, `rwi.quality` | Alert at declared (assumed) threshold; threshold set by vehicle limits once known | P0 | implementing |
-| 24 | Pressure Analysis | operational requirement | Plausibility check; synoptic tendency | Rate-of-change limit from registry | surface_pressure, pressure_msl | `rwi.quality` | Step > limit flagged | P1 | implementing |
-| 25 | Humidity Analysis | operational requirement | Plausibility; fog indicator | Range 0-100 and dew-point <= temperature | RH2m, dew point | `rwi.quality` | Violations flagged | P2 | implementing |
+| 21 | Temperature Analysis | operational requirement | Cell temperature, air density, battery thermal inputs | Range, rate-of-change, unit checks | temperature_2m | `rwi.quality` | Impossible/jump values flagged, never deleted | P0 | tested |
+| 22 | Wind Analysis | operational requirement | Measured wind feeds relative-wind and alerts | Vector decomposition and range checks | wind speed/direction | `rwi.core.wind`, `rwi.quality` | Sign tests; out-of-range flagged | P0 | tested |
+| 23 | Wind Gust Analysis | operational requirement | Gusts above 100 km/h are possible (Reg 2.19.3 note); stability | Gust threshold alerts; gust factor | wind_gusts_10m | `rwi.alerts.rules`, `rwi.quality` | Alert at declared (assumed) threshold; threshold set by vehicle limits once known | P0 | tested |
+| 24 | Pressure Analysis | operational requirement | Plausibility check; synoptic tendency | Rate-of-change limit from registry | surface_pressure, pressure_msl | `rwi.quality` | Step > limit flagged | P1 | tested |
+| 25 | Humidity Analysis | operational requirement | Plausibility; fog indicator | Range 0-100 and dew-point <= temperature | RH2m, dew point | `rwi.quality` | Violations flagged | P2 | tested |
 | 26 | Precipitation Measurement | operational requirement | Rain risk validation needs observed rain | Accumulation and intensity QC | Observed precipitation: BoM publishes `rain_trace`/`rain_hour`, not yet mapped to a canonical variable | `rwi.providers.bom` (adapter built; precipitation not among its 10 mapped variables), `rwi.quality` | Observed rain never mixed with forecast rain | P1 | implementing |
 | 27 | Cloud Observation | operational requirement | Verify cloud forecasts; clear-sky index from measured GHI | Station/satellite cloud, clearness from measured irradiance | Observed cloud or GHI (no source yet) | `rwi.providers`; `rwi.solar` | Measured clearness index <= physical limit | P1 | implementing |
 | 28 | Visibility Analysis | operational requirement | Reg 3.31.6 penalises driving without adequate visibility (smoke, dust, rain) | Visibility threshold alerts | visibility | `rwi.alerts.rules` | Alert below declared threshold on fixture | P1 | tested |
 | 29 | Solar Irradiance Measurement | operational requirement | Compare model with measured array output / pyranometer | Error metrics model vs measured; night values flagged | Telemetry or pyranometer (none yet) | `rwi.energy.series.compare_with_measured` | Metrics reproduce hand calculation; measured and clear-sky kept separate | P0 | implementing |
-| 30 | UV Analysis | optional research | Little effect on energy; driver exposure only | UV index carried, not analysed | uv_index | Variable only in `rwi.core.variables` | n/a | P2 | not started |
+| 30 | UV Analysis | optional research | Little effect on energy; driver exposure only | UV index carried, not analysed | uv_index | `rwi.providers.openmeteo` maps `uv_index`; no driver-exposure logic | n/a | P2 | implementing |
 | 31 | Satellite Analysis | optional research | Cloud information beyond NWP (Phase 5) | Himawari access researched (`data-sources.md`); processing not designed | Himawari-9 via NOAA S3 | Planned `rwi.satellite` (not in CONTRACTS.md) | Needs benchmark vs ground data before any claim | R&D | tested |
 | 32 | Weather Radar Monitoring | operational requirement | Storm movement near the route | Radar overlay; BoM licence unresolved | BoM radar (licence open) | None (planned) | Timestamps shown per frame | P2 | not started |
 | 33 | GPS and Geospatial Analysis | operational requirement | Every value is tied to a place and time | WGS84 geodesics (pyproj); single active state | PositionFix | `rwi.core.geo`, `.position`, `.state` | Distance/bearing vs reference; stale and missing fix raise | P0 | tested |
-| 34 | Sensor Calibration | operational requirement | Detect drifting vehicle or station sensors | Compare against clear-sky bound and neighbours | Sensor streams (none yet) | Planned in `rwi.quality` | Seeded drift detected in replay | P1 | not started |
-| 35 | Data Quality Control | operational requirement | Bad data must be flagged, not silently used | Range, rate, freshness, missing flags | Series + registry | `rwi.quality` | Flags set on fixtures; originals preserved | P0 | implementing |
+| 34 | Sensor Calibration | operational requirement | Detect drifting vehicle or station sensors | Compare against clear-sky bound and neighbours | Sensor streams (none yet) | `rwi.quality` has frozen-sensor and consistency checks; no drift detection | Seeded drift detected in replay | P1 | not started |
+| 35 | Data Quality Control | operational requirement | Bad data must be flagged, not silently used | Range, rate, freshness, missing flags | Series + registry | `rwi.quality` | Flags set on fixtures; originals preserved | P0 | tested |
 | 36 | Real-Time Monitoring | operational requirement | Continuous view of current conditions | Periodic refresh, health, data age | Providers, state | `rwi.api` (health/state), `web/` | Data age visible; refresh failures visible | P0 | implementing |
-| 37 | Historical Data Analysis | operational requirement | Compare now with past; replay | Archive queries; storage deferred (ADR 0006) | Archive, recorded tracks | `rwi.providers` (archive); no store | Archive values labelled historical, never current | P1 | not started |
+| 37 | Historical Data Analysis | operational requirement | Compare now with past; replay | Archive queries; storage deferred (ADR 0006) | Archive, recorded tracks | `rwi.archive` (store, schema), `rwi.providers` | Archive values labelled historical, never current | P1 | tested |
 | 38 | Vertical Atmospheric Profile Analysis | scientific foundation | Stability context only | Not planned beyond NWP fields | Pressure-level fields | n/a - design standard | n/a | P2 | not started |
-| 39 | Spatial Weather Analysis | operational requirement | Compare conditions along and across the route | Route weather samples; segment comparison | Forecasts at route points | `rwi.route`, `rwi.providers`, `rwi.api` | Samples carry point, time and lead time | P1 | implementing |
+| 39 | Spatial Weather Analysis | operational requirement | Compare conditions along and across the route | Route weather samples; segment comparison | Forecasts at route points | `rwi.route`, `rwi.providers`, `rwi.api` | Samples carry point, time and lead time | P1 | tested |
 | 40 | Microclimate Analysis | optional research | Local heat/shade effects | No validated method | Local sensors | n/a - design standard | Needs data | R&D | not started |
 
 ### C. Forecasting and prediction (41-60)
@@ -96,16 +105,16 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | # | Competency | Category | Relevance to solar racing | Method / approach | Data requirement | Software component | Validation criterion | Priority | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | 41 | Nowcasting | optional research | 0-3 h solar changes | Persistence baseline first; satellite/ML only if it beats it | Satellite, observations | Planned (Phase 5) | Beats persistence on held-out data | R&D | tested |
-| 42 | Short-Range Forecasting | operational requirement | Core product: hours to days | NWP via provider adapter | Open-Meteo / ECMWF | `rwi.providers` | Provenance with model init time; lead time tracked | P0 | implementing |
-| 43 | Medium-Range Forecasting | operational requirement | Pre-race planning | Same adapters, longer horizon | Provider forecasts | `rwi.providers` | Horizon respected (`max_forecast_hours`) | P1 | implementing |
+| 42 | Short-Range Forecasting | operational requirement | Core product: hours to days | NWP via provider adapter | Open-Meteo / ECMWF | `rwi.providers` | Provenance with model init time; lead time tracked | P0 | tested |
+| 43 | Medium-Range Forecasting | operational requirement | Pre-race planning | Same adapters, longer horizon | Provider forecasts | `rwi.providers` | Horizon respected (`max_forecast_hours`) | P1 | tested |
 | 44 | Seasonal Forecasting | optional research | Little value for an 8-day event | Climatology only | n/a | n/a - design standard | n/a | P2 | not started |
-| 45 | Temperature Forecasting | operational requirement | Cell temperature, density, battery | Provider forecast with QC | temperature_2m | `rwi.providers` | Fixture round trip with unit and provenance | P0 | implementing |
-| 46 | Wind Forecasting | operational requirement | Head/cross wind along the route | Provider forecast, relative wind at ETA | wind speed/direction | `rwi.providers`, `rwi.core.wind` | Conversion tests (km/h to m/s) | P0 | implementing |
-| 47 | Wind Gust Forecasting | operational requirement | Safety | Provider gusts, alert rules | wind_gusts_10m | `rwi.providers`, `rwi.alerts.rules` | Alert on fixture | P0 | implementing |
-| 48 | Cloud Cover Forecasting | operational requirement | Largest irradiance driver | Provider cloud layers | cloud_cover* | `rwi.providers` | Fixture round trip | P0 | implementing |
-| 49 | Precipitation Forecasting | operational requirement | Rain risk and visibility | Provider precipitation and probability | precipitation, probability | `rwi.providers`, `rwi.alerts.rules` | Fixture round trip; alert rules | P0 | implementing |
-| 50 | Solar Irradiance Forecasting | operational requirement | Input to energy forecast | Provider GHI/DNI/DHI, sanity bound by clear sky | ghi, dni, dhi | `rwi.providers`, `rwi.solar`, `rwi.api.integration` | Never above clear-sky bound; zero at night | P0 | implementing |
-| 51 | Storm Forecasting | operational requirement | Severe-weather warning | Weather code, gusts, precipitation rules | weather_code etc. | `rwi.alerts.rules` | Alert on fixture | P1 | implementing |
+| 45 | Temperature Forecasting | operational requirement | Cell temperature, density, battery | Provider forecast with QC | temperature_2m | `rwi.providers` | Fixture round trip with unit and provenance | P0 | tested |
+| 46 | Wind Forecasting | operational requirement | Head/cross wind along the route | Provider forecast, relative wind at ETA | wind speed/direction | `rwi.providers`, `rwi.core.wind` | Conversion tests (km/h to m/s) | P0 | tested |
+| 47 | Wind Gust Forecasting | operational requirement | Safety | Provider gusts, alert rules | wind_gusts_10m | `rwi.providers`, `rwi.alerts.rules` | Alert on fixture | P0 | tested |
+| 48 | Cloud Cover Forecasting | operational requirement | Largest irradiance driver | Provider cloud layers | cloud_cover* | `rwi.providers` | Fixture round trip | P0 | tested |
+| 49 | Precipitation Forecasting | operational requirement | Rain risk and visibility | Provider precipitation and probability | precipitation, probability | `rwi.providers`, `rwi.alerts.rules` | Fixture round trip; alert rules | P0 | tested |
+| 50 | Solar Irradiance Forecasting | operational requirement | Input to energy forecast | Provider GHI/DNI/DHI, sanity bound by clear sky | ghi, dni, dhi | `rwi.providers`, `rwi.solar`, `rwi.api.integration` | Never above clear-sky bound; zero at night | P0 | tested |
+| 51 | Storm Forecasting | operational requirement | Severe-weather warning | Weather code, gusts, precipitation rules | weather_code etc. | `rwi.alerts.rules` | Alert on fixture | P1 | tested |
 | 52 | Fog Forecasting | operational requirement | Rare on route; Adelaide area | Visibility/humidity flags | visibility, RH | `rwi.alerts.rules` (visibility) | Alert on fixture | P2 | tested |
 | 53 | Forecast Uncertainty Analysis | operational requirement | Decisions must carry uncertainty | `Uncertainty` type; ensemble spread; no invented error bars | Ensemble members | `rwi.core.provenance.Uncertainty`; ensemble not built | Spread computed from members equals hand calculation | P0 | tested |
 | 54 | Probabilistic Forecasting | operational requirement | Probabilities for rain, low irradiance | Ensemble percentiles and exceedance probabilities | Ensemble members | `rwi.providers` (ensemble), planned fusion | Percentiles match numpy on fixture; calibration unproven | P1 | tested |
@@ -125,20 +134,20 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 63 | MATLAB | optional research | Not needed; licence cost | Not adopted | n/a | n/a - design standard (decision: not adopted) | n/a | P2 | not started |
 | 64 | Fortran/C/C++ | optional research | Only if a profiled hot path demands it | NumPy/pvlib are compiled already | n/a | n/a - design standard (adopt only after profiling) | Profile shows a hot path | P2 | not started |
 | 65 | SQL and Databases | operational requirement | History and verification need queries later | Deferred; triggers in ADR 0006 | n/a | n/a - design standard (file cache, ADR 0006) | Triggers reviewed at Phase 2 start | P1 | tested |
-| 66 | API Integration | operational requirement | Weather sources | Adapter per provider, retry/backoff, fixtures | Open-Meteo first; others later | `rwi.providers` | respx tests for success, 429, malformed, offline | P0 | implementing |
+| 66 | API Integration | operational requirement | Weather sources | Adapter per provider, retry/backoff, fixtures | Open-Meteo first; others later | `rwi.providers` | respx tests for success, 429, malformed, offline | P0 | tested |
 | 67 | Geographic Information Systems | operational requirement | Map, route, projection | GeoJSON/GPX, geodesy, MapLibre map | Route, tiles | `rwi.core.geo`, `rwi.route`, `web/` | Map marker equals API position | P1 | implementing |
-| 68 | Numerical Modeling | operational requirement | PV chain, vehicle dynamics, scenarios | Deterministic physical models | Parameters | `rwi.energy`, `rwi.vehicle`, `rwi.strategy` | Energy balance closes; unit tests | P0 | implementing |
+| 68 | Numerical Modeling | operational requirement | PV chain, vehicle dynamics, scenarios | Deterministic physical models | Parameters | `rwi.energy`, `rwi.vehicle`, `rwi.strategy` | Energy balance closes; unit tests | P0 | tested |
 | 69 | Machine Learning | optional research | Only if it beats physical and persistence baselines | Benchmark-first, leakage-safe | History (none) | None | Beats baselines on held-out data | R&D | not started |
 | 70 | Artificial Intelligence Models | optional research | AIFS available via open data and Open-Meteo | Treat as one more forecast source; compare, do not assume better | AIFS (access researched) | `rwi.providers` (ensemble) | Benchmark evidence before any claim | R&D | researching |
 | 71 | Time-Series Analysis | operational requirement | Power and weather series | pandas/NumPy, trapezoidal integration | Series | `rwi.energy.series` | Integration equals analytic case | P1 | tested |
 | 72 | Data Visualization | operational requirement | Engineers read charts under time pressure | MapLibre, charts, units from registry, observed vs predicted separated | API payloads | `web/` | Manual check of labels, units, timestamps; no automated front-end tests yet | P0 | implementing |
 | 73 | Data Assimilation | optional research | Correct model with measured array output | Not designed | Telemetry | None | Needs data | R&D | not started |
 | 74 | Automation | operational requirement | Scheduled refresh and updates | Background refresh with explicit intervals | n/a | Planned in `rwi.api` | Refresh interval honoured; failures visible | P1 | tested |
-| 75 | Model Validation | operational requirement | Prove models against independent data | Reference-value tests now; real-data validation later | Observations, telemetry | Tests (`@pytest.mark.science`); planned verification | Documented external reference per model | P1 | implementing |
-| 76 | Statistical Calibration | optional research | Probabilities must be reliable | Reliability diagrams after history exists | Verification history | None | Calibration curve on held-out data | R&D | implementing |
+| 75 | Model Validation | operational requirement | Prove models against independent data | Reference-value tests now; real-data validation later | Observations, telemetry | Tests (`@pytest.mark.science`); `rwi.verification` | Documented external reference per model | P1 | implementing |
+| 76 | Statistical Calibration | optional research | Probabilities must be reliable | Reliability diagrams after history exists | Verification history | `rwi.verification.calibration`; no held-out race data | Calibration curve on held-out data | R&D | implementing |
 | 77 | Error Handling | operational requirement | Missing, invalid, delayed data | Typed errors, 409/501/503 mapping | n/a | `rwi.core.errors`, `rwi.api.errors`, `rwi.api.capability` | Each error class maps to a documented HTTP status | P0 | tested |
-| 78 | Geospatial Programming | operational requirement | Route-based calculations | Geodesic distance, projection, interpolation | Route | `rwi.core.geo`, `rwi.route` | Projection and distance tests | P0 | implementing |
-| 79 | Real-Time Data Processing | operational requirement | Streaming telemetry (Phase 3) | Not designed; protocol unknown | Telemetry (unknown) | None | Needs protocol | P1 | not started |
+| 78 | Geospatial Programming | operational requirement | Route-based calculations | Geodesic distance, projection, interpolation | Route | `rwi.core.geo`, `rwi.route` | Projection and distance tests | P0 | tested |
+| 79 | Real-Time Data Processing | operational requirement | Streaming telemetry (Phase 3) | Not designed; protocol unknown | Telemetry (unknown) | `rwi.telemetry` (coordinator, CSV replay, frames); vehicle protocol not supplied | Needs protocol | P1 | implementing |
 | 80 | System Integration | operational requirement | Weather, position, energy, strategy together | Composition in `rwi.api`; contracts | n/a | `rwi.api.integration`, `rwi.contracts` | End-to-end test from forecast to energy to scenario | P0 | implementing |
 
 ### E. Professional meteorologist behaviour (81-100)
@@ -150,7 +159,7 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 83 | Critical Thinking | professional-behaviour standard | Challenge unreliable forecasts | QC flags, clear-sky bound check, disagreement display | n/a | n/a - design standard (`rwi.quality`, comparison) | Implausible forecast flagged on fixture | P0 | implementing |
 | 84 | Scientific Curiosity | professional-behaviour standard | Unexplained anomalies deserve a record | Anomaly log with context | n/a | n/a - design standard (log + review routine) | Anomalies reviewed after each session | P2 | not started |
 | 85 | Problem Solving | professional-behaviour standard | Failures during a race need known responses | Degradation table, runbooks | n/a | n/a - design standard (ARCHITECTURE section 8) | Each failure mode has a tested response | P1 | implementing |
-| 86 | Decision-Making Ability | professional-behaviour standard | Support choice under uncertainty | Scenario comparison with assumptions and reevaluation time | n/a | `rwi.strategy` (`Recommendation`) | Recommendation states assumptions, uncertainty, reevaluate-after | P0 | implementing |
+| 86 | Decision-Making Ability | professional-behaviour standard | Support choice under uncertainty | Scenario comparison with assumptions and reevaluation time | n/a | `rwi.strategy` (`Recommendation`) | Recommendation states assumptions, uncertainty, reevaluate-after | P0 | tested |
 | 87 | Stress Resilience | professional-behaviour standard | Predictable behaviour when data fail | No crash on provider failure; deterministic outputs | n/a | n/a - design standard (failure-injection tests) | Failure-injection suite passes | P0 | implementing |
 | 88 | Clear Communication | professional-behaviour standard | Engineers need plain statements with units | Headline/rationale fields; units from registry | n/a | n/a - design standard (`Recommendation`, `web/` text) | Review by a strategist; no unit-less number | P1 | implementing |
 | 89 | Collaboration | professional-behaviour standard | Weather, power and strategy teams share one picture | Shared contracts, ownership map, exportable summaries | n/a | n/a - design standard (`docs/CONTRACTS.md`) | Contract tests pass | P2 | implementing |
@@ -172,33 +181,33 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 |---|---|---|---|---|---|---|---|---|---|
 | 101 | Solar Position Calculation | operational requirement | Everything GPS-dependent | NREL SPA via pvlib; apparent elevation decides day/night | Position, UTC time | `rwi.solar.geometry` | Jonkoping night sun below horizon; Darwin noon high; reference values documented | P0 | tested |
 | 102 | Solar Irradiance Analysis | operational requirement | Irradiance along the route | Clear sky and forecast irradiance at ETA points | Route, forecasts | `rwi.solar`, `rwi.route`, `rwi.api` | Clear-sky never shown as measured | P0 | tested |
-| 103 | Cloud Shadow Prediction | optional research | Cannot be resolved at 9-25 km | No claim without resolution and validation | Satellite | None | Needs data | R&D | implementing |
+| 103 | Cloud Shadow Prediction | optional research | Cannot be resolved at 9-25 km | No claim without resolution and validation | Satellite | `rwi.satellite` (motion, nowcast); route-scale skill unvalidated | Needs data | R&D | implementing |
 | 104 | Cloud Movement Tracking | optional research | Satellite motion vectors | Optical flow on Himawari (evaluate) | Himawari | Planned (Phase 5) | Beats persistence | R&D | tested |
-| 105 | GHI Forecasting | operational requirement | PV input | Provider GHI with clear-sky bound | ghi | `rwi.providers`, `rwi.solar` | Bounded by clear sky; night zero | P0 | implementing |
-| 106 | DNI Forecasting | operational requirement | Plane-of-array direct term | Provider DNI or decomposition (derived, labelled) | dni or ghi | `rwi.solar.decomposition`, `rwi.providers` | Decomposition output labelled derived; outback skill unvalidated | P0 | implementing |
-| 107 | DHI Forecasting | operational requirement | Diffuse term | Provider DHI or decomposition | dhi or ghi | `rwi.solar.decomposition`, `rwi.providers` | Same as #106 | P0 | implementing |
+| 105 | GHI Forecasting | operational requirement | PV input | Provider GHI with clear-sky bound | ghi | `rwi.providers`, `rwi.solar` | Bounded by clear sky; night zero | P0 | tested |
+| 106 | DNI Forecasting | operational requirement | Plane-of-array direct term | Provider DNI or decomposition (derived, labelled) | dni or ghi | `rwi.solar.decomposition`, `rwi.providers` | Decomposition output labelled derived; outback skill unvalidated | P0 | tested |
+| 107 | DHI Forecasting | operational requirement | Diffuse term | Provider DHI or decomposition | dhi or ghi | `rwi.solar.decomposition`, `rwi.providers` | Same as #106 | P0 | tested |
 | 108 | Aerodynamic Wind Resistance Analysis | operational requirement | Wind changes drag by direction | Apparent wind with yaw sensitivity | Wind, heading, CdA, yaw coefficient | `rwi.vehicle.dynamics`, `rwi.core.wind` | Headwind raises, tailwind lowers drag power; CdA is a parameter, not a default | P0 | tested |
 | 109 | Crosswind Analysis | operational requirement | Stability and drag | Crosswind component and yaw angle; alert thresholds | Wind, heading | `rwi.core.wind`, `rwi.alerts.rules` | Cardinal-case tests; alert on fixture | P0 | tested |
-| 110 | Headwind Forecasting | operational requirement | Energy cost | Relative wind at ETA heading | Wind forecast, trajectory | `rwi.core.wind`, `rwi.route`, `rwi.api` | Sign tests; samples per ETA | P0 | implementing |
-| 111 | Tailwind Forecasting | operational requirement | Energy gain | Relative wind at ETA heading (negative headwind) | Wind forecast, trajectory | `rwi.core.wind`, `rwi.route`, `rwi.api` | Sign tests; samples per ETA | P0 | implementing |
-| 112 | Road Temperature Analysis | optional research | Tyre/rolling effects, minor | Skin-temperature proxy only; no validated method | soil_temperature_0cm | Variable only in registry | Needs measurements | R&D | not started |
+| 110 | Headwind Forecasting | operational requirement | Energy cost | Relative wind at ETA heading | Wind forecast, trajectory | `rwi.core.wind`, `rwi.route`, `rwi.api` | Sign tests; samples per ETA | P0 | tested |
+| 111 | Tailwind Forecasting | operational requirement | Energy gain | Relative wind at ETA heading (negative headwind) | Wind forecast, trajectory | `rwi.core.wind`, `rwi.route`, `rwi.api` | Sign tests; samples per ETA | P0 | tested |
+| 112 | Road Temperature Analysis | optional research | Tyre/rolling effects, minor | Skin-temperature proxy only; no validated method | soil_temperature_0cm | `rwi.providers.openmeteo` maps `soil_temperature_0cm` as a proxy; no road measurements | Needs measurements | R&D | implementing |
 | 113 | Battery Temperature Analysis | operational requirement | Battery limits are regulated (Reg 2.5.5) | Ambient and solar load as inputs; battery model temperature checks | Ambient T, cell limits | `rwi.vehicle.battery` | Violation raised when temperature outside limits in test | P1 | tested |
 | 114 | Solar Panel Temperature Analysis | operational requirement | Cell temperature lowers efficiency | Faiman / NOCT models | T2m, wind, POA | `rwi.energy.thermal` | Matches pvlib/published example | P0 | tested |
-| 115 | Solar Energy Production Forecasting | operational requirement | Energy supply | POA, cell temperature, array power, integration | Irradiance, array config | `rwi.energy` | Units W, Wh; integration equals analytic case; no telemetry comparison yet | P0 | implementing |
+| 115 | Solar Energy Production Forecasting | operational requirement | Energy supply | POA, cell temperature, array power, integration | Irradiance, array config | `rwi.energy` | Units W, Wh; integration equals analytic case; no telemetry comparison yet | P0 | tested |
 | 116 | Energy Balance Analysis | operational requirement | Generation minus consumption | Segment integration with battery limits | Power series, vehicle | `rwi.strategy`, `rwi.vehicle`, `rwi.energy` | End SoC = start + generated - consumed within tolerance | P0 | implementing |
-| 117 | Route-Based Forecasting | operational requirement | Weather where the vehicle will be | Trajectory + forecasts at ETA | Route, forecasts | `rwi.route`, `rwi.providers`, `rwi.api` | Sample point and time match trajectory | P0 | implementing |
-| 118 | ETA-Linked Weather Analysis | operational requirement | Weather at the time of arrival | Valid-time interpolation at ETA | Trajectory, series | `rwi.route.trajectory`, `rwi.contracts.WeatherSeries.nearest_step` | ETA shift moves sampled time | P0 | implementing |
+| 117 | Route-Based Forecasting | operational requirement | Weather where the vehicle will be | Trajectory + forecasts at ETA | Route, forecasts | `rwi.route`, `rwi.providers`, `rwi.api` | Sample point and time match trajectory | P0 | tested |
+| 118 | ETA-Linked Weather Analysis | operational requirement | Weather at the time of arrival | Valid-time interpolation at ETA | Trajectory, series | `rwi.route.trajectory`, `rwi.contracts.WeatherSeries.nearest_step` | ETA shift moves sampled time | P0 | tested |
 | 119 | GPS Synchronization | operational requirement | One position and time across subsystems | UTC, GPS vs receipt time, skew | PositionFix | `rwi.core.position`, `.timebase`, `.state` | Skew and age tests; naive datetimes rejected | P0 | tested |
 | 120 | Satellite-Based Nowcasting | optional research | Short-term cloud change | Not designed | Himawari | Planned (Phase 5) | Beats persistence | R&D | tested |
 | 121 | Local Route Weather Assessment | operational requirement | Variation between segments | Segment comparison table | Route weather | `rwi.api`, `web/` | Differences computed from stated samples | P1 | implementing |
-| 122 | Rain Risk Assessment | operational requirement | Safety, visibility penalty, irradiance | Probability/amount at ETA; alert | precipitation*, ETA | `rwi.alerts.rules`, `rwi.providers` | Alert on fixture | P0 | implementing |
+| 122 | Rain Risk Assessment | operational requirement | Safety, visibility penalty, irradiance | Probability/amount at ETA; alert | precipitation*, ETA | `rwi.alerts.rules`, `rwi.providers` | Alert on fixture | P0 | tested |
 | 123 | Solar Forecast Uncertainty | operational requirement | Energy decisions need an error band | Ensemble spread and, later, verified error | Ensemble, history | `EnergyEstimate.uncertainty_wh` (field only) | Band from members; coverage checked later | P0 | tested |
 | 124 | Dynamic Strategy Adaptation | operational requirement | Update advice as weather changes | Explicit-interval re-evaluation | Live state | Planned `rwi.strategy` + `rwi.api` | Stable in replay (no flip-flop) | P1 | not started |
 | 125 | Speed Strategy Support | operational requirement | Weather inputs to speed choice | Scenario evaluation within limits (60 km/h minimum, posted maximum) | Segments, vehicle | `rwi.strategy` | Infeasible scenarios reported with reasons | P0 | implementing |
 | 126 | Control Stop Analysis | operational requirement | 30 min stops; charging while stationary (Reg 3.27) | Stationary tilted-collector mode, dwell time | Control-stop list (unpublished) | `rwi.route`, `rwi.energy`, `rwi.strategy` | Dwell energy equals POA x area x time | P1 | implementing |
 | 127 | Real-Time Weather Alerts | operational requirement | Hazards and data failures | Rule-based alerts with explicit assumed thresholds | Series, state | `rwi.alerts.rules`, `rwi.api` | Alert tests; no alert from fabricated data | P0 | tested |
-| 128 | Historical Route Analysis | operational requirement | Past weather along the route | Archive plus storage (ADR 0006) | Archive | `rwi.providers`; no store | Labelled historical | P2 | not started |
-| 129 | Forecast Performance Monitoring | operational requirement | Know in-race accuracy | Running verification vs observations | Observations (source unresolved) | Planned verification module | Metrics reproducible | P1 | implementing |
+| 128 | Historical Route Analysis | operational requirement | Past weather along the route | Archive plus storage (ADR 0006) | Archive | `rwi.archive`, `rwi.providers`; no route-based historical analysis | Labelled historical | P2 | implementing |
+| 129 | Forecast Performance Monitoring | operational requirement | Know in-race accuracy | Running verification vs observations | Observations (source unresolved) | `rwi.verification` (metrics, report); not wired to in-race monitoring | Metrics reproducible | P1 | implementing |
 | 130 | Strategic Communication | operational requirement | Clear, timely recommendations | Dashboard + `Recommendation` text | n/a | `web/`, `rwi.strategy` | Strategist review | P0 | implementing |
 
 ## 4. How design-standard items are embodied
@@ -233,11 +242,11 @@ By status:
 
 | Status | Count |
 |---|---|
-| not started | 41 |
-| researching | 3 |
-| implementing | 61 |
+| not started | 21 |
+| researching | 1 |
+| implementing | 35 |
 | implemented, not validated | 0 |
-| tested | 25 |
+| tested | 73 |
 | validated against real data | 0 |
 | operationally ready | 0 |
 | **Total** | **130** |
@@ -256,10 +265,10 @@ Priority by status:
 
 | Priority | not started | researching | implementing | tested |
 |---|---|---|---|---|
-| P0 | 0 | 0 | 40 | 14 |
-| P1 | 13 | 1 | 17 | 10 |
-| P2 | 14 | 0 | 4 | 3 |
-| R&D | 12 | 2 | 0 | 0 |
+| P0 | 0 | 0 | 13 | 41 |
+| P1 | 5 | 0 | 13 | 23 |
+| P2 | 11 | 0 | 6 | 4 |
+| R&D | 5 | 1 | 3 | 5 |
 
 ## 6. P0 backlog: P0 items not yet implemented
 
@@ -267,60 +276,33 @@ Status below 'implemented, not validated' (not started, researching, implementin
 
 | # | Competency | Status | Component(s) involved |
 |---|---|---|---|
-| 20 | Mathematics and Statistics | implementing | `rwi.energy.series.compare_with_measured`; planned verification module (not in CONTRACTS.md) |
-| 21 | Temperature Analysis | implementing | `rwi.quality` |
-| 22 | Wind Analysis | implementing | `rwi.core.wind`, `rwi.quality` |
-| 23 | Wind Gust Analysis | implementing | `rwi.alerts.rules`, `rwi.quality` |
-| 35 | Data Quality Control | implementing | `rwi.quality` |
+| 29 | Solar Irradiance Measurement | implementing | `rwi.energy.series.compare_with_measured` |
 | 36 | Real-Time Monitoring | implementing | `rwi.api` (health/state), `web/` |
-| 42 | Short-Range Forecasting | implementing | `rwi.providers` |
-| 45 | Temperature Forecasting | implementing | `rwi.providers` |
-| 46 | Wind Forecasting | implementing | `rwi.providers`, `rwi.core.wind` |
-| 47 | Wind Gust Forecasting | implementing | `rwi.providers`, `rwi.alerts.rules` |
-| 48 | Cloud Cover Forecasting | implementing | `rwi.providers` |
-| 49 | Precipitation Forecasting | implementing | `rwi.providers`, `rwi.alerts.rules` |
-| 50 | Solar Irradiance Forecasting | implementing | `rwi.providers`, `rwi.solar`, `rwi.api.integration` |
-| 53 | Forecast Uncertainty Analysis | implementing | `rwi.core.provenance.Uncertainty`; ensemble not built |
-| 66 | API Integration | implementing | `rwi.providers` |
-| 68 | Numerical Modeling | implementing | `rwi.energy`, `rwi.vehicle`, `rwi.strategy` |
 | 72 | Data Visualization | implementing | `web/` |
-| 78 | Geospatial Programming | implementing | `rwi.core.geo`, `rwi.route` |
 | 80 | System Integration | implementing | `rwi.api.integration`, `rwi.contracts` |
 | 83 | Critical Thinking | implementing | n/a - design standard (`rwi.quality`, comparison) |
-| 86 | Decision-Making Ability | implementing | `rwi.strategy` (`Recommendation`) |
 | 87 | Stress Resilience | implementing | n/a - design standard (failure-injection tests) |
 | 92 | Responsibility | implementing | n/a - design standard (`rwi.alerts`, `Recommendation`) |
 | 98 | Structured Working Methods | implementing | n/a - design standard (repository practice) |
 | 99 | Systems Thinking | implementing | `rwi.api.integration` |
 | 100 | Uncertainty Awareness | implementing | n/a - design standard (`Uncertainty`, UI disclosure) |
-| 102 | Solar Irradiance Analysis | implementing | `rwi.solar`, `rwi.route`, `rwi.api` |
-| 105 | GHI Forecasting | implementing | `rwi.providers`, `rwi.solar` |
-| 106 | DNI Forecasting | implementing | `rwi.solar.decomposition`, `rwi.providers` |
-| 107 | DHI Forecasting | implementing | `rwi.solar.decomposition`, `rwi.providers` |
-| 110 | Headwind Forecasting | implementing | `rwi.core.wind`, `rwi.route`, `rwi.api` |
-| 111 | Tailwind Forecasting | implementing | `rwi.core.wind`, `rwi.route`, `rwi.api` |
-| 115 | Solar Energy Production Forecasting | implementing | `rwi.energy` |
 | 116 | Energy Balance Analysis | implementing | `rwi.strategy`, `rwi.vehicle`, `rwi.energy` |
-| 117 | Route-Based Forecasting | implementing | `rwi.route`, `rwi.providers`, `rwi.api` |
-| 118 | ETA-Linked Weather Analysis | implementing | `rwi.route.trajectory`, `rwi.contracts.WeatherSeries.nearest_step` |
-| 122 | Rain Risk Assessment | implementing | `rwi.alerts.rules`, `rwi.providers` |
-| 123 | Solar Forecast Uncertainty | implementing | `EnergyEstimate.uncertainty_wh` (field only) |
 | 125 | Speed Strategy Support | implementing | `rwi.strategy` |
 | 130 | Strategic Communication | implementing | `web/`, `rwi.strategy` |
 
-40 of 54 P0 items.
+13 of 54 P0 items.
 
-P0 items at 'tested' or higher (14): #4 Wind Dynamics, #8 Solar Radiation, #29 Solar Irradiance Measurement, #33 GPS and Geospatial Analysis, #61 Python, #77 Error Handling, #82 Accuracy, #96 Risk Awareness, #101 Solar Position Calculation, #108 Aerodynamic Wind Resistance Analysis, #109 Crosswind Analysis, #114 Solar Panel Temperature Analysis, #119 GPS Synchronization, #127 Real-Time Weather Alerts. 'Tested' here means unit tests pass; none is validated against real data.
+P0 items at 'tested' or higher (41): #4 Wind Dynamics, #8 Solar Radiation, #20 Mathematics and Statistics, #21 Temperature Analysis, #22 Wind Analysis, #23 Wind Gust Analysis, #33 GPS and Geospatial Analysis, #35 Data Quality Control, #42 Short-Range Forecasting, #45 Temperature Forecasting, #46 Wind Forecasting, #47 Wind Gust Forecasting, #48 Cloud Cover Forecasting, #49 Precipitation Forecasting, #50 Solar Irradiance Forecasting, #53 Forecast Uncertainty Analysis, #61 Python, #66 API Integration, #68 Numerical Modeling, #77 Error Handling, #78 Geospatial Programming, #82 Accuracy, #86 Decision-Making Ability, #96 Risk Awareness, #101 Solar Position Calculation, #102 Solar Irradiance Analysis, #105 GHI Forecasting, #106 DNI Forecasting, #107 DHI Forecasting, #108 Aerodynamic Wind Resistance Analysis, #109 Crosswind Analysis, #110 Headwind Forecasting, #111 Tailwind Forecasting, #114 Solar Panel Temperature Analysis, #115 Solar Energy Production Forecasting, #117 Route-Based Forecasting, #118 ETA-Linked Weather Analysis, #119 GPS Synchronization, #122 Rain Risk Assessment, #123 Solar Forecast Uncertainty, #127 Real-Time Weather Alerts.
 
 ### Components needed by the matrix that no one owns yet
 
-`docs/CONTRACTS.md` assigns modules for solar, providers, quality, route, energy, vehicle, strategy, alerts, API and web. The following capabilities appear in the matrix but have no module or owner, and need a decision before Phase 2:
+Re-checked 2026-11-26. Items 1-4 of the original list now exist on disk and are no longer unowned: forecast verification and calibration (`rwi.verification`, with `rwi.archive` for forecast/observation pairs), ensemble and fusion (`rwi.ensemble`, `rwi.fusion`), telemetry ingestion (`rwi.telemetry`; the computer-location `live_gps` mode covers position until a vehicle GPS exists), and satellite nowcasting (`rwi.satellite`). What remains open:
 
-1. **Forecast verification and calibration** (#20, 53, 55, 57, 59, 75, 76, 94, 129): metrics, storage of forecast/observation pairs (ADR 0006 triggers), reports.
-2. **Multi-model / ensemble comparison and fusion** (#54-56).
-3. **Telemetry ingestion and live-GPS source adapter** (#29, 33 live mode, 79).
-4. **Satellite processing and nowcasting** (#31, 104, 120).
-5. **Automation / scheduled refresh** (#74) and the update-interval policy (#90, 124).
+1. **Vehicle telemetry protocol** (#29, 79): `rwi.telemetry` reads CSV replay; the live vehicle format has not been supplied.
+2. **Update-interval policy and strategy re-evaluation** (#90, 124): scheduled capture exists (`rwi.capture`), but no re-evaluation loop with hysteresis in `rwi.strategy`.
+3. **Front-end tests** (#36, 67, 72, 121, 130): `web/` has no automated tests, so every row that needs it stays 'implementing'.
+4. **Variable speed strategy** (#116, 125, 126): `rwi.strategy` evaluates constant-speed scenarios only.
+5. **End-to-end test from forecast to energy to scenario** (#80, 99): no test drives `/api/strategy/scenarios` with mocked weather to a 200 response.
 6. **AI assistant layer** (master specification section 12): not a numbered competency. Built as `rwi.meteorologist` (2026-11-08): six-part answers, numeric guard, tool citations; free-text LLM answers need `RWI_ANTHROPIC_API_KEY`. It reads structured outputs only.
 
 ## 7. Items blocked on inputs the team or organisers must supply
@@ -384,3 +366,4 @@ Hand corrections made after generation, by the integrator, with the evidence:
 | 2026-11-25 | #10 Atmospheric Circulation, #14 Weather Fronts: **unchanged, tested** (step B, ERA5 calibration) | On raw MSLP the trough criterion was locked to the semidiurnal tide (ERA5, 11 points, Sep-Nov 2025: 179 detections, Rayleigh R2 0.67, p 5.5e-40). It now uses p(t) - p(t-24h) over the whole window (not evaluated without 24 h history): 109 detections, p2 0.39. 219 archived `ecmwf_ifs025` runs vs ERA5 (±6 h): detrended CSI 0.10-0.18, mean timing +1.5 h; wind-shift and signature filters rejected. Scoring helpers `rwi.alerts.synoptic_calibration` + `tests/unit/test_alerts_synoptic_calibration.py`; script `scripts/validation/synoptic_calibration.py`; report `docs/validation/synoptic-calibration.md`. ERA5 is a reanalysis, so not *validated against real data*; thresholds unchanged, `calibrated = False`; no 500 hPa. |
 | 2026-11-25 | #10 Atmospheric Circulation, #14 Weather Fronts: **unchanged, tested** (step B, station observations) | Same detector on NOAA ISD hourly obs, 6 route stations, 2023-01..2025-08 (`rwi.alerts.synoptic_obs`, `scripts/validation/synoptic_obs_calibration.py`): 67 events/yr/station incl. Darwin, strong diurnal locking (R1 0.23, p 1.6e-24); ERA5-vs-obs CSI 0.25; one-at-a-time sweep CSI 0.20-0.27, no clear winner. Thresholds unchanged, `calibrated = False`. No 2025 race-week station data with MSLP found (drive-system has only Solcast estimates without pressure). |
 | 2026-11-25 | #129 Forecast Performance Monitoring: **unchanged, implementing** | Skill now reaches the briefing, but there is still no season of recorded forecast/observation pairs. |
+| 2026-11-26 | Re-derived against disk. Raised to **tested** (code exists, unit tests pass; quality, providers, route, strategy and verification now have tests): #20, 21, 22, 23, 24, 25, 35, 37, 39, 42, 43, 45, 46, 47, 48, 49, 50, 51, 66, 68, 78, 86, 105, 106, 107, 110, 111, 115, 117, 118, 122. Raised to **implementing**: #5, 30, 79, 112, 128 (variables mapped or module present, criterion not met). Component cells updated for #34, 75, 76, 103, 129. Unchanged on purpose: web-dependent rows (no front-end tests), #80/99 (no end-to-end test), #116/124/125/126 (constant speed only), #26 (BoM adapter maps no precipitation). Summary counts and P0 backlog recomputed from the rows. | Per-module pytest run in section 2; `src/rwi/quality/checks.py`, `src/rwi/providers/openmeteo.py`, `src/rwi/strategy/scenarios.py` (`assumptions`, `uncertainty_fraction`, `reevaluate_after_utc`). |
