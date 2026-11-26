@@ -13,5 +13,6 @@ by `respx` in `tests/unit/test_provider_*.py` and `test_quality_checks.py`. Unit
 | `openmeteo_error_400_out_of_range.json` | `start_hour=2026-12-30T00:00` (beyond the 16-day horizon) -> HTTP 400 body |
 | `openmeteo_429_daily_limit.json` | **Wrapper** (status, headers, body) of the HTTP 429 from `ensemble-api.open-meteo.com` when the daily quota was exhausted |
 | `bom_idd60910_94120_darwin_trimmed.json` | `www.bom.gov.au/fwo/IDD60910/IDD60910.94120.json` (Darwin Airport), trimmed to the header + newest 6 of 149 records |
+| `ecmwf_aifs/aifs_single_20261126T06Z_corridor.grib2` | ECMWF open data AIFS Single 2026-11-26 06Z, steps 0-24 h, cropped to a 17x17 grid box; provenance in `ecmwf_aifs/README.md` |
 
 Re-capture sparingly: the free Open-Meteo ensemble pool is small (see docs/science/providers.md, sec. 1.1).

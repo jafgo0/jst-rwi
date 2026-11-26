@@ -21,6 +21,7 @@ report it; the integrator changes it once.
 | Route, projection, ETA | route | `src/rwi/route/**`, `tests/unit/test_route_*.py`, `data/routes/**`, `docs/science/route.md` |
 | PV energy model | energy | `src/rwi/energy/**`, `tests/unit/test_energy_*.py`, `docs/science/pv.md` |
 | Vehicle dynamics + strategy | vehicle | `src/rwi/vehicle/**`, `src/rwi/strategy/**`, `tests/unit/test_vehicle_*.py`, `tests/unit/test_strategy_*.py`, `docs/science/vehicle.md` |
+| ML post-processing + nowcast (ADR 0008) | ml | `src/rwi/ml/**`, `tests/unit/test_ml_*.py`, `docs/science/ml.md` |
 | Requirements + architecture docs | docs | `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/adr/**` |
 | Dashboard | web | `web/**` |
 
