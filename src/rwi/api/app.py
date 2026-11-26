@@ -21,6 +21,8 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.responses import Response
+from starlette.types import Scope
 
 from rwi import __version__
 from rwi.api.capability import capability_status, import_errors, require_attr
@@ -157,8 +159,22 @@ def create_app() -> FastAPI:
 
     web_dir = Path(__file__).resolve().parents[3] / "web"
     if web_dir.is_dir():
-        app.mount("/", StaticFiles(directory=web_dir, html=True), name="dashboard")
+        app.mount("/", _RevalidatingStaticFiles(directory=web_dir, html=True), name="dashboard")
     return app
+
+
+class _RevalidatingStaticFiles(StaticFiles):
+    """Dashboard files served with ``Cache-Control: no-cache``.
+
+    Without it browsers (Safari in particular) heuristically cache ES modules and
+    keep running a stale dashboard after a deploy. ``no-cache`` still allows the
+    cached copy, but only after an ETag revalidation (a cheap 304).
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 app = create_app()
