@@ -13,6 +13,9 @@
  *    direction (empty percentiles) gets a circular-SD line, never a band.
  *  - modelsPanel(): preferred_model null is shown as "none" with the backend's
  *    reason; the first model is never promoted.
+ *  - mlBandsPanel(): EXPERIMENTAL. status no_model / not_applicable is a stated
+ *    state with the backend's reasons, never an empty band; an uncalibrated model
+ *    is marked UNVALIDATED; the band is labelled a forecast, never an observation.
  *  - outageNote(): a provider outage is an error panel plus the age of the last
  *    good data, never an empty chart.
  * @module views/forecastquality
@@ -28,10 +31,12 @@ import { styleLegend } from "../charts.js";
 export const MIN_SAMPLES = 30;
 
 /** UI state for the three panels; included in the Forecast view's render signature. */
-export const qualityState = { days: 30, ensembleVariable: "ghi", modelVariable: "cloud_cover" };
+export const qualityState = { days: 30, ensembleVariable: "ghi", modelVariable: "cloud_cover", mlVariable: "ghi" };
 export function qualitySignature() { return JSON.stringify(qualityState); }
 
 const ENSEMBLE_VARS = ["ghi", "temperature_2m", "wind_speed_10m", "wind_direction_10m", "cloud_cover"];
+/** rwi.ml.constraints.ML_VARIABLES */
+const ML_VARS = ["ghi", "dni", "cloud_cover", "wind_speed_10m"];
 const MODEL_VARS = ["cloud_cover", "temperature_2m", "wind_speed_10m", "ghi"];
 
 /* ----------------------------------------------------------------- helpers */
@@ -195,6 +200,60 @@ export function ensemblePanel(charts) {
   const foot = d?.summaries?.[0] ? provFooter(d.summaries[0].provenance, `${d.member_count} members, ${d.model_name || "model not named"}`) : null;
   const wrap = h("div", null, body, r.status === "error" ? outageNote() : null);
   return panel("Ensemble uncertainty (members that actually ran)", wrap, { right: sel, footer: foot });
+}
+
+/* -------------------------------------------------------------- ML bands */
+
+/** The backend's per-variable "missing" reasons, always listed when present. */
+function missingList(missing) {
+  const e = Object.entries(missing || {});
+  return e.length ? h("ul", { class: "plain" }, e.map(([v, why]) => h("li", null, h("b", null, varLabel(v)), `: ${why}`))) : null;
+}
+
+export function mlBandsPanel(charts) {
+  const r = res("mlbands");
+  const sel = h("div", { class: "field" }, h("label", null, "Variable"), select(ML_VARS.map((v) => [v, varLabel(v)]), qualityState.mlVariable, (e) => { qualityState.mlVariable = e.target.value; notify(); }));
+  const body = withResource(r, (d) => {
+    const out = [];
+    if (d.status === "no_model") {
+      out.push(stateBox("unknown", "NO ML MODEL", `${d.reason || "the API gave no reason"}. No ML band is shown or implied; use the ensemble panel above.`));
+      const m = missingList(d.missing); if (m) out.push(m);
+      return out;
+    }
+    const models = d.loaded.map((l) => h("span", { style: { marginRight: "12px" } }, h("b", null, varLabel(l.variable)), ` ${l.model_id} ${l.model_version} `, l.calibrated ? chip("CALIBRATED", "ok") : chip("UNVALIDATED", "warn", "The model's 80 % interval has not passed the calibration check on its holdout")));
+    out.push(h("div", { class: "note" }, "Loaded: ", models.length ? models : DASH));
+    if (d.status === "not_applicable") {
+      out.push(stateBox("unknown", "ML MODEL NOT APPLICABLE HERE", d.reason || "the API gave no reason"));
+      const m = missingList(d.missing); if (m) out.push(m);
+      return out;
+    }
+    const v = qualityState.mlVariable, unit = varUnit(v), digits = VARS[v]?.digits ?? 1;
+    const steps = (d.series?.steps || []).filter((s) => s.values?.[v]);
+    if (!steps.length) {
+      out.push(stateBox("unknown", "NO ML BAND FOR THIS VARIABLE", d.missing?.[v] || "the model returned no steps for this variable"));
+      return out;
+    }
+    const dsp = (val) => (val === null || val === undefined ? null : toDisplay(v, val));
+    const x = steps.map((s) => Math.round(toMs(s.valid_time_utc) / 1000));
+    const tz = vehicleTimezone().tz, utc = session.timeBasis === "utc";
+    const nowS = effectiveTimeMs() / 1000;
+    const div = h("div", { class: "chart" });
+    charts.add(div, { x, tz, utc, height: 220, yLabel: `${varLabel(v)} (${unit})`, boundarySec: nowS >= x[0] && nowS <= x[x.length - 1] ? nowS : null, boundaryLabels: ["PAST", "FUTURE"], fans: [{ upper: 1, lower: 0 }], series: [
+      { label: "P10", unit, color: "--series-4", kind: "edge", values: steps.map((s) => dsp(s.values[v].uncertainty?.lower)), digits },
+      { label: "P90", unit, color: "--series-4", kind: "edge", values: steps.map((s) => dsp(s.values[v].uncertainty?.upper)), digits },
+      { label: "P50", unit, color: "--series-4", kind: "fcst", values: steps.map((s) => dsp(s.values[v].value)), digits },
+    ] });
+    out.push(div);
+    out.push(styleLegend([{ color: "--series-4", kind: "fcst", text: "ML P50; shaded band = P10 to P90 (80 % interval)" }]));
+    const unval = steps.some((s) => s.values[v].quality === "unvalidated");
+    out.push(h("div", { class: "note" }, kindChip("forecast"), " Statistical post-processing of an upstream forecast, not an observation.", unval ? h("b", { style: { color: "var(--warn)" } }, " UNVALIDATED: the interval is not calibrated; do not read it as an 80 % probability.") : null));
+    const m = missingList(d.missing); if (m) out.push(m);
+    return out;
+  }, { label: "ML bands", blockedNode: () => positionUnknown() });
+  const d = r.data, v = qualityState.mlVariable;
+  const first = d?.series?.steps?.find((s) => s.values?.[v]);
+  const foot = first ? provFooter(first.values[v].provenance, first.values[v].provenance?.processing || "") : null;
+  return panel("ML quantile bands (EXPERIMENTAL, ADR 0008)", body, { right: sel, footer: foot });
 }
 
 /* ------------------------------------------------------------------ models */

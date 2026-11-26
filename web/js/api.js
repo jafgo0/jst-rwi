@@ -377,6 +377,8 @@ export const api = {
   ensemble: ({ variable, lat, lon, hours }) => request("/api/forecast/ensemble", { params: { variable, lat, lon, hours }, timeoutMs: 60000 }),
   /** Several numerical models side by side. @returns {Promise<ModelComparison>} */
   models: ({ variable, lat, lon, hours, models }) => request("/api/forecast/models", { params: { variable, lat, lon, hours, models: models?.join(",") }, timeoutMs: 90000 }),
+  /** EXPERIMENTAL (ADR 0008): ML P10/P50/P90, or status "no_model"/"not_applicable" with the reason. */
+  mlBands: ({ variable, lat, lon, hours }) => request("/api/ml/bands", { params: { variables: variable, lat, lon, hours }, timeoutMs: 60000 }),
   /** Operator action: runs one capture cycle NOW. Makes real provider calls. @returns {Promise<CaptureResult>} */
   capture: (sites) => request("/api/forecast/capture", { method: "POST", params: { sites }, timeoutMs: 180000 }),
   /** GET /api/regulations: verified BWSC 2027 limits and what is not yet published. */
@@ -393,7 +395,7 @@ export const api = {
 export const ENDPOINTS = [
   "GET /api/health", "GET /api/state", "POST /api/state/position", "POST /api/state/time",
   "GET /api/solar/position", "GET /api/solar/day", "GET /api/solar/clearsky/day",
-  "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations", "GET /api/forecast/archive", "GET /api/forecast/verification", "GET /api/forecast/ensemble", "GET /api/forecast/models", "POST /api/forecast/capture",
+  "GET /api/weather/forecast", "GET /api/weather/observable", "GET /api/weather/observations", "GET /api/forecast/archive", "GET /api/forecast/verification", "GET /api/forecast/ensemble", "GET /api/forecast/models", "POST /api/forecast/capture", "GET /api/ml/bands",
   "GET /api/route", "GET /api/route/{id}/geojson", "GET /api/route/{id}/progress", "GET /api/route/{id}/trajectory", "GET /api/route/{id}/weather",
   "GET /api/energy/forecast", "GET /api/strategy/scenarios", "GET /api/regulations", "GET /api/alerts",
   "GET /api/meteorologist/morning-briefing", "GET /api/meteorologist/risk-ahead", "GET /api/meteorologist/forecast-reliability", "POST /api/meteorologist/ask",

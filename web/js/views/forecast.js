@@ -9,8 +9,8 @@ import { h, replace } from "../dom.js";
 import { DASH, fmtNum, fmtUtc, VARS, varLabel, varUnit, toMs, fmtDuration } from "../format.js";
 import { panel, kindChip, chip, withResource, positionUnknown, stateBox, valueCell, textCell, ageSpan, table } from "../ui.js";
 import { res, activePoint, vehicleTimezone, effectiveTimeMs, session, setSession, signature, notify } from "../store.js";
-import { loadForecast, loadObservations, nearestStep, loadArchive, loadVerification, loadEnsemble, loadModels } from "../loaders.js";
-import { qualityState, qualitySignature, verificationPanel, ensemblePanel, modelsPanel } from "./forecastquality.js";
+import { loadForecast, loadObservations, nearestStep, loadArchive, loadVerification, loadEnsemble, loadModels, loadMlBands } from "../loaders.js";
+import { qualityState, qualitySignature, verificationPanel, ensemblePanel, modelsPanel, mlBandsPanel } from "./forecastquality.js";
 import { chartHost, styleLegend } from "../charts.js";
 import { alignMaps, pointsOf } from "../seriesutil.js";
 
@@ -46,9 +46,9 @@ export function create(root) {
     update() {
       syncProviders();
       loadForecast({ hours: session.forecastHours, provider: session.provider }); loadObservations({ hours: 24 });
-      loadArchive(); loadVerification({ days: qualityState.days }); loadEnsemble({ variable: qualityState.ensembleVariable, hours: session.forecastHours }); loadModels({ variable: qualityState.modelVariable, hours: session.forecastHours });
+      loadArchive(); loadVerification({ days: qualityState.days }); loadEnsemble({ variable: qualityState.ensembleVariable, hours: session.forecastHours }); loadModels({ variable: qualityState.modelVariable, hours: session.forecastHours }); loadMlBands({ variable: qualityState.mlVariable, hours: session.forecastHours });
       for (const p of cmpState.providers) loadForecast({ hours: session.forecastHours, provider: p, key: "cmp:" + p });
-      const sig = signature(["state", "forecast", "observations", "observable", "health", "archive", "verification", "ensemble", "models", ...cmpState.providers.map((p) => "cmp:" + p)], cmpState.variable + cmpState.providers.join() + qualitySignature());
+      const sig = signature(["state", "forecast", "observations", "observable", "health", "archive", "verification", "ensemble", "models", "mlbands", ...cmpState.providers.map((p) => "cmp:" + p)], cmpState.variable + cmpState.providers.join() + qualitySignature());
       if (sig === lastSig) return;
       lastSig = sig; charts.destroyAll();
       replace(body, layout(charts, () => { lastSig = ""; }));
@@ -74,7 +74,7 @@ function layout(charts, invalidate) {
   const nowS = effectiveTimeMs() / 1000;
   const { tz } = vehicleTimezone(); const utc = session.timeBasis === "utc";
   for (const c of CHARTS) grid.append(chartPanel(c, fc.data, ob.data, nowS, tz, utc, charts));
-  wrap.append(grid, ensemblePanel(charts), modelsPanel(charts), verificationPanel(), comparePanel(charts, invalidate));
+  wrap.append(grid, ensemblePanel(charts), mlBandsPanel(charts), modelsPanel(charts), verificationPanel(), comparePanel(charts, invalidate));
   return wrap;
 }
 
