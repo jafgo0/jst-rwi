@@ -138,6 +138,14 @@ export async function loadEnsemble({ variable = "ghi", hours = 48, force = false
     () => api.ensemble({ variable, lat: p.lat, lon: p.lon, hours }));
 }
 
+/** EXPERIMENTAL ML quantile bands at the active position (ADR 0008). */
+export async function loadMlBands({ variable = "ghi", hours = 48, force = false } = {}) {
+  const p = activePoint();
+  if (!p) { block("mlbands", NO_POS, "GET /api/ml/bands"); return; }
+  return load("mlbands", { endpoint: "GET /api/ml/bands", paramsKey: `${posKey(p)}|${variable}|${hours}|${timeKey()}`, ttlMs: 300000, force },
+    () => api.mlBands({ variable, lat: p.lat, lon: p.lon, hours }));
+}
+
 /** Several numerical models for one variable at the active position. */
 export async function loadModels({ variable = "cloud_cover", hours = 48, force = false } = {}) {
   const p = activePoint();
