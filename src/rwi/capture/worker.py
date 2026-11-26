@@ -22,7 +22,9 @@ import asyncio
 import logging
 import random
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -176,6 +178,110 @@ class CaptureResult(BaseModel):
         )
 
 
+@dataclass
+class GriddedCapture:
+    """A gridded forecast provider (e.g. AIFS) and the state the worker owns for it.
+
+    Gridded runs are downloaded once per init time and then interpolated to
+    every site, so they are captured sequentially after the per-site work:
+    concurrent sites would each start the same download. The worker owns the
+    run cache and the download directory so that months of capture keep
+    neither every run in memory nor every GRIB file on disk.
+    """
+
+    name: str
+    provider: Any
+    run_cache: dict[datetime, Any] = field(default_factory=dict)
+    download_dir: Path | None = None
+    keep_runs: int = 2
+
+    def tidy(self) -> None:
+        """Drop all but the newest runs from memory and decoded GRIB files from disk."""
+        for init in sorted(self.run_cache)[: -self.keep_runs or None]:
+            del self.run_cache[init]
+        if self.download_dir is not None and self.download_dir.is_dir():
+            for grib in self.download_dir.glob("*.grib2"):
+                try:
+                    grib.unlink()
+                except OSError as exc:
+                    logger.warning("could not remove %s: %s", grib, exc)
+
+
+def aifs_capture(settings: Settings, sites: Sequence[CaptureSite]) -> GriddedCapture:
+    """The ECMWF AIFS open-data feed over a bbox around ``sites`` (network on use)."""
+    from rwi.providers.ecmwf_aifs import AifsOpenDataSource
+    from rwi.providers.gridded import BBox, GriddedProvider
+
+    download_dir = settings.cache_dir / "aifs-capture"
+    run_cache: dict[datetime, Any] = {}
+    bbox = BBox.around([s.point for s in sites], settings.capture_aifs_margin_deg)
+    provider = GriddedProvider(
+        AifsOpenDataSource(download_dir=download_dir), bbox, settings, run_cache=run_cache
+    )
+    return GriddedCapture(
+        name="ecmwf-aifs", provider=provider, run_cache=run_cache, download_dir=download_dir
+    )
+
+
+async def _capture_gridded(
+    *,
+    gridded: GriddedCapture,
+    sites: Sequence[CaptureSite],
+    archive: Any,
+    variables: Sequence[str],
+    forecast_hours: float,
+    now: datetime,
+) -> tuple[dict[str, SiteOutcome], list[str]]:
+    """Capture one gridded provider at every site; one run download per cycle at most."""
+    window = TimeWindow(start_utc=now, end_utc=now + timedelta(hours=forecast_hours))
+    supported = gridded.provider.capabilities.variables
+    wanted = [v for v in variables if v in supported]
+    per_site: dict[str, SiteOutcome] = {}
+    notes: list[str] = []
+    any_fetched = False
+    for site in sites:
+        try:
+            series = await gridded.provider.fetch_forecast(site.point, window, wanted)
+        except Exception as exc:
+            per_site[site.id] = SiteOutcome(
+                site_id=site.id,
+                failures=(f"{site.id}/{gridded.name}: {type(exc).__name__}: {exc}",),
+            )
+            if not any_fetched:
+                # The run itself is unavailable; retrying per site would only
+                # repeat the same download.
+                notes.append(
+                    f"{gridded.name}: no run this cycle, remaining sites not attempted"
+                )
+                break
+            continue
+        any_fetched = True
+        label = f"{gridded.name}/{series.model_name or series.dataset}"
+        try:
+            rows = archive.record_series(series)
+        except Exception as exc:
+            per_site[site.id] = SiteOutcome(
+                site_id=site.id,
+                failures=(f"{site.id}/{gridded.name}: archive: {type(exc).__name__}: {exc}",),
+            )
+            continue
+        per_site[site.id] = SiteOutcome(
+            site_id=site.id, forecast_rows=rows, models_captured=(label,)
+        )
+    gridded.tidy()
+    return per_site, notes
+
+
+def _merge(a: SiteOutcome, b: SiteOutcome) -> SiteOutcome:
+    return a.model_copy(
+        update={
+            "forecast_rows": a.forecast_rows + b.forecast_rows,
+            "models_captured": a.models_captured + b.models_captured,
+            "failures": a.failures + b.failures,
+        }
+    )
+
+
 async def _capture_site(
     *,
     site: CaptureSite,
@@ -261,6 +367,7 @@ async def capture_once(
     forecast_hours: float = 48.0,
     now: datetime | None = None,
     max_concurrency: int = 3,
+    gridded: Sequence[GriddedCapture] = (),
 ) -> CaptureResult:
     """Run one capture cycle across every site. Never raises on a partial failure."""
     started = now or utc_now()
@@ -280,7 +387,20 @@ async def capture_once(
             for site in sites
         )
     )
+    outcomes = list(outcomes)
     notes: list[str] = []
+    for g in gridded:
+        per_site, g_notes = await _capture_gridded(
+            gridded=g,
+            sites=sites,
+            archive=archive,
+            variables=variables,
+            forecast_hours=forecast_hours,
+            now=started,
+        )
+        notes.extend(g_notes)
+        outcomes = [_merge(o, per_site[o.site_id]) if o.site_id in per_site else o
+                    for o in outcomes]
     if not any(o.observation_series for o in outcomes):
         notes.append(
             "no observation source answered this cycle: without measurements no forecast can "
@@ -294,7 +414,7 @@ async def capture_once(
     result = CaptureResult(
         started_at_utc=started,
         finished_at_utc=utc_now(),
-        outcomes=list(outcomes),
+        outcomes=outcomes,
         notes=notes,
     )
     logger.info("capture cycle: %s", result.summary())
@@ -342,6 +462,7 @@ async def run_forever(
     settings: Settings | None = None,
     sites: Sequence[CaptureSite] = DEFAULT_SITES,
     stop: asyncio.Event | None = None,
+    gridded: Sequence[GriddedCapture] = (),
 ) -> None:
     """Capture on a fixed interval until stopped.
 
@@ -361,6 +482,7 @@ async def run_forever(
             providers=providers,
             sites=sites,
             forecast_hours=config.capture_forecast_hours,
+            gridded=gridded,
         )
         enforce_retention(archive, config)
         consecutive_failures = 0 if result.succeeded else consecutive_failures + 1

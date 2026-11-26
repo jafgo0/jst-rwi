@@ -63,6 +63,27 @@ composition can change without notice, so a skill score computed from it would
 not describe any model that exists, and it could not tell the team which model
 to trust in central Australia — which is the question verification is for.
 
+#### Native ECMWF AIFS (ADR 0008)
+
+With `RWI_CAPTURE_AIFS=true` (or `--aifs`) the worker also archives the ECMWF
+AIFS open-data GRIB feed (`rwi.providers.ecmwf_aifs`) at every site, labelled
+`ecmwf-aifs/<model>` in `models_captured`. It is off by default because each new
+6-hourly run is a download of tens of MB. Mechanics:
+
+- One download per run, not per site: gridded capture runs after the per-site
+  work and interpolates the same run to every site; a later cycle within the
+  same run reuses it from memory. With `--once` from cron nothing persists
+  between processes, so every hourly invocation downloads again — prefer the
+  long-running loop for AIFS.
+- Only the variables the feed carries are requested; the rest of the variable
+  list is not counted as a failure.
+- If the run cannot be fetched, that is one recorded failure plus a note, and
+  the remaining sites are not retried; the Open-Meteo capture is unaffected.
+- The worker keeps the two newest runs in memory and deletes decoded GRIB files
+  from `cache_dir/aifs-capture` after every cycle.
+- Downloading needs `ecmwf-opendata` (the `[ml]` extra); without it every cycle
+  records a `ProviderUnavailableError` failure rather than inventing values.
+
 ### The model-run-time problem (measured and then resolved, 2026-11-02)
 
 A capture of 3,600 forecast values across `ecmwf_ifs025`, `gfs_seamless` and

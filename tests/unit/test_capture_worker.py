@@ -323,3 +323,136 @@ def test_retention_is_not_requested_below_the_size_limit() -> None:
     archive = PruningArchive()
     enforce_retention(archive)
     assert archive.calls[0]["only_above_bytes"] is not None
+
+
+# -- gridded (AIFS) capture --------------------------------------------------
+
+
+class FakeGriddedSource:
+    """A GriddedSource that builds a synthetic run instead of downloading one."""
+
+    provider = "ecmwf"
+    dataset = "fake-aifs"
+    fields = frozenset({"temperature_2m"})
+    max_forecast_hours = 60.0
+    spatial_resolution_km = 28.0
+    license = "test"
+    documentation_url = "https://example.invalid"
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.downloads = 0
+
+    def latest_init_time(self, now: datetime) -> datetime:
+        return now - timedelta(hours=6)
+
+    async def fetch_run(
+        self, init_time: datetime, steps_h: Any, fields: Any, bbox: Any
+    ) -> Any:
+        import numpy as np
+
+        from rwi.providers.gridded import GriddedRun
+
+        self.downloads += 1
+        if self.fail:
+            raise ConnectionError("open-data server unreachable")
+        lats = np.arange(-36.0, -9.0, 1.0)
+        lons = np.arange(128.0, 141.0, 1.0)
+        times = tuple(init_time + timedelta(hours=h) for h in range(0, 61, 6))
+        return GriddedRun(
+            provider=self.provider,
+            dataset=self.dataset,
+            kind=DataKind.SIMULATION,
+            model_name="fake-aifs",
+            model_version="1",
+            init_time_utc=init_time,
+            retrieved_at_utc=NOW,
+            valid_times_utc=times,
+            latitudes=lats,
+            longitudes=lons,
+            fields={"temperature_2m": np.full((len(times), lats.size, lons.size), 25.0)},
+            spatial_resolution_km=self.spatial_resolution_km,
+            license=self.license,
+            source_url=None,
+        )
+
+
+def _gridded(source: FakeGriddedSource, tmp_path: Any) -> Any:
+    from rwi.capture.worker import GriddedCapture
+    from rwi.config import Settings
+    from rwi.providers.gridded import BBox, GriddedProvider
+
+    cache: dict[datetime, Any] = {}
+    provider = GriddedProvider(
+        source,
+        BBox(south=-35.0, north=-10.0, west=129.0, east=139.0),
+        Settings(_env_file=None, cache_dir=tmp_path),
+        run_cache=cache,
+        clock=lambda: NOW,
+    )
+    return GriddedCapture(name="ecmwf-aifs", provider=provider, run_cache=cache)
+
+
+async def test_a_gridded_run_is_downloaded_once_and_archived_at_every_site(tmp_path: Any) -> None:
+    archive = FakeArchive()
+    source = FakeGriddedSource()
+    sites = sites_from_ids(["tennant-creek", "alice-springs"])
+    result = await capture_once(
+        archive=archive,
+        providers={"open-meteo": FakeForecastProvider()},
+        sites=sites,
+        models=("ecmwf_ifs025",),
+        now=NOW,
+        gridded=[_gridded(source, tmp_path)],
+    )
+    assert source.downloads == 1
+    assert result.failures == []
+    for outcome in result.outcomes:
+        assert outcome.models_captured == ("ecmwf_ifs025", "ecmwf-aifs/fake-aifs")
+    aifs = [s for s in archive.recorded if s.model_name == "fake-aifs"]
+    assert len(aifs) == 2
+    # Only what the source carries is asked for; the rest of CAPTURE_VARIABLES
+    # is not a failure of the gridded provider.
+    assert all(set(step.values) == {"temperature_2m"} for s in aifs for step in s.steps)
+    assert all(s.kind is not DataKind.OBSERVATION for s in aifs)
+
+
+async def test_an_unavailable_gridded_run_is_one_failure_not_a_lost_cycle(tmp_path: Any) -> None:
+    source = FakeGriddedSource(fail=True)
+    result = await capture_once(
+        archive=FakeArchive(),
+        providers={"open-meteo": FakeForecastProvider()},
+        sites=sites_from_ids(["tennant-creek", "alice-springs"]),
+        models=("ecmwf_ifs025",),
+        now=NOW,
+        gridded=[_gridded(source, tmp_path)],
+    )
+    assert source.downloads == 1
+    assert result.succeeded
+    assert len(result.failures) == 1 and "ecmwf-aifs" in result.failures[0]
+    assert any("no run this cycle" in n for n in result.notes)
+
+
+def test_tidy_keeps_only_the_newest_runs_and_drops_grib_files(tmp_path: Any) -> None:
+    from rwi.capture.worker import GriddedCapture
+
+    (tmp_path / "aifs_20270823T00Z.grib2").write_bytes(b"x")
+    cache = {NOW - timedelta(hours=6 * i): object() for i in range(4)}
+    g = GriddedCapture(name="x", provider=None, run_cache=cache, download_dir=tmp_path)
+    g.tidy()
+    assert sorted(cache) == [NOW - timedelta(hours=6), NOW]
+    assert not list(tmp_path.glob("*.grib2"))
+
+
+def test_aifs_capture_covers_every_site_without_touching_the_network(tmp_path: Any) -> None:
+    from rwi.capture.worker import aifs_capture
+    from rwi.config import Settings
+
+    settings = Settings(_env_file=None, cache_dir=tmp_path)
+    assert settings.capture_aifs is False
+    g = aifs_capture(settings, DEFAULT_SITES)
+    box = g.provider.bbox
+    for s in DEFAULT_SITES:
+        assert box.south < s.point.latitude_deg < box.north
+        assert box.west < s.point.longitude_deg < box.east
+    assert g.download_dir == tmp_path / "aifs-capture"

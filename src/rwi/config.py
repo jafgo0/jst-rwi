@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     capture_forecast_hours: float = 48.0
     capture_jitter_s: float = 60.0
     capture_max_failures: int = 10
+    # Archive ECMWF AIFS (native open-data GRIB) next to the Open-Meteo models
+    # (ADR 0008: the AIFS verification history must start as early as possible).
+    # Off by default: each new 6-hourly run is a download of tens of MB.
+    capture_aifs: bool = False
+    capture_aifs_margin_deg: float = 1.0
 
     # Operations
     log_level: str = "INFO"
