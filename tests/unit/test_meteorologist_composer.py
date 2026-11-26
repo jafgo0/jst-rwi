@@ -277,6 +277,19 @@ def test_morning_briefing_degrades_gracefully_when_convection_unavailable() -> N
     assert "CIN" in " ".join(briefing.warnings_and_limits)
 
 
+def test_unknown_convection_is_never_reported_as_calm() -> None:
+    """Missing indices must read as UNKNOWN, not as a quiet day (§12)."""
+    ctx = _empty_ctx()
+    ctx.convection = ToolResult.unavailable("position okänd")
+    briefing = compose(QuestionKind.MORNING_BRIEFING, ctx, asked_at=NOW)
+    consequences = " ".join(briefing.operational_consequences)
+    assert "Standarddrift" not in consequences
+    assert "inget konvektionshot" not in consequences
+    assert "OKÄND" in consequences
+    # The assessment names why, not a generic "saknad data".
+    assert "(position okänd)" in briefing.assessment
+
+
 def test_free_form_through_deterministic_composer_is_refused() -> None:
     with pytest.raises(ValueError, match="free-form"):
         compose(QuestionKind.FREE_FORM, _empty_ctx(), asked_at=NOW)
