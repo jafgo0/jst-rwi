@@ -391,7 +391,7 @@ export function create(root) {
 
   function timeText(t) {
     if (!t) return DASH;
-    const tz = vehicleTimezone();
+    const { tz } = vehicleTimezone();
     const local = tz ? ` · ${fmtLocal(t, tz, { timeOnly: false })} lokal` : "";
     const lead = Math.round((Date.parse(t) - nowMs()) / 3600000);
     const rel = lead === 0 ? "nu" : lead > 0 ? `+${lead} h` : `${lead} h`;
