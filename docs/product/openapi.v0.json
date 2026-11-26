@@ -1297,6 +1297,138 @@
         ],
         "type": "object"
       },
+      "MlBands": {
+        "properties": {
+          "loaded": {
+            "items": {
+              "$ref": "#/components/schemas/MlLoadedModel"
+            },
+            "type": "array"
+          },
+          "missing": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherSeries"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "no_model",
+              "not_applicable"
+            ],
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "variables"
+        ],
+        "type": "object"
+      },
+      "MlLoadedModel": {
+        "properties": {
+          "calibrated": {
+            "type": "boolean"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "model_id",
+          "model_version",
+          "calibrated"
+        ],
+        "type": "object"
+      },
+      "MlModelScore": {
+        "properties": {
+          "calibrated": {
+            "type": "boolean"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "n_holdout": {
+            "type": "integer"
+          },
+          "n_train": {
+            "type": "integer"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "training_cutoff_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "model_version",
+          "variable",
+          "target_kind",
+          "training_cutoff_utc",
+          "calibrated",
+          "n_train",
+          "n_holdout",
+          "metrics"
+        ],
+        "type": "object"
+      },
       "ModelComparison": {
         "properties": {
           "disagreements": {

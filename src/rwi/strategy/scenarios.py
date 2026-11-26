@@ -72,6 +72,7 @@ from rwi.regulations import (
     check_speed,
 )
 from rwi.strategy.segments import (
+    GenerationBand,
     SegmentConditions,
     attach_generation,
     generation_index,
@@ -79,6 +80,7 @@ from rwi.strategy.segments import (
     scale_wind,
     segments_from_distance,
     segments_from_trajectory,
+    select_generation_band,
     total_distance_m,
 )
 from rwi.vehicle.battery import (
@@ -141,6 +143,14 @@ _UNCERTAINTY_METHOD_NOTE: Final[str] = (
     "(1 + f); the optimistic case uses (1 + f) and (1 - f). Because a stronger tailwind helps, "
     "the wind part is a perturbation of the forecast magnitude, not a bound on the outcome. "
     "No confidence level can be attached to it."
+)
+
+_BAND_METHOD_NOTE: Final[str] = (
+    "Where segments carry an ML generation band (ADR 0008), the pessimistic case uses the P10 "
+    "and the optimistic case the P90 of generation instead of (1 -/+ f) scaling. Each is a "
+    "per-segment quantile: summing per-segment P10s over a leg is NOT the P10 of the leg "
+    "total (errors along a leg are correlated in unknown ways), so the case is a calibrated "
+    "per-step stress, still not a probability for the whole plan."
 )
 
 
@@ -387,14 +397,20 @@ def _perturb(
 
     Pessimistic: generation x (1 - f), wind speed x (1 + f).
     Optimistic:  generation x (1 + f), wind speed x (1 - f).
-    See :data:`_UNCERTAINTY_METHOD_NOTE` for why this is a sensitivity sweep
-    and not a bound.
+    A segment with an ML generation band uses its P10 (pessimistic) or P90
+    (optimistic) instead of the generation scaling; wind is scaled either way.
+    See :data:`_UNCERTAINTY_METHOD_NOTE` and :data:`_BAND_METHOD_NOTE`.
     """
-    gen_factor = 1.0 - fraction if pessimistic else 1.0 + fraction
+    gen_factor = max(1.0 - fraction if pessimistic else 1.0 + fraction, 0.0)
     wind_factor = 1.0 + fraction if pessimistic else 1.0 - fraction
-    return scale_wind(
-        scale_generation(segments, max(gen_factor, 0.0)), max(wind_factor, 0.0)
-    )
+    band: GenerationBand = "p10" if pessimistic else "p90"
+    perturbed: list[SegmentConditions] = []
+    for segment in segments:
+        if segment.has_generation_band:
+            perturbed.extend(select_generation_band([segment], band))
+        else:
+            perturbed.extend(scale_generation([segment], gen_factor))
+    return scale_wind(perturbed, max(wind_factor, 0.0))
 
 
 def _speed_cap_kmh(
@@ -437,6 +453,7 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
     regeneration: RegenerationPolicy = "none",
     event_class: EventClass = EventClass.CHALLENGER,
     uncertainty_fraction: float = 0.0,
+    generation_band: GenerationBand = "p50",
     extra_assumptions: Mapping[str, AssumptionValue] | None = None,
     case: str = "base",
     now_utc: datetime | None = None,
@@ -477,6 +494,13 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
         When > 0, the pessimistic and optimistic cases of
         :func:`scenario_sensitivity` are run and their outcomes recorded in
         ``assumptions`` and ``uncertainty_notes``.
+    generation_band:
+        Which quantile of an ML generation band (ADR 0008) the base case
+        integrates: ``"p50"`` (default), ``"p10"`` (plan against a dull day) or
+        ``"p90"``. Only segments that carry a band are affected; without bands
+        the result is identical to before. When bands exist the
+        pessimistic/optimistic sweep runs even at ``uncertainty_fraction=0``,
+        using P10/P90 for generation.
     case:
         Label for a sensitivity run; ``"base"`` is the real evaluation. Used
         internally to stop the sweep recursing.
@@ -508,6 +532,9 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
     )
     if generation is not None:
         resolved = attach_generation(resolved, generation, as_energy_wh=generation_as_energy_wh)
+    banded_segments = sum(1 for s in resolved if s.has_generation_band)
+    banded = resolved  # kept with its bands for the sensitivity sweep
+    resolved = select_generation_band(resolved, generation_band)
 
     violations: list[ScenarioConstraintViolation] = []
 
@@ -735,6 +762,8 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
         "regulations_version": REGULATIONS_VERSION,
         "battery_round_trip_efficiency_applied": "charge side only, once",
         "uncertainty_fraction": float(uncertainty_fraction),
+        "generation_band": generation_band,
+        "generation_band_segments": float(banded_segments),
         "quasi_static": True,
         "inertial_term_included": False,
         "traffic_modelled": False,
@@ -762,7 +791,12 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
             "faster plan, or charging later, would capture some of it."
         )
 
-    if case == "base" and uncertainty_fraction > 0.0:
+    if case == "base" and banded_segments == 0 and generation_band != "p50":
+        uncertainty_notes.append(
+            f"generation_band={generation_band} was requested but no segment carries an ML "
+            "generation band, so the P50/deterministic generation was used."
+        )
+    if case == "base" and (uncertainty_fraction > 0.0 or banded_segments > 0):
         shared: dict[str, Any] = {
             "name": name,
             "description": description,
@@ -783,13 +817,13 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
             "now_utc": now_utc,
         }
         pessimistic = evaluate_scenario(
-            segments=_perturb(resolved, uncertainty_fraction, pessimistic=True),
+            segments=_perturb(banded, uncertainty_fraction, pessimistic=True),
             uncertainty_fraction=0.0,
             case="pessimistic",
             **shared,
         )
         optimistic = evaluate_scenario(
-            segments=_perturb(resolved, uncertainty_fraction, pessimistic=False),
+            segments=_perturb(banded, uncertainty_fraction, pessimistic=False),
             uncertainty_fraction=0.0,
             case="optimistic",
             **shared,
@@ -805,6 +839,12 @@ def evaluate_scenario(  # one explicit, readable integration loop; do not split 
             }
         )
         uncertainty_notes.append(_UNCERTAINTY_METHOD_NOTE)
+        if banded_segments:
+            uncertainty_notes.append(_BAND_METHOD_NOTE)
+            uncertainty_notes.append(
+                f"{banded_segments} of {len(banded)} segments carry an ML generation band; "
+                f"the base case uses its {generation_band.upper()}."
+            )
         uncertainty_notes.append(
             f"Sensitivity at f={uncertainty_fraction:.0%}: end SoC "
             f"{pessimistic.end_soc_fraction:.1%} (pessimistic) to "
@@ -855,7 +895,9 @@ def scenario_sensitivity(
     The sweep is deliberately crude and completely explicit: generation is
     scaled by ``1 -/+ f`` and wind speed by ``1 +/- f``. It is a sensitivity
     study, not a probabilistic forecast, and no confidence level may be derived
-    from it. See :data:`_UNCERTAINTY_METHOD_NOTE`.
+    from it. See :data:`_UNCERTAINTY_METHOD_NOTE`. Segments carrying an ML
+    generation band use their P10/P90 for generation instead
+    (:data:`_BAND_METHOD_NOTE`); pass ``generation_band=`` to choose the base.
 
     ``segments`` is required here (a sweep must perturb concrete segments), and
     the remaining keyword arguments are those of :func:`evaluate_scenario`.
