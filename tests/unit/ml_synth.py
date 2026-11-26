@@ -10,8 +10,9 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
-from rwi.contracts import ForecastObservationPair
+from rwi.contracts import ForecastObservationPair, WeatherSeries, WeatherStep
 from rwi.core.geo import GeoPoint
+from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag
 from rwi.ml.features import solar_context
 
 # Test fixture only: a Stuart Highway location (Tennant Creek).
@@ -94,3 +95,28 @@ def require_lightgbm() -> None:
         import lightgbm  # noqa: F401
     except (ImportError, OSError) as exc:
         pytest.skip(f"lightgbm unavailable: {exc}", allow_module_level=True)
+
+
+def upstream_ghi(day: int = 27) -> WeatherSeries:
+    """A 25 h open-meteo GHI forecast at POINT initialised ``day`` days after START."""
+    init = START + timedelta(days=day)
+    steps = []
+    for h in range(0, 25):
+        t = init + timedelta(hours=h)
+        prov = Provenance(
+            provider="open-meteo", dataset="forecast", kind=DataKind.FORECAST,
+            retrieved_at_utc=init, valid_time_utc=t, model_name="best_match",
+            model_init_time_utc=init, point=POINT,
+        )
+        value = 600.0 if 1 <= h <= 9 else 0.0
+        steps.append(
+            WeatherStep(
+                valid_time_utc=t,
+                values={"ghi": Measured(variable="ghi", value=value, unit="W/m2",
+                                        provenance=prov, quality=QualityFlag.OK)},
+            )
+        )
+    return WeatherSeries(
+        point=POINT, provider="open-meteo", dataset="forecast", kind=DataKind.FORECAST,
+        model_name="best_match", model_init_time_utc=init, retrieved_at_utc=init, steps=steps,
+    )

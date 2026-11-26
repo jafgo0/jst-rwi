@@ -55,6 +55,8 @@ TIER_BY_PREFIX: Final[dict[str, ProductTier]] = {
     # in its own repository, so the strategy endpoints here are a
     # preview of the integration surface.
     "/api/strategy": ProductTier.EXPERIMENTAL,
+    # ADR 0008 phase 3: ML quantile bands, not yet promoted to /api/weather.
+    "/api/ml": ProductTier.EXPERIMENTAL,
     # INTERNAL: operator/UI/health. Not part of the product.
     "/api/validation": ProductTier.INTERNAL,
     "/api/satellite": ProductTier.INTERNAL,

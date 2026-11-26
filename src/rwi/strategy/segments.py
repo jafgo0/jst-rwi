@@ -18,20 +18,28 @@ Validation status: implemented, not validated.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rwi.contracts import Trajectory
+from rwi.core.provenance import Measured
+
+GenerationBand = Literal["p10", "p50", "p90"]
 
 __all__ = [
+    "GenerationBand",
     "SegmentConditions",
     "attach_generation",
+    "attach_generation_band",
+    "generation_band_from_ghi",
     "generation_index",
+    "ghi_band_ratios",
     "scale_generation",
     "scale_wind",
     "segments_from_distance",
     "segments_from_trajectory",
+    "select_generation_band",
     "total_distance_m",
 ]
 
@@ -69,6 +77,17 @@ class SegmentConditions(BaseModel):
         description="energy generated while traversing the segment, Wh; a fixed figure that does "
         "NOT change with the speed driven - only use it when that is what you mean",
     )
+    generation_p10_w: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="P10 of the mean net array power over the segment, W (ADR 0008); only "
+        "meaningful next to generation_w, which is then the P50",
+    )
+    generation_p90_w: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="P90 of the mean net array power over the segment, W (ADR 0008)",
+    )
     speed_limit_kmh: float | None = Field(
         default=None, gt=0.0, description="posted legal limit on this segment, km/h"
     )
@@ -87,7 +106,19 @@ class SegmentConditions(BaseModel):
                 "set generation_w (mean power) or generation_wh (fixed energy), not both: "
                 "they answer different questions about how generation scales with speed"
             )
+        if (self.generation_p10_w is None) != (self.generation_p90_w is None):
+            raise ValueError("set both generation_p10_w and generation_p90_w, or neither")
+        if self.generation_p10_w is not None and self.generation_p90_w is not None:
+            if self.generation_w is None:
+                raise ValueError("a generation band needs generation_w as its P50")
+            if not self.generation_p10_w <= self.generation_w <= self.generation_p90_w:
+                raise ValueError("generation band must satisfy P10 <= generation_w <= P90")
         return self
+
+    @property
+    def has_generation_band(self) -> bool:
+        """True when P10 and P90 generation are attached to this segment."""
+        return self.generation_p10_w is not None and self.generation_p90_w is not None
 
 
 def total_distance_m(segments: Sequence[SegmentConditions]) -> float:
@@ -287,7 +318,10 @@ def attach_generation(
     field = "generation_wh" if as_energy_wh else "generation_w"
     other = "generation_w" if as_energy_wh else "generation_wh"
     return [
-        segment.model_copy(update={field: values[i], other: None})
+        segment.model_copy(
+            update={field: values[i], other: None, "generation_p10_w": None,
+                    "generation_p90_w": None}
+        )
         for i, segment in enumerate(segments)
     ]
 
@@ -305,7 +339,104 @@ def scale_generation(
             update["generation_w"] = segment.generation_w * factor
         if segment.generation_wh is not None:
             update["generation_wh"] = segment.generation_wh * factor
+        for band in ("generation_p10_w", "generation_p90_w"):
+            value = getattr(segment, band)
+            if value is not None:
+                update[band] = value * factor
         out.append(segment.model_copy(update=update) if update else segment)
+    return out
+
+
+def attach_generation_band(
+    segments: Sequence[SegmentConditions],
+    p10_w: Sequence[float] | float,
+    p90_w: Sequence[float] | float,
+) -> list[SegmentConditions]:
+    """Copy of ``segments`` with P10/P90 mean array power attached, W.
+
+    Aligned like :func:`attach_generation` (per segment or per boundary). Every
+    segment must already carry ``generation_w``, which is taken as the P50; the
+    band is checked to bracket it.
+    """
+    n_points = len(segments) + 1
+    lo = _align(p10_w, n_points=n_points, name="p10_w", average_endpoints=True)
+    hi = _align(p90_w, n_points=n_points, name="p90_w", average_endpoints=True)
+    out: list[SegmentConditions] = []
+    for i, segment in enumerate(segments):
+        data = segment.model_dump()
+        data.update(generation_p10_w=lo[i], generation_p90_w=hi[i])
+        out.append(SegmentConditions.model_validate(data))  # re-run the band validator
+    return out
+
+
+def ghi_band_ratios(ghi: Sequence[Measured | None]) -> tuple[list[float], list[float]]:
+    """Per-point (P10/P50, P90/P50) ratios from post-processed GHI (ADR 0008 §2).
+
+    A point without a quantile band, or with a P50 of zero (night), gets ratio
+    1.0 on both sides: no band is invented where the model gave none.
+    """
+    lower: list[float] = []
+    upper: list[float] = []
+    for m in ghi:
+        u = m.uncertainty if m is not None else None
+        p50 = m.value if m is not None else None
+        if p50 is None or p50 <= 0.0 or u is None or u.lower is None or u.upper is None:
+            lower.append(1.0)
+            upper.append(1.0)
+            continue
+        lower.append(min(max(u.lower, 0.0) / p50, 1.0))
+        upper.append(max(u.upper / p50, 1.0))
+    return lower, upper
+
+
+def generation_band_from_ghi(
+    segments: Sequence[SegmentConditions], ghi: Sequence[Measured | None]
+) -> list[SegmentConditions]:
+    """Segments with a P10/P90 generation band scaled from GHI quantiles.
+
+    Approximation, stated: array power is taken as linear in GHI, so the
+    P10/P90 of power are ``generation_w`` times the GHI quantile ratios. That
+    ignores the temperature and angle-of-incidence non-linearity; it is a band
+    width, not a re-run of the PV model. ``ghi`` is aligned like
+    :func:`attach_generation`.
+    """
+    if any(s.generation_w is None for s in segments):
+        raise ValueError("generation_band_from_ghi needs generation_w on every segment")
+    lower, upper = ghi_band_ratios(ghi)
+    n_points = len(segments) + 1
+    lo = _align(lower, n_points=n_points, name="ghi", average_endpoints=True)
+    hi = _align(upper, n_points=n_points, name="ghi", average_endpoints=True)
+    p50 = [float(s.generation_w or 0.0) for s in segments]
+    return attach_generation_band(
+        segments,
+        [p * (1.0 if r is None else r) for p, r in zip(p50, lo, strict=True)],
+        [p * (1.0 if r is None else r) for p, r in zip(p50, hi, strict=True)],
+    )
+
+
+def select_generation_band(
+    segments: Sequence[SegmentConditions], band: GenerationBand
+) -> list[SegmentConditions]:
+    """Segments whose ``generation_w`` is the chosen quantile, band fields cleared.
+
+    Segments without a band keep their ``generation_w`` whatever ``band`` says.
+    """
+    out: list[SegmentConditions] = []
+    for segment in segments:
+        if not segment.has_generation_band:
+            out.append(segment)
+            continue
+        value = {
+            "p10": segment.generation_p10_w,
+            "p50": segment.generation_w,
+            "p90": segment.generation_p90_w,
+        }[band]
+        out.append(
+            segment.model_copy(
+                update={"generation_w": value, "generation_p10_w": None,
+                        "generation_p90_w": None}
+            )
+        )
     return out
 
 

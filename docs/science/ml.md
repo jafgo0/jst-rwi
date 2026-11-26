@@ -63,6 +63,22 @@ extrapolated. Night irradiance steps are always emitted as 0.
   - `python -m rwi.ml eval --variable ghi [--version v] [--after ts]`
   - `python -m rwi.ml list`
 
+## 7a. API and strategy (phase 3, experimental)
+
+- `/api/ml/models`: every readable manifest under `RWI_MODELS_DIR` (default `data/models`).
+- `/api/ml/scores`: holdout metrics, cutoff, `calibrated` per model version.
+- `/api/ml/bands?lat&lon&hours&variables`: the latest model per variable applied to a live
+  upstream forecast. Only variables with a loaded model are fetched. The result is one of:
+  - `ok` with a `WeatherSeries` (`rwi/ml-postprocess`, kind `forecast`);
+  - `no_model` with the reason per variable, and the upstream is never called;
+  - `not_applicable` when the upstream source, init time or range falls outside training.
+
+  The answer is never an empty band.
+- Tier `experimental` (`X-Rwi-Product-Tier`). Not part of `openapi.v0.json`'s stable surface;
+  promotion into `/api/weather` needs the phase-4 validation.
+- Strategy: `rwi.strategy.segments.generation_band_from_ghi` turns these bands into segment
+  P10/P90 generation (see `docs/science/vehicle.md` §5.6a).
+
 ## 8. Nowcast (`nowcast.py`)
 
 `Nowcaster` is a Protocol. `PersistenceNowcaster` and `AdvectionNowcaster` wrap
@@ -77,6 +93,7 @@ patch around a point (its future input).
 | Leak-free split, features, constraints | tested |
 | Quantile training, artifacts, post-processor, CLI | tested on synthetic data; **skipped without libomp** |
 | K_MAX = 1.5, night = 0 | science tests |
+| `/api/ml/*`, strategy generation band | tested (API with mocked upstream) |
 | Skill on real race data | **not validated**: needs an archive with real pairs |
 
 Runtime requirement: lightgbm needs `libomp` on macOS. Without it, `lazy_lightgbm()` raises

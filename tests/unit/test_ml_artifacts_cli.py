@@ -6,10 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from ml_synth import POINT, START, ghi_pairs, require_lightgbm
+from ml_synth import START, ghi_pairs, require_lightgbm, upstream_ghi
 
-from rwi.contracts import WeatherSeries, WeatherStep
-from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag
+from rwi.core.provenance import DataKind
 from rwi.ml.__main__ import evaluate, main, retrain
 from rwi.ml.artifacts import ModelArtifactError, list_manifests, load_model
 from rwi.ml.features import feature_schema_hash
@@ -86,33 +85,9 @@ def test_retrain_without_training_rows_refuses(tmp_path: Path) -> None:
         )
 
 
-def _upstream(day: int = 27) -> WeatherSeries:
-    init = START + timedelta(days=day)
-    steps = []
-    for h in range(0, 25):
-        t = init + timedelta(hours=h)
-        prov = Provenance(
-            provider="open-meteo", dataset="forecast", kind=DataKind.FORECAST,
-            retrieved_at_utc=init, valid_time_utc=t, model_name="best_match",
-            model_init_time_utc=init, point=POINT,
-        )
-        value = 600.0 if 1 <= h <= 9 else 0.0
-        steps.append(
-            WeatherStep(
-                valid_time_utc=t,
-                values={"ghi": Measured(variable="ghi", value=value, unit="W/m2",
-                                        provenance=prov, quality=QualityFlag.OK)},
-            )
-        )
-    return WeatherSeries(
-        point=POINT, provider="open-meteo", dataset="forecast", kind=DataKind.FORECAST,
-        model_name="best_match", model_init_time_utc=init, retrieved_at_utc=init, steps=steps,
-    )
-
-
 def test_postprocessor_output_is_a_labelled_forecast_with_bands(models_dir: Path) -> None:
     pp = MlPostprocessor({"ghi": load_model(models_dir, "ghi")})
-    out = pp.apply(_upstream(), now_utc=START + timedelta(days=27))
+    out = pp.apply(upstream_ghi(), now_utc=START + timedelta(days=27))
     assert out is not None
     assert out.provider == ML_PROVIDER and out.dataset == ML_DATASET
     assert out.kind is DataKind.FORECAST
@@ -131,7 +106,7 @@ def test_postprocessor_output_is_a_labelled_forecast_with_bands(models_dir: Path
 
 def test_postprocessor_refuses_observations_and_unknown_sources(models_dir: Path) -> None:
     pp = MlPostprocessor({"ghi": load_model(models_dir, "ghi")})
-    up = _upstream()
+    up = upstream_ghi()
     assert pp.apply(up.model_copy(update={"kind": DataKind.OBSERVATION})) is None
     assert pp.apply(up.model_copy(update={"provider": "met-norway"})) is None
 

@@ -39,6 +39,7 @@ the tier.
 
 ### EXPERIMENTAL
 - `GET /api/strategy/vehicle | scenarios`
+- `GET /api/ml/models | bands | scores` (ADR 0008: ML quantile bands; `status: no_model` when no model is trained)
 
 The strategy endpoints live inside jst-rwi today because the strategy
 repository does not yet exist. Their numbers are not production-grade.

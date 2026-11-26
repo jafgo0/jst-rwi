@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # Caching
     cache_dir: Path = Field(default=Path("data/cache"))
+    # Versioned ML post-processing artifacts (ADR 0008 §5). Empty or missing
+    # means /api/ml answers "no_model" - never an empty band.
+    models_dir: Path = Field(default=Path("data/models"))
 
     # Route elevation enrichment. Points at an operator-local copy of
     # JU Solar Team's wsc_race_data.csv. The platform does not bundle it;

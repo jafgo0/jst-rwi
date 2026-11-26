@@ -421,6 +421,27 @@ is a perturbation and not a worst case - it makes headwind segments worse and
 tailwind segments better. Doing better means ensemble forecasts (available from
 `rwi.providers`) propagated through the model, which is future work.
 
+### 5.6a Generation bands (ADR 0008 phase 3)
+
+`SegmentConditions` can carry `generation_p10_w` / `generation_p90_w` next to
+`generation_w` (the P50). Both or neither; `P10 <= P50 <= P90`, all >= 0.
+`generation_band_from_ghi` derives them from the quantile GHI of an ML forecast
+(`rwi/ml-postprocess`, 80 % interval in `Measured.uncertainty`) by the ratios
+`P10/P50` and `P90/P50` of GHI. That is linear in GHI: it ignores the
+non-linear PV temperature and angle effects, so it is an approximation, and
+it is noted as one.
+
+- `evaluate_scenario(..., generation_band="p10" | "p50" | "p90")` runs the
+  plan on the chosen quantile; `assumptions` records `generation_band` and
+  `generation_band_segments`.
+- When any segment has a band, the sensitivity sweep uses **P10 for the
+  pessimistic case and P90 for the optimistic one** on those segments, instead
+  of `x (1 -/+ f)`. Segments without a band keep the fraction; wind is always
+  scaled by `f`. So `pessimistic_feasible` reflects the P10 risk.
+- Per-segment P10 summed over a leg is **not** the leg P10: errors are
+  correlated in time, so the sum is more pessimistic than a true 10 % case.
+  The note says so; still no exceedance probability is claimed.
+
 ### 5.7 Determinism
 
 Given the same inputs, `evaluate_scenario` returns a bit-identical
