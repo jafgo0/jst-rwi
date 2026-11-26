@@ -123,9 +123,35 @@ def product_schema(app: FastAPI) -> dict[str, Any]:
             # patch release, which is noise.
         },
         "paths": stable_paths,
-        "components": full.get("components", {}),
+        "components": _reachable_components(stable_paths, full.get("components", {})),
     }
     return _normalise(schema)
+
+
+def _reachable_components(paths: dict[str, Any], components: dict[str, Any]) -> dict[str, Any]:
+    """Return only the component schemas STABLE paths reference (transitively).
+
+    Without this, a model used solely by an INTERNAL router would land in the
+    pin and look like a STABLE contract change.
+    """
+    schemas: dict[str, Any] = components.get("schemas", {})
+    seen: set[str] = set()
+    stack: list[Any] = [paths]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+                name = ref.rsplit("/", 1)[-1]
+                if name not in seen and name in schemas:
+                    seen.add(name)
+                    stack.append(schemas[name])
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    pruned = {k: v for k, v in components.items() if k != "schemas"}
+    pruned["schemas"] = {k: schemas[k] for k in seen}
+    return pruned
 
 
 def _normalise(obj: Any) -> Any:

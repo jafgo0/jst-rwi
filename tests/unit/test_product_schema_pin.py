@@ -14,6 +14,7 @@ upgrade that reshuffles description strings does not trip the check.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from rwi.api.app import create_app
@@ -63,3 +64,10 @@ def test_stable_prefixes_are_in_the_pin() -> None:
         "/api/solar/",
     ):
         assert prefix in pinned, f"STABLE prefix {prefix} missing from pinned schema"
+
+
+def test_internal_only_models_stay_out_of_the_pin() -> None:
+    """Models used only by INTERNAL routes (e.g. /api/map) must not look like STABLE changes."""
+    schemas = json.loads(PIN_PATH.read_text(encoding="utf-8"))["components"]["schemas"]
+    for name in ("GridProvenance", "SatelliteStatus", "MlBands"):
+        assert name not in schemas

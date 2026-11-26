@@ -323,6 +323,13 @@ export const api = {
   satcorpsCrossCheck: ({ lat, lon, elev, maxAgeHours }) =>
     request("/api/satellite/satcorps-crosscheck", { params: { lat, lon, elev, max_age_hours: maxAgeHours }, timeoutMs: 60000 }),
 
+  /** Gridded forecast over the route bbox for the map (GET /api/map/grid). model: "aifs" | "ifs". */
+  mapGrid: ({ model, routeId, stepDeg }) =>
+    request("/api/map/grid", { params: { model, route_id: routeId, step_deg: stepDeg }, timeoutMs: 60000 }),
+  /** Latest Himawari-9 cloud-index field around a point (GET /api/satellite/field). */
+  satelliteField: ({ lat, lon, regionKm, cells }) =>
+    request("/api/satellite/field", { params: { lat, lon, region_km: regionKm, cells }, timeoutMs: 60000 }),
+
   /** BWSC-2025 route-point GHI bias against BoM-anchored SILO. @returns {Promise<Object>} */
   ghiBias: ({ lat, lon, elev }) =>
     request("/api/validation/ghi-bias", { params: { lat, lon, elev } }),

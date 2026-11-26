@@ -14,6 +14,7 @@ import { res, subscribe, session, setSession, isSimulation, activeState, vehicle
 import { loadState, loadHealth, loadAlerts, loadRoutes } from "./loaders.js";
 import { startTicker, ageSpan, modeChip, chip } from "./ui.js";
 import { DASH, fmtDuration, limits, fixFreshness, getClockOffset } from "./format.js";
+import * as race from "./views/race.js";
 import * as command from "./views/command.js";
 import * as mapView from "./views/map.js";
 import * as solar from "./views/solar.js";
@@ -25,14 +26,15 @@ import * as history from "./views/history.js";
 import * as meteorologist from "./views/meteorologist.js";
 
 const VIEWS = [
+  { id: "race", title: "Race", nav: "Race", mod: race, main: true },
+  { id: "map", title: "Weather Map", nav: "Karta", mod: mapView, main: true },
+  { id: "route", title: "Route Intelligence", nav: "Rutt", mod: route, main: true },
+  { id: "meteorologist", title: "Meteorologist", nav: "Meteo", mod: meteorologist, main: true },
+  { id: "alerts", title: "Alerts & Risk", nav: "Varningar", mod: alerts, main: true },
   { id: "command", title: "Command Center", nav: "Command", mod: command },
-  { id: "map", title: "Weather Map", nav: "Map", mod: mapView },
   { id: "solar", title: "Solar Intelligence", nav: "Solar", mod: solar },
   { id: "forecast", title: "Forecast Center", nav: "Forecast", mod: forecast },
-  { id: "route", title: "Route Intelligence", nav: "Route", mod: route },
   { id: "strategy", title: "Energy & Strategy", nav: "Strategy", mod: strategy },
-  { id: "meteorologist", title: "Meteorologist", nav: "Meteo", mod: meteorologist },
-  { id: "alerts", title: "Alerts & Risk", nav: "Alerts", mod: alerts },
   { id: "history", title: "Historical Analysis", nav: "History", mod: history },
 ];
 
@@ -51,8 +53,14 @@ function renderNav() {
   const nav = document.getElementById("nav");
   const alertsList = res("alerts").data || [];
   const urgent = alertsList.filter((a) => a.severity === "critical" || a.severity === "warning").length;
-  replace(nav, VIEWS.map((v) => h("a", { href: "#/" + v.id, title: v.title, class: v.id === currentId ? "active" : "" },
-    v.nav, v.id === "alerts" && urgent ? h("span", { class: "badge", title: `${urgent} warning/critical alert(s)` }, urgent) : null)));
+  const link = (v) => h("a", { href: "#/" + v.id, title: v.title, class: v.id === currentId ? "active" : "" },
+    v.nav, v.id === "alerts" && urgent ? h("span", { class: "badge", title: `${urgent} warning/critical alert(s)` }, urgent) : null);
+  const more = VIEWS.filter((v) => !v.main);
+  const moreActive = more.some((v) => v.id === currentId);
+  const wasOpen = nav.querySelector(".nav-more")?.open || false; // nav is rebuilt on every poll
+  replace(nav, VIEWS.filter((v) => v.main).map(link),
+    h("details", { class: "nav-more" + (moreActive ? " active" : ""), open: wasOpen },
+      h("summary", null, "Mer ▾"), h("div", { class: "nav-menu" }, more.map(link))));
 }
 
 function renderTools() {
@@ -135,7 +143,7 @@ function renderChrome() {
 /* ------------------------------------------------------------------ router */
 
 function parseHash() {
-  const id = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "command";
+  const id = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "race";
   return VIEWS.find((v) => v.id === id) || VIEWS[0];
 }
 
@@ -144,6 +152,7 @@ function mount() {
   if (current && currentId === v.id) return;
   if (current) { try { current.destroy(); } catch (e) { console.error(e); } }
   currentId = v.id;
+  const mo = document.querySelector(".nav-more"); if (mo) mo.open = false;
   const root = document.getElementById("view");
   root.replaceChildren();
   document.title = `${v.title} — JST-RWI`;
