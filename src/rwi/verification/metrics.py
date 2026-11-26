@@ -491,3 +491,44 @@ def score_pairs(
             )
         )
     return scores
+
+
+# ---------------------------------------------------------------------------
+# CRPS (ADR 0008 §4). See docs/science/verification.md §11.
+# ---------------------------------------------------------------------------
+
+
+def pinball_loss(observation: float, quantile_value: float, level: float) -> float:
+    """Quantile (pinball) loss of one quantile forecast, in the variable's unit."""
+    if not 0.0 < level < 1.0:
+        raise ValueError("quantile level must lie in (0, 1)")
+    diff = observation - quantile_value
+    return level * diff if diff >= 0.0 else (level - 1.0) * diff
+
+
+def crps_quantiles(
+    observation: float, quantile_values: Sequence[float], levels: Sequence[float]
+) -> float:
+    """CRPS approximated from quantiles: ``(2/K) * sum(pinball)``, in the variable's unit.
+
+    Exact in the limit of many evenly spaced levels (CRPS = 2 * integral of the
+    pinball loss over levels). With three levels (P10/P50/P90) it is a coarse
+    approximation, but a consistent one: use it to rank systems scored on the
+    same levels, never to compare against an ensemble CRPS.
+    """
+    if len(quantile_values) != len(levels) or not levels:
+        raise ValueError("need one value per quantile level")
+    terms = [pinball_loss(observation, q, t) for q, t in zip(quantile_values, levels, strict=True)]
+    return 2.0 * math.fsum(terms) / len(levels)
+
+
+def crps_ensemble(observation: float, members: Sequence[float]) -> float:
+    """CRPS of an ensemble, energy form ``E|X-y| - 0.5 E|X-X'|`` (one member: absolute error)."""
+    m = sorted(float(x) for x in members)
+    n = len(m)
+    if n == 0:
+        raise ValueError("ensemble has no members")
+    term1 = math.fsum(abs(x - observation) for x in m) / n
+    # sum_{i,j} |x_i - x_j| = 2 * sum_i (2i - n + 1) x_i for sorted x (0-based i)
+    spread = 2.0 * math.fsum((2 * i - n + 1) * x for i, x in enumerate(m))
+    return term1 - 0.5 * spread / (n * n)

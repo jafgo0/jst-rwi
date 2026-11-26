@@ -22,3 +22,6 @@ node_modules/
 # settings). Each operator copies `web/config.example.js` to `web/config.js`;
 # the real file never enters version control.
 web/config.js
+
+# Trained ML models (ADR 0008): reproducible from the archive, versioned by manifest.
+data/models/

@@ -221,3 +221,22 @@ values only. There is no verification history yet, so nothing is validated again
 | `apply_bias_correction` | tested |
 | Default lead-time buckets (section 2) | implemented, not validated |
 | `is_meaningful` threshold of 30 (section 6) | implemented, not validated |
+
+## 11. CRPS and pinball loss
+
+Added for ADR 0008 (probabilistic ML post-processing). Gneiting & Raftery (2007),
+JASA 102, 359–378.
+
+- `pinball_loss(y, q, τ)` = τ·(y−q) if y ≥ q, else (1−τ)·(q−y).
+- `crps_quantiles(y, q, τ)` = (2/K)·Σ pinball over K quantile levels. With only
+  P10/P50/P90 it is a coarse approximation of the integral CRPS. All systems in a
+  comparison are therefore scored on the **same three levels**. A point forecast
+  scored as three equal quantiles has CRPS = |error|, so its CRPS equals its MAE.
+- `crps_ensemble(y, x)` is the energy form: mean|x−y| − ½·mean|xᵢ−xⱼ|. With one
+  member it equals |error|.
+
+| Function | Status |
+|---|---|
+| `pinball_loss` | tested |
+| `crps_quantiles` | tested; science test: N(0,1) at y=0 → 0.2337 |
+| `crps_ensemble` | tested against brute force and the same science reference |
