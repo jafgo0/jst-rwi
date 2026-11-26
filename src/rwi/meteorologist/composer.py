@@ -842,7 +842,9 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
     elif conv_value is not None:
         assessment_parts.append("Stabil atmosfär i dagens horisont, ingen konvektionsrisk.")
     else:
-        assessment_parts.append("Konvektions-utsikt kunde inte beräknas (saknad data).")
+        assessment_parts.append(
+            f"Konvektions-utsikt kunde inte beräknas ({ctx.convection.reason})."
+        )
     syn = _synoptic_sections(ctx)
     if syn.assessment is not None:
         assessment_parts.append(syn.assessment)
@@ -940,9 +942,15 @@ def _compose_morning_briefing(ctx: BriefingContext, asked_at: datetime) -> Brief
                 "Håll konvektionsindex under uppsikt; en WATCH kan växa till "
                 "WARNING om CAPE stiger eller LI faller ytterligare."
             )
-    else:
+    elif conv_value is not None:
         consequences.append(
             "Standarddrift — inget konvektionshot avlett ur dagens indexen."
+        )
+    else:
+        # No indices: we do not know, so never call the day calm (§12).
+        consequences.append(
+            "Konvektionsrisken är OKÄND — planera inte som om dagen vore lugn; "
+            "bevaka himlen och radar manuellt tills index finns."
         )
     if wind_value is not None and wind_value.peak_gust_mps is not None:
         consequences.append(
