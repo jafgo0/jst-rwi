@@ -21,13 +21,13 @@ Status was derived from the files on disk, not from intentions:
 * **validated against real data**, **operationally ready**: used by no row. There is no vehicle telemetry and no recorded forecast/observation history, so nothing can honestly claim either. (Correction, verified live 2026-11-02: a real observation source *does* now exist - `rwi.providers.bom` returns BoM station measurements, confirmed end to end through `GET /api/weather/observations` against Darwin Airport. That still does not make any row 'validated against real data': validation needs a *comparison* of model against measurement over time, which has not been done.)
 * A row that needs several modules takes the *least* advanced of them, so a row whose weather input does not exist cannot read 'tested' merely because its solar-geometry half does.
 
-Snapshot of the modules on 2026-11-26 (worktree code, `PYTHONPATH=src`, non-network tests; 1152 pass in total):
+Snapshot of the modules on 2026-11-26 (worktree code, `PYTHONPATH=src`, non-network tests; 1152 pass in total at re-derivation, 1278 with the `[ml]` extra after the ADR 0008 rows in the correction log):
 
 | Module | Test files | Result | Derived status |
 |---|---|---|---|
 | `core` | 7 | 75 passed | tested |
 | `solar` | 3 | 57 passed | tested |
-| `providers` | 5 | 92 passed | tested |
+| `providers` | 7 | 113 passed | tested |
 | `quality` | 1 | 36 passed | tested |
 | `route` | 5 | 93 passed | tested |
 | `energy` | 7 | 71 passed | tested |
@@ -43,7 +43,8 @@ Snapshot of the modules on 2026-11-26 (worktree code, `PYTHONPATH=src`, non-netw
 | `telemetry` | 2 | 21 passed | tested |
 | `meteorologist` | 6 | 69 passed | tested |
 | `validation` | 1 | 6 passed | tested |
-| `capture` | 1 | 15 passed | tested |
+| `capture` | 1 | 19 passed | tested |
+| `ml` | 6 | 31 passed (need the `[ml]` extra; CI job `ml`) | tested |
 | `web` | 0 | - (no front-end tests) | implementing |
 
 Caveat: a module marked *tested* may still implement only part of its contracted API (check `docs/CONTRACTS.md`). The rows that depend on the missing parts are marked lower through the 'least advanced' rule only where the dependency is another module; missing functions inside a tested module are not detected by this scan.
@@ -137,8 +138,8 @@ Caveat: a module marked *tested* may still implement only part of its contracted
 | 66 | API Integration | operational requirement | Weather sources | Adapter per provider, retry/backoff, fixtures | Open-Meteo first; others later | `rwi.providers` | respx tests for success, 429, malformed, offline | P0 | tested |
 | 67 | Geographic Information Systems | operational requirement | Map, route, projection | GeoJSON/GPX, geodesy, MapLibre map | Route, tiles | `rwi.core.geo`, `rwi.route`, `web/` | Map marker equals API position | P1 | implementing |
 | 68 | Numerical Modeling | operational requirement | PV chain, vehicle dynamics, scenarios | Deterministic physical models | Parameters | `rwi.energy`, `rwi.vehicle`, `rwi.strategy` | Energy balance closes; unit tests | P0 | tested |
-| 69 | Machine Learning | optional research | Only if it beats physical and persistence baselines | Benchmark-first, leakage-safe | History (none) | None | Beats baselines on held-out data | R&D | not started |
-| 70 | Artificial Intelligence Models | optional research | AIFS available via open data and Open-Meteo | Treat as one more forecast source; compare, do not assume better | AIFS (access researched) | `rwi.providers` (ensemble) | Benchmark evidence before any claim | R&D | researching |
+| 69 | Machine Learning | optional research | Only if it beats physical and persistence baselines | Benchmark-first, leakage-safe | History (none) | `rwi.ml` (LightGBM quantile post-processing, ADR 0008); no trained model | Beats baselines on held-out data | R&D | implementing |
+| 70 | Artificial Intelligence Models | optional research | AIFS available via open data and Open-Meteo | Treat as one more forecast source; compare, do not assume better | AIFS open data (GRIB) + Open-Meteo `ecmwf_aifs025_single` | `rwi.providers.ecmwf_aifs`; both archived by `rwi.capture` | Benchmark evidence before any claim | R&D | tested |
 | 71 | Time-Series Analysis | operational requirement | Power and weather series | pandas/NumPy, trapezoidal integration | Series | `rwi.energy.series` | Integration equals analytic case | P1 | tested |
 | 72 | Data Visualization | operational requirement | Engineers read charts under time pressure | MapLibre, charts, units from registry, observed vs predicted separated | API payloads | `web/` | Manual check of labels, units, timestamps; no automated front-end tests yet | P0 | implementing |
 | 73 | Data Assimilation | optional research | Correct model with measured array output | Not designed | Telemetry | None | Needs data | R&D | not started |
@@ -242,11 +243,11 @@ By status:
 
 | Status | Count |
 |---|---|
-| not started | 21 |
-| researching | 1 |
-| implementing | 35 |
+| not started | 20 |
+| researching | 0 |
+| implementing | 36 |
 | implemented, not validated | 0 |
-| tested | 73 |
+| tested | 74 |
 | validated against real data | 0 |
 | operationally ready | 0 |
 | **Total** | **130** |
@@ -268,7 +269,7 @@ Priority by status:
 | P0 | 0 | 0 | 13 | 41 |
 | P1 | 5 | 0 | 13 | 23 |
 | P2 | 11 | 0 | 6 | 4 |
-| R&D | 5 | 1 | 3 | 5 |
+| R&D | 4 | 0 | 4 | 6 |
 
 ## 6. P0 backlog: P0 items not yet implemented
 
@@ -367,3 +368,4 @@ Hand corrections made after generation, by the integrator, with the evidence:
 | 2026-11-25 | #10 Atmospheric Circulation, #14 Weather Fronts: **unchanged, tested** (step B, station observations) | Same detector on NOAA ISD hourly obs, 6 route stations, 2023-01..2025-08 (`rwi.alerts.synoptic_obs`, `scripts/validation/synoptic_obs_calibration.py`): 67 events/yr/station incl. Darwin, strong diurnal locking (R1 0.23, p 1.6e-24); ERA5-vs-obs CSI 0.25; one-at-a-time sweep CSI 0.20-0.27, no clear winner. Thresholds unchanged, `calibrated = False`. No 2025 race-week station data with MSLP found (drive-system has only Solcast estimates without pressure). |
 | 2026-11-25 | #129 Forecast Performance Monitoring: **unchanged, implementing** | Skill now reaches the briefing, but there is still no season of recorded forecast/observation pairs. |
 | 2026-11-26 | Re-derived against disk. Raised to **tested** (code exists, unit tests pass; quality, providers, route, strategy and verification now have tests): #20, 21, 22, 23, 24, 25, 35, 37, 39, 42, 43, 45, 46, 47, 48, 49, 50, 51, 66, 68, 78, 86, 105, 106, 107, 110, 111, 115, 117, 118, 122. Raised to **implementing**: #5, 30, 79, 112, 128 (variables mapped or module present, criterion not met). Component cells updated for #34, 75, 76, 103, 129. Unchanged on purpose: web-dependent rows (no front-end tests), #80/99 (no end-to-end test), #116/124/125/126 (constant speed only), #26 (BoM adapter maps no precipitation). Summary counts and P0 backlog recomputed from the rows. | Per-module pytest run in section 2; `src/rwi/quality/checks.py`, `src/rwi/providers/openmeteo.py`, `src/rwi/strategy/scenarios.py` (`assumptions`, `uncertainty_fraction`, `reevaluate_after_utc`). |
+| 2026-11-26 | #69 Machine Learning: not started -> **implementing**; #70 Artificial Intelligence Models: researching -> **tested** | ADR 0008: `rwi.ml` exists with 31 passing tests but no trained model and no forecast/observation history, so #69 cannot be more than implementing. AIFS is a forecast source (`rwi.providers.ecmwf_aifs`, tested against a real cropped GRIB run in `tests/fixtures/ecmwf_aifs/`) archived by `rwi.capture` alongside Open-Meteo's AIFS; the AIFS-vs-IFS benchmark the criterion asks for needs months of pairs and does not exist yet. Both run in CI job `ml` since `64c21b2`. Summary counts updated. |

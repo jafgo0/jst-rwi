@@ -56,7 +56,9 @@ car, and it is the single highest-value instrumentation the team could add.
 
 ### Models
 
-`ecmwf_ifs025`, `gfs_seamless`, `icon_seamless`, captured **separately**.
+`ecmwf_ifs025`, `ecmwf_ifs`, `ecmwf_aifs025_single`, `gfs_global`, `icon_global`
+(`CAPTURE_MODELS`), captured **separately**. Why exactly these five is in "The
+model-run-time problem" below; the list there is the authoritative one.
 
 The provider's `best_match` is deliberately excluded. It is a blend whose
 composition can change without notice, so a skill score computed from it would
@@ -200,6 +202,7 @@ the retention policy keeps bounded.
 | Model run times | tested — probed across 7 models; only ECMWF reports one, and the capture list now reflects that |
 | AI-versus-physics benchmark (AIFS vs IFS) | not started — the data is now being captured; a score needs forecasts to reach their valid time |
 | Retention enforcement (`enforce_retention`) | tested |
+| Native ECMWF AIFS capture (`--aifs`) | tested — fake gridded source only; never run against data.ecmwf.int from the worker |
 | Continuous operation over weeks | not started |
 
 Nothing here is "validated against real data" in the sense that matters: the
