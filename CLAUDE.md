@@ -49,6 +49,7 @@ would relax one.
 | Route / projection / ETA | `src/rwi/route/**`, matching tests, `data/routes/**`, `docs/science/route.md` |
 | PV energy model | `src/rwi/energy/**`, matching tests, `docs/science/pv.md` |
 | Vehicle dynamics / strategy | `src/rwi/vehicle/**`, `src/rwi/strategy/**`, matching tests |
+| ML post-processing / nowcast (ADR 0008) | `src/rwi/ml/**`, `tests/unit/test_ml_*.py`, `docs/science/ml.md` |
 | Core / contracts / API / alerts | `src/rwi/core/**`, `src/rwi/contracts.py`, `src/rwi/config.py`, `src/rwi/api/**`, `src/rwi/alerts/**` |
 | Dashboard | `web/**` |
 | Product contract (strategy repo surface) | `docs/PRODUCT_CONTRACT.md`, `docs/product/openapi.v0.json`, `src/rwi/api/product.py`, `src/rwi/client/**`, `scripts/export_product_schema.py` |

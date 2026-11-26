@@ -106,6 +106,10 @@ class Provenance(BaseModel):
     model_init_time_utc: datetime | None = Field(
         default=None, description="NWP run initialisation ('cycle') time"
     )
+    training_cutoff_utc: datetime | None = Field(
+        default=None,
+        description="learned models only: latest forecast issue time in the training set",
+    )
     point: GeoPoint | None = Field(
         default=None, description="location the value applies to, after any grid selection"
     )
@@ -124,7 +128,7 @@ class Provenance(BaseModel):
     @model_validator(mode="after")
     def _normalise_times(self) -> Self:
         for field in ("retrieved_at_utc", "valid_time_utc", "observation_time_utc",
-                      "model_init_time_utc"):
+                      "model_init_time_utc", "training_cutoff_utc"):
             value = getattr(self, field)
             if value is not None:
                 object.__setattr__(self, field, ensure_utc(value))

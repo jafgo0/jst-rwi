@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jst-rwi"
-version = "0.1.0"
+version = "0.2.0"
 description = "JU Solar Team Race Weather Intelligence - meteorological and race decision-support platform for BWSC 2027"
 requires-python = ">=3.12"
 license = { text = "Proprietary - JU Solar Team (license decision pending, see docs/adr/0002-license.md)" }
@@ -34,6 +34,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.7", "mypy>=1.13"]
+# ADR 0008: ECMWF AIFS GRIB ingest + quantile ML post-processing. Optional; core and
+# `make check` run without it (heavy imports are lazy, tests use importorskip).
+ml = [
+    "ecmwf-opendata>=0.3",
+    "xarray>=2024.10",
+    "cfgrib>=0.9.14",
+    "eccodes>=2.37",
+    "lightgbm>=4.5",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rwi"]

@@ -1960,6 +1960,17 @@
               }
             ]
           },
+          "training_cutoff_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "valid_time_utc": {
             "anyOf": [
               {
