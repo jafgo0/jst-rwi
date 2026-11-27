@@ -33,6 +33,7 @@ from rwi.api.errors import register_error_handlers
 from rwi.api.product import ProductVersionMiddleware
 from rwi.api.routers import (
     alerts,
+    camp,
     energy,
     forecast_quality,
     map,
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     app.include_router(ml.router)
     app.include_router(v1.router)
     app.include_router(map.router)
+    app.include_router(camp.router)
 
     web_dir = Path(__file__).resolve().parents[3] / "web"
     if web_dir.is_dir():

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -155,6 +156,20 @@ class Settings(BaseSettings):
     fire_alert_radius_km: float | None = None  # alert when a kept hotspot is this close
     fire_alert_min_confidence: str | None = None  # low | nominal | high
     fire_alert_min_frp_mw: float | None = None
+    # Camp-site charging forecast (ADR 0015): operational choices, no default.
+    # 10 m gust that flags a raised-array risk
+    camp_gust_warning_m_s: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    # array minus dew point at or below this = dew risk
+    camp_dew_margin_c: float | None = Field(default=None, allow_inf_nan=False)
+    # cloud points along the sunset/sunrise azimuth, km from the stop
+    camp_horizon_offsets_km: list[float] | None = None
+
+    @field_validator("camp_horizon_offsets_km")
+    @classmethod
+    def _positive_offsets(cls, v: list[float] | None) -> list[float] | None:
+        if v is not None and not all(math.isfinite(d) and d > 0.0 for d in v):
+            raise ValueError(f"camp_horizon_offsets_km must all be positive, got {v!r}")
+        return v
 
 
 @lru_cache(maxsize=1)

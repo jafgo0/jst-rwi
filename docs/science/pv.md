@@ -127,6 +127,77 @@ Bias (mean model - measured), MAE, RMSE, relative bias on supplied pairs (None/N
 and counted). Works on any pairs; no telemetry exists yet, so it has only been exercised on synthetic
 numbers.
 
+### 1.7 Camp-site charging forecast (`rwi.energy.camp`, ADR 0015)
+
+This section covers one candidate overnight stop. Choosing the stop is the strategy
+tool's job.
+
+**Windows** (`charge_windows`). Times come from `rwi.regulations.SCHEDULE`.
+
+* Evening: from `daily_stop` (17:00) to the earlier of SPA sunset and the 19:00 lockout start.
+* Morning: from the later of SPA sunrise and the 06:30 lockout end to `daily_start` (08:00).
+* Sun events are taken at geometric elevation −0.8333° (Reda & Andreas 2004, via pvlib).
+* Each end is labelled with what limited it.
+
+**Clear-sky energy** (`window_clear_sky`).
+
+* Ineichen-Perez GHI, DNI and DHI, sampled every 60 s and integrated with the trapezoid rule
+  to Wh/m².
+* Labelled `CLEAR_SKY_MODEL`.
+* After sunset the value is exactly 0.0 (rule 5).
+
+**Forecast energy** (`window_forecast_energy`).
+
+* Open-Meteo steps are preceding-hour means. Hour `(t−1h, t]` contributes
+  `mean × 1 h × E_cs(hour ∩ window) / E_cs(hour)`, which is clear-sky-index interpolation.
+* An hour with zero clear-sky energy contributes 0.
+* If an overlapping hour is missing, that variable is `None`; no partial sum is reported.
+* If the radiation is instantaneous, forecast energy is not computed.
+
+**Gusts** (`window_gusts`).
+
+* The peak 10 m gust over the overlapping provider hours.
+* `gust_warning` is set only when `RWI_CAMP_GUST_WARNING_M_S` is configured.
+* The 10 m gust is higher than the gust at array height, so the flag errs on the safe side.
+
+**Horizon cloud** (`horizon_points`, `horizon_cloud`).
+
+* Points at `RWI_CAMP_HORIZON_OFFSETS_KM` along the sunset azimuth (west) and the next sunrise
+  azimuth (east), on a spherical earth.
+* Total, low, mid and high cloud is taken at the step nearest the event, within half a step.
+
+**Dew at dawn** (`dew_hours`). The steps, for each forecast hour from sunset to sunrise:
+
+1. Saturation vapour pressure at the dew point: Magnus, 6.1094 exp(17.625 T / (T + 243.04))
+   hPa (Alduchov & Eskridge 1996).
+2. Clear-sky emissivity: 1.24 (e/T)^(1/7) (Brutsaert 1975).
+3. Cloud correction: ε = ε_clr (1 − c) + c (Crawford & Duchon 1999). Here c is NWP total
+   cloud, not the solar-deficit cloud fraction Crawford & Duchon derived.
+4. Downwelling longwave: IR = ε σ T_air⁴.
+5. Array temperature from `pvlib.temperature.faiman_rad` (Driesse et al. 2022).
+   * POA is 0.
+   * The u0 = 25 and u1 = 6.84 coefficients come from Faiman 2008.
+   * Emissivity is 0.88 and sky view is 1.0.
+   * Wind is the 10 m value times the Faiman height factor (1.3).
+6. Risk is flagged when `T_array − T_dew ≤ RWI_CAMP_DEW_MARGIN_C`. There is no default margin.
+
+**Limitations**
+
+* The array is treated as horizontal, but the real array is tilted when raised.
+* Solar heating after sunrise is ignored (POA 0), so dew risk is overstated late in the
+  morning window.
+* Offsets, gust limit and dew margin are not calibrated.
+* Forecasts reach only about 384 h ahead; past that, a candidate is clear-sky only.
+
+**References**
+
+* Brutsaert, W. (1975), Water Resour. Res. 11(5), 742–744.
+* Alduchov, O. A. & Eskridge, R. E. (1996), J. Appl. Meteor. 35, 601–609.
+* Crawford, T. M. & Duchon, C. E. (1999), J. Appl. Meteor. 38, 474–480.
+* Driesse, A., Stein, J. S. & Theristis, M. (2022), pvlib `faiman_rad`.
+* Faiman, D. (2008), Prog. Photovolt. 16, 307–315.
+* Reda, I. & Andreas, A. (2004), Solar Energy 76, 577–589.
+
 ## 2. `DEFAULT_ARRAY` assumptions (all `parameter_source = "assumed"`)
 
 These are generic placeholders, **not** the JU Solar Team vehicle.
@@ -175,6 +246,9 @@ STC; it is treated as constant over irradiance.
 | `integrate_energy` | tested |
 | `energy_along_trajectory` | tested |
 | `compare_with_measured` | tested |
+| `charge_windows`, `window_clear_sky`, `window_forecast_energy`, `window_gusts` | tested |
+| `horizon_points`, `horizon_cloud` | tested |
+| `saturation_vapour_pressure_hpa`, `downwelling_longwave_w_m2`, `dew_hours` | tested (references); dew model not validated |
 
 "tested" means unit tests with exact or hand-computed references pass (these check the
 implementation against the stated equations and, for cell temperature, hand-computed
