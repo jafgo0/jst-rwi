@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Versioned ML post-processing artifacts (ADR 0008 §5). Empty or missing
     # means /api/ml answers "no_model" - never an empty band.
     models_dir: Path = Field(default=Path("data/models"))
+    # Built race-week climatology files (ADR 0016), written by scripts/build_climatology.py.
+    climatology_dir: Path = Field(default=Path("data/climatology"))
 
     # Route elevation enrichment. Points at an operator-local copy of
     # JU Solar Team's wsc_race_data.csv. The platform does not bundle it;

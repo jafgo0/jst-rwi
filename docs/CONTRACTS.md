@@ -24,6 +24,7 @@ report it; the integrator changes it once.
 | ML post-processing + nowcast (ADR 0008) | ml | `src/rwi/ml/**`, `tests/unit/test_ml_*.py`, `docs/science/ml.md` |
 | Requirements + architecture docs | docs | `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/adr/**` |
 | Dashboard | web | `web/**` |
+| Race-week climatology (ADR 0016) | climatology | `src/rwi/climatology/**`, `scripts/build_climatology.py`, `tests/unit/test_climatology_*.py`, `docs/science/climatology.md` |
 
 Never edit a path you do not own. Never run `git commit`, `git checkout`,
 `git push` or `uv pip install` — the integrator manages the repository and the
