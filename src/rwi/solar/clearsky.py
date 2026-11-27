@@ -68,12 +68,26 @@ def extraterrestrial_horizontal_w_m2(point: GeoPoint, when: datetime) -> float:
 
 
 def _linke_turbidity(
-    point: GeoPoint, index: pd.DatetimeIndex, supplied: float | None
+    point: GeoPoint,
+    index: pd.DatetimeIndex,
+    supplied: float | Sequence[float] | None,
+    note: str | None = None,
 ) -> tuple[np.ndarray, str]:
-    if supplied is not None:
+    if isinstance(supplied, int | float):
         if not (np.isfinite(supplied) and supplied >= 1.0):
             raise ValueError(f"linke_turbidity must be finite and >= 1, got {supplied!r}")
-        return np.full(len(index), float(supplied)), f"linke_turbidity={supplied:.2f} (supplied)"
+        return np.full(len(index), float(supplied)), (
+            note or f"linke_turbidity={supplied:.2f} (supplied)"
+        )
+    if supplied is not None:
+        arr = np.asarray(supplied, dtype=float)
+        if arr.shape != (len(index),):
+            raise ValueError(f"linke_turbidity has {arr.size} values for {len(index)} times")
+        if not (np.all(np.isfinite(arr)) and np.all(arr >= 1.0)):
+            raise ValueError("every linke_turbidity value must be finite and >= 1")
+        return arr, note or (
+            f"linke_turbidity per time (supplied; {arr.min():.2f}-{arr.max():.2f})"
+        )
     try:
         tl = pvlib.clearsky.lookup_linke_turbidity(
             index, point.latitude_deg, point.longitude_deg, interp_turbidity=True
@@ -99,7 +113,8 @@ def clear_sky_series(
     *,
     pressure_pa: float | None = None,
     temperature_c: float | None = None,
-    linke_turbidity: float | None = None,
+    linke_turbidity: float | Sequence[float] | None = None,
+    linke_turbidity_note: str | None = None,
 ) -> list[IrradianceComponents]:
     """Clear-sky GHI/DNI/DHI [W/m2] at ``point`` for each instant (vectorised).
 
@@ -107,7 +122,9 @@ def clear_sky_series(
     from one SPA call (see :func:`rwi.solar.geometry.solar_positions`); site
     altitude ``point.elevation_or_zero_m``; surface pressure ``pressure_pa`` or
     the standard-atmosphere pressure for the altitude; Linke turbidity
-    ``linke_turbidity`` or the monthly pvlib climatology. ``temperature_c`` only
+    ``linke_turbidity`` (one value, or one per time, e.g. from
+    :func:`rwi.solar.turbidity.dynamic_linke_turbidity`, described in provenance
+    by ``linke_turbidity_note``) or the monthly pvlib climatology. ``temperature_c`` only
     affects the refraction correction of the apparent zenith (Ineichen itself
     has no temperature term).
 
@@ -125,7 +142,7 @@ def clear_sky_series(
     app_zen = d["apparent_zenith"].to_numpy(dtype=float)
     geo_zen = d["zenith"].to_numpy(dtype=float)
 
-    tl, tl_note = _linke_turbidity(point, index, linke_turbidity)
+    tl, tl_note = _linke_turbidity(point, index, linke_turbidity, linke_turbidity_note)
     dni_extra = _extra_radiation(index)
 
     rel_am = pvlib.atmosphere.get_relative_airmass(pd.Series(app_zen), model="kastenyoung1989")

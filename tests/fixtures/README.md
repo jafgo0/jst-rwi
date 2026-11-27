@@ -18,5 +18,7 @@ by `respx` in `tests/unit/test_provider_*.py` and `test_quality_checks.py`. Unit
 | `ecmwf_aifs/aifs_single_20261126T06Z_corridor.grib2` | ECMWF open data AIFS Single 2026-11-26 06Z, steps 0-24 h, cropped to a 17x17 grid box; provenance in `ecmwf_aifs/README.md` |
 | `onboard/airmar_canboat.jsonl` | **Synthetic** canboat `analyzer -json -si` stream (Airmar 200WX PGNs, 3 s near Tennant Creek, 2027-08-22 03:15Z) built by hand for the true-wind and window tests; not a capture |
 | `onboard/ml01.csv` | **Synthetic** EKO ML-01 CSV (`time_utc,value[,pitch_deg,roll_deg]`, mV, sensitivity 7.00 uV/(W/m2) in the tests), including a bad value and blank tilt; not a capture |
+| `openmeteo_aq_cams_darwin.json` | Open-Meteo Air Quality `domains=cams_global`, Darwin, 48 h from 2026-11-27 00Z (AOD550 + dust), recorded unmodified |
+| `firms/j1_viirs_c2_aus_nz_24h_route_trimmed.csv` | NASA FIRMS VIIRS NOAA-20 NRT, AUS/NZ region, last 24 h on 2026-11-26, trimmed to 52 rows (route-near rows plus a few far ones); no MAP_KEY in the file |
 
 Re-capture sparingly: the free Open-Meteo ensemble pool is small (see docs/science/providers.md, sec. 1.1).

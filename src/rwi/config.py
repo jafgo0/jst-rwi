@@ -6,7 +6,7 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     openmeteo_base_url: str = "https://api.open-meteo.com/v1"
     openmeteo_ensemble_url: str = "https://ensemble-api.open-meteo.com/v1"
     openmeteo_archive_url: str = "https://archive-api.open-meteo.com/v1"
+    openmeteo_air_quality_url: str = "https://air-quality-api.open-meteo.com/v1"
     openmeteo_api_key: str | None = None
     bom_ftp_base: str = "http://www.bom.gov.au/fwo"
 
@@ -141,6 +142,19 @@ class Settings(BaseSettings):
     # Ensemble front-passage alerts (ADR 0012): operational choices, no default.
     front_alert_watch_probability: float | None = None
     front_alert_warning_probability: float | None = None
+    # CAMS aerosol -> dynamic Linke turbidity (ADR 0014). Angstrom exponent for
+    # AOD550 -> AOD700; it depends on aerosol type, so there is no default and
+    # unset keeps the monthly climatology.
+    aod_angstrom_exponent: float | None = None
+    # NASA FIRMS active fires (ADR 0014). The MAP_KEY is personal: .env only.
+    firms_map_key: SecretStr | None = None
+    firms_base_url: str = "https://firms.modaps.eosdis.nasa.gov"
+    firms_source: str | None = None  # e.g. VIIRS_NOAA20_NRT
+    firms_day_range: int | None = None  # 1..5 days back (FIRMS API limit)
+    firms_route_buffer_km: float | None = None  # hotspots kept within this of the route
+    fire_alert_radius_km: float | None = None  # alert when a kept hotspot is this close
+    fire_alert_min_confidence: str | None = None  # low | nominal | high
+    fire_alert_min_frp_mw: float | None = None
 
 
 @lru_cache(maxsize=1)

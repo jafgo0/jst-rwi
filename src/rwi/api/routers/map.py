@@ -25,15 +25,19 @@ from typing import Annotated, Any, Literal
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
+from rwi.alerts.fires import fire_alerts, fires_near_route, route_bbox_margin_deg
 from rwi.api.deps import RouteRepository, get_route_repository
 from rwi.config import Settings, get_settings
-from rwi.contracts import GeoPoint
-from rwi.core.errors import ProviderUnavailableError
-from rwi.core.provenance import DataKind
-from rwi.core.timebase import ensure_utc, utc_now
+from rwi.contracts import Alert, GeoPoint, Route
+from rwi.core.errors import ProviderError, ProviderUnavailableError
+from rwi.core.provenance import DataKind, Provenance
+from rwi.core.timebase import TimeWindow, ensure_utc, utc_now
+from rwi.providers import registry
+from rwi.providers.cams import AerosolSeries, CamsAerosolProvider
+from rwi.providers.firms import FirmsProvider, firms_missing_config
 from rwi.providers.gridded import (
     BBox,
     GriddedRun,
@@ -43,6 +47,7 @@ from rwi.providers.gridded import (
     wind_from_uv,
 )
 from rwi.solar.geometry import solar_positions
+from rwi.solar.turbidity import climatology_linke_turbidity, dynamic_linke_turbidity
 
 router = APIRouter(prefix="/api/map", tags=["map"])
 
@@ -438,3 +443,208 @@ async def read_grid(
     if model == "aifs":
         return await _aifs(settings, bbox, step_deg)
     return await _ifs(settings, bbox, step_deg)
+
+
+# --------------------------------------------------------------------------- fires
+
+
+class FireMap(BaseModel):
+    """FIRMS hotspots near the route as GeoJSON, plus the fire alerts (OBSERVATION, unvalidated)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["FeatureCollection"] = "FeatureCollection"
+    configured: bool
+    missing_settings: list[str] = []
+    alerts_configured: bool = False
+    available: bool = False
+    message: str | None = None
+    route_id: str | None = None
+    buffer_km: float | None = None
+    features: list[dict[str, Any]] = []
+    alerts: list[Alert] = []
+    units: dict[str, str] = {
+        "along_km": "km",
+        "offset_km": "km",
+        "frp_mw": "MW",
+        "brightness_k": "K",
+    }
+    provenance: Provenance | None = None
+
+
+def _one_route(repo: RouteRepository, route_id: str | None) -> Route:
+    if route_id:
+        return repo.get(route_id)
+    routes = list(repo.all().values())
+    if len(routes) != 1:
+        raise HTTPException(422, f"route_id is required: {len(routes)} routes are loaded")
+    return routes[0]
+
+
+@router.get("/fires", response_model=FireMap)
+async def read_fires(
+    settings: SettingsDep,
+    repo: RepoDep,
+    route_id: Annotated[str | None, Query()] = None,
+) -> FireMap:
+    """NASA FIRMS hotspots within the configured buffer of the route; never a fire perimeter."""
+    route = _one_route(repo, route_id)
+    missing = firms_missing_config(settings)
+    if missing:
+        return FireMap(
+            configured=False,
+            missing_settings=missing,
+            route_id=route.id,
+            message="NASA FIRMS is not configured; no request was made",
+        )
+    buffer_km = float(settings.firms_route_buffer_km or 0.0)
+    margin = route_bbox_margin_deg(route, buffer_km)
+    bbox = BBox.around([w.point for w in route.waypoints], margin_deg=margin)
+    provider = FirmsProvider(settings)
+    try:
+        hotspots = await provider.fetch_hotspots(bbox)
+    except (ProviderError, ValueError) as exc:
+        return FireMap(configured=True, route_id=route.id, buffer_km=buffer_km, message=str(exc))
+    finally:
+        await provider.aclose()
+    fires = fires_near_route(route, hotspots.hotspots, buffer_km)
+    now = utc_now()
+    alerts = fire_alerts(
+        fires,
+        radius_km=settings.fire_alert_radius_km,
+        min_confidence=settings.fire_alert_min_confidence,
+        min_frp_mw=settings.fire_alert_min_frp_mw,
+        now=now,
+    )
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [f.hotspot.point.longitude_deg, f.hotspot.point.latitude_deg],
+            },
+            "properties": {
+                "along_km": round(f.distance_along_m / 1000.0, 2),
+                "offset_km": round(f.offset_m / 1000.0, 2),
+                "frp_mw": f.hotspot.frp_mw,
+                "brightness_k": f.hotspot.brightness_k,
+                "confidence": f.hotspot.confidence,
+                "acquired_utc": f.hotspot.acquired_utc.isoformat(),
+                "satellite": f.hotspot.satellite,
+                "instrument": f.hotspot.instrument,
+                "daynight": f.hotspot.daynight,
+                "quality": f.hotspot.quality.value,
+            },
+        }
+        for f in fires
+    ]
+    return FireMap(
+        configured=True,
+        alerts_configured=None
+        not in (
+            settings.fire_alert_radius_km,
+            settings.fire_alert_min_confidence,
+            settings.fire_alert_min_frp_mw,
+        ),
+        available=True,
+        route_id=route.id,
+        buffer_km=buffer_km,
+        features=features,
+        alerts=alerts,
+        provenance=hotspots.provenance,
+    )
+
+
+# --------------------------------------------------------------------------- aerosol
+
+
+class AerosolMap(BaseModel):
+    """CAMS aerosol at a point and the Linke turbidity derived from it, hour by hour."""
+
+    model_config = ConfigDict(frozen=True)
+
+    available: bool
+    message: str | None = None
+    aerosol: AerosolSeries | None = None
+    linke_turbidity: list[float] = []
+    """TL(AM2) per aerosol step: kasten96_lt where ``linke_turbidity_dynamic``, else SoDa."""
+    linke_turbidity_dynamic: list[bool] = []
+    linke_turbidity_note: str | None = None
+    met_provenance: Provenance | None = None
+    """Provenance of the 2 m temperature and humidity used for precipitable water."""
+
+
+_MET_VARS = ("temperature_2m", "relative_humidity_2m")
+
+
+@router.get("/aerosol", response_model=AerosolMap)
+async def read_aerosol(
+    settings: SettingsDep,
+    lat: Annotated[float, Query(ge=-90.0, le=90.0)],
+    lon: Annotated[float, Query(ge=-180.0, le=180.0)],
+    hours: Annotated[int, Query(ge=1, le=120)] = 24,
+) -> AerosolMap:
+    """CAMS AOD550/dust (FORECAST) and TL per hour: dynamic when configured, else climatology."""
+    point = GeoPoint(latitude_deg=lat, longitude_deg=lon)
+    start = utc_now()
+    end = start + timedelta(hours=hours)
+    cams = CamsAerosolProvider(settings)
+    try:
+        series = await cams.fetch_aerosol(point, start, end)
+    except ProviderError as exc:
+        return AerosolMap(available=False, message=str(exc))
+    finally:
+        await cams.aclose()
+    times = [s.valid_time_utc for s in series.steps]
+    alpha = settings.aod_angstrom_exponent
+    if not times:
+        return AerosolMap(available=True, aerosol=series, message="CAMS returned no hours")
+    if alpha is None:
+        tl, note = climatology_linke_turbidity(point, times)
+        return AerosolMap(
+            available=True,
+            aerosol=series,
+            linke_turbidity=[float(v) for v in tl],
+            linke_turbidity_dynamic=[False] * len(times),
+            linke_turbidity_note=(
+                f"{note}; dynamic turbidity not configured (set RWI_AOD_ANGSTROM_EXPONENT)"
+            ),
+        )
+    providers = registry.available_providers(settings)
+    try:
+        met = await providers["open-meteo"].fetch_forecast(
+            point, TimeWindow(start_utc=times[0], end_utc=times[-1]), list(_MET_VARS)
+        )
+    except (ProviderError, KeyError) as exc:
+        tl, note = climatology_linke_turbidity(point, times)
+        return AerosolMap(
+            available=True,
+            aerosol=series,
+            linke_turbidity=[float(v) for v in tl],
+            linke_turbidity_dynamic=[False] * len(times),
+            linke_turbidity_note=f"{note}; T/RH unavailable ({type(exc).__name__}: {exc})",
+        )
+    finally:
+        await registry.close_providers(providers)
+    by_time = {ensure_utc(s.valid_time_utc): s for s in met.steps}
+
+    def met_at(t: datetime, var: str) -> float | None:
+        step = by_time.get(ensure_utc(t))
+        return step.value(var) if step is not None else None
+
+    est = dynamic_linke_turbidity(
+        point,
+        times,
+        aod550=[s.aod550 for s in series.steps],
+        temperature_c=[met_at(t, "temperature_2m") for t in times],
+        relative_humidity_pct=[met_at(t, "relative_humidity_2m") for t in times],
+        angstrom_exponent=alpha,
+    )
+    return AerosolMap(
+        available=True,
+        aerosol=series,
+        linke_turbidity=[float(v) for v in est.values],
+        linke_turbidity_dynamic=[bool(v) for v in est.dynamic],
+        linke_turbidity_note=est.note,
+        met_provenance=met.base_provenance(),
+    )

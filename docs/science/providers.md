@@ -198,6 +198,39 @@ Access note: BoM web pages returned HTTP 403 to automated clients in the documen
 attempt; with a plain, honest `User-Agent` (`jst-rwi/0.1 (...)`) they returned 200 for me on
 2026-11-01. I did not use any browser-impersonating header and the adapter identifies itself.
 
+### 2.3 CAMS aerosol (`CamsAerosolProvider`, provider name `open-meteo-air-quality`; ADR 0014)
+
+| Call | Returns | Endpoint |
+|---|---|---|
+| `fetch_aerosol(point, start_utc, end_utc)` | `AerosolSeries`: hourly AOD550 [1] and dust [ug/m3], `kind=FORECAST`, `model_name=cams_global` | `air-quality-api.open-meteo.com/v1/air-quality?domains=cams_global` |
+
+* Keyless.
+* Licence: CAMS, CC BY 4.0, via Open-Meteo.
+* Grid: 0.4 deg. Darwin snaps to -12.5, 130.8.
+* QC: a value is dropped as `OUT_OF_RANGE` when it is null, negative, AOD > 10 or
+  dust > 1e5 ug/m3.
+* Open-Meteo returns no Angstrom exponent and no other wavelengths.
+* This provider is not in the weather-provider registry.
+* Recorded fixture: `tests/fixtures/openmeteo_aq_cams_darwin.json`.
+
+### 2.4 NASA FIRMS (`FirmsProvider`, provider name `nasa-firms`; ADR 0014)
+
+| Call | Returns | Endpoint |
+|---|---|---|
+| `fetch_hotspots(bbox)` | `HotspotSet` of `FireHotspot`, provenance `kind=OBSERVATION`, notes say near-real-time, unvalidated | `/api/area/csv/{MAP_KEY}/{source}/{bbox}/{day_range}` |
+
+* Requires a personal MAP_KEY (`RWI_FIRMS_MAP_KEY`), stored in `.env` only, never committed.
+* Also required: `RWI_FIRMS_SOURCE`, `RWI_FIRMS_DAY_RANGE` (1-5) and
+  `RWI_FIRMS_ROUTE_BUFFER_KM`.
+* `firms_missing_config` names any of these that is missing, and nothing is fetched.
+* The key is masked as `***` in provenance, cache keys and errors.
+* Confidence is mapped to `low`/`nominal`/`high`:
+  * VIIRS uses the letters `l`/`n`/`h`;
+  * MODIS gives a percentage, bucketed as 0-29 low, 30-79 nominal, 80-100 high, which is
+    the FIRMS user guide's classes.
+* A CSV without the required columns is refused as `ProviderUnavailableError`. An unparseable row is rejected and counted in `rows_rejected`.
+* Recorded fixture: `tests/fixtures/firms/j1_viirs_c2_aus_nz_24h_route_trimmed.csv`.
+
 ---
 
 ## 3. Fallback policy (`registry.fetch_with_fallback`)

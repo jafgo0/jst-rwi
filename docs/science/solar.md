@@ -126,11 +126,31 @@ forecast) and `processing` becomes `"<model>_decomposition"` (appended with `+` 
 had a processing step). **Deviation from "preserve kind":** an `OBSERVATION` input is relabelled
 `DERIVED`, because only GHI was measured and DNI/DHI are model estimates.
 
+### 1.7 Dynamic Linke turbidity (ADR 0014)
+`rwi.solar.turbidity.dynamic_linke_turbidity` replaces the climatology per hour when it
+is configured.
+* Step 1: CAMS AOD550 is converted to AOD700 with `angstrom_aod_at_lambda`. The exponent
+  is **configured** (`RWI_AOD_ANGSTROM_EXPONENT`, no default). AOD700 is taken as the
+  broadband AOD (Molineaux, Ineichen & O'Neill 1998).
+* Step 2: precipitable water comes from T2m/RH2m via `gueymard94_pw` (Gueymard 1994).
+* Step 3: `kasten96_lt` is evaluated at absolute air mass 2 (Kasten 1996; Ineichen 2008).
+  TL(AM2) is the convention of the SoDa climatology that Ineichen-Perez is fitted to.
+* Fallback, per hour: the monthly climatology is kept when an input is missing, when
+  pw >= 5 cm (outside the fit), or when TL is non-finite or < 1. The note counts the
+  hours for each reason.
+* Hand check: AOD550 0.42, alpha 1.3, T 25 C and RH 70 % give pw = 3.51 cm and
+  TL = 5.975. This is pinned in `tests/unit/test_solar_turbidity.py`.
+* `clear_sky_series(linke_turbidity=<array>)` takes the per-time values. The output
+  `kind` stays `CLEAR_SKY_MODEL`.
+
 ## 2. Known limitations
 * **Linke turbidity is a monthly climatology**, not today's aerosol load. Smoke, dust or
   volcanic aerosol (relevant on the BWSC route: bushfire smoke, dust storms) will make real
   clear-sky irradiance lower than modelled, mostly in DNI. Clear sky is an upper-bound
-  estimate under *typical* aerosol, not under measured conditions.
+  estimate under *typical* aerosol, not under measured conditions. With
+  `RWI_AOD_ANGSTROM_EXPONENT` set, TL follows the CAMS aerosol forecast instead (1.7).
+  That forecast is still a model, not a measurement, and the result has not been
+  validated against measured DNI. A single exponent is wrong for mixed smoke/dust air.
 * Ineichen-Perez is a broadband, clear-sky-only model; no water-vapour input (the Linke
   factor absorbs it). Typical published clear-sky RMSE is 3-6 % of GHI and larger for DNI.
 * Erbs/DISC/DIRINT are hourly-mean correlations fitted mostly to mid-latitude Northern
@@ -163,6 +183,7 @@ tested / validated against real data / operationally ready.
 | `clear_sky_irradiance`, `clear_sky_series` | **tested** | Night zero, bounds, GHI <= ET, noon peak, closure, turbidity sensitivity, range check against published clear-sky peaks. **Not validated against pyranometer data**; no ground observations for the BWSC corridor have been compared. |
 | `extraterrestrial_horizontal_w_m2` | **tested** | Equinox-noon equator value matches the solar constant within 15 W/m2. |
 | `decompose_ghi` (erbs) | **tested** | Closure, clear/overcast behaviour, night/zero rules, independent hand-evaluation of the Erbs polynomial. Not validated against BSRN/BoM measured DNI/DHI. |
+| `dynamic_linke_turbidity` | **tested** | kasten96 hand-check (TL 5.975), DNI falls as TL rises, fallback per hour. **Not validated** against BSRN/pyranometer DNI. |
 | `decompose_ghi` (disc, dirint) | **implemented, not validated** | Closure and smoke tests only; DIRINT is used in a degenerate single-point form. |
 
 "Tested" means the unit tests pass; it does **not** mean the outputs have been compared
