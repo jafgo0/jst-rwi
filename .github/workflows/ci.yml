@@ -23,8 +23,8 @@ jobs:
 
       - name: Create environment
         run: |
-          uv venv --python 3.12 .venv
-          VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+          # --frozen: install exactly uv.lock; fail if pyproject and lock disagree.
+          uv sync --frozen --python 3.12 --extra dev
 
       - name: Lint
         run: .venv/bin/ruff check src tests
@@ -68,8 +68,7 @@ jobs:
 
       - name: Create environment
         run: |
-          uv venv --python 3.12 .venv
-          VIRTUAL_ENV=.venv uv pip install -e ".[dev,ml]"
+          uv sync --frozen --python 3.12 --extra dev --extra ml
 
       - name: ML stack imports
         # Fails loudly if the extra is broken, instead of every ML test being

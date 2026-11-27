@@ -45,14 +45,18 @@ docs/                requirements matrix, architecture, ADRs, science notes
 ## Quick start
 
 ```bash
-uv venv --python 3.12 .venv
-VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+uv sync --frozen --python 3.12 --extra dev   # exactly what uv.lock pins
 .venv/bin/pytest -q
 .venv/bin/uvicorn rwi.api.app:app --reload --port 8000
 ```
 
-Dashboard: open `web/index.html` (or `http://localhost:8000/` once the API
-serves it) with the API running.
+`uv.lock` is committed; CI installs with `uv sync --frozen` and fails if it
+is stale. Changed a dependency in `pyproject.toml`? Run `uv lock` and commit
+the lock in the same change. Add `--extra ml` for the ADR 0008 ML stack.
+
+Dashboard: `http://localhost:8000/` with the API running. Opening
+`web/index.html` from disk (`file://`, origin `null`) is deliberately not
+allowed by CORS.
 
 ## Running it in VS Code
 

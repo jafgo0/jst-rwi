@@ -17,7 +17,7 @@
     {
       "label": "set a demo position (Alice Springs)",
       "type": "shell",
-      "command": "curl -s -X POST localhost:8000/api/state/position -H 'content-type: application/json' -d '{\"mode\":\"live_gps\",\"latitude_deg\":-23.698,\"longitude_deg\":133.8807,\"elevation_m\":545,\"heading_deg\":180,\"speed_mps\":25,\"source\":\"vscode\",\"route_id\":\"bwsc-2027-stuart-highway\"}' | python3 -m json.tool | head -20",
+      "command": "curl -s -X POST localhost:8000/api/state/position -H 'content-type: application/json' -H \"X-Telemetry-Secret: ${env:RWI_TELEMETRY_SHARED_SECRET}\" -d '{\"mode\":\"live_gps\",\"latitude_deg\":-23.698,\"longitude_deg\":133.8807,\"elevation_m\":545,\"heading_deg\":180,\"speed_mps\":25,\"source\":\"vscode\",\"route_id\":\"bwsc-2027-stuart-highway\"}' | python3 -m json.tool | head -20",
       "problemMatcher": []
     }
   ]

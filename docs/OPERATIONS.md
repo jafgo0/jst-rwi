@@ -113,6 +113,12 @@ through this provider, so only ECMWF forecasts can be scored
 
 ## Running the API and dashboard
 
+Install on a race laptop or server with `uv sync --frozen --python 3.12 --extra dev`
+(add `--extra ml` for ADR 0008). `--frozen` installs exactly the committed
+`uv.lock`, so the laptop in the support car runs the same versions CI tested.
+Serve the dashboard from the API (`http://localhost:8000/`); CORS does not
+accept the `null` origin of a `file://` page.
+
 ```bash
 make api                      # http://localhost:8000, serves the dashboard too
 ./scripts/smoke.sh            # end-to-end check of the honesty rules
@@ -147,6 +153,21 @@ same value in the `X-Telemetry-Secret` header. Without the env var set, the
 HTTP path for live_gps is closed; manual and route_sim modes stay open so
 operator entry and simulation still work. This closes the trivial path where
 any page reachable on the private network could lie about being the car.
+
+The same header guards the two endpoints that cost money or bandwidth:
+
+* `POST /api/forecast/capture` needs the secret AND `RWI_CAPTURE_ENABLED=true`;
+  with capture off it answers 409 `capture_disabled` instead of silently
+  calling providers.
+* `POST /api/meteorologist/ask` needs the secret and is capped per process by
+  `RWI_METEOROLOGIST_ASK_PER_MINUTE` (default 6). Over the cap it answers 429
+  `rate_limited` with `Retry-After`. The cap is in-process: two uvicorn
+  workers means twice the budget.
+
+The comparison is constant-time (`hmac.compare_digest`, `rwi.api.security`).
+The dashboard sends the header from `telemetry.sharedSecret` in the
+git-ignored `web/config.js`; the Python client takes `shared_secret=` on
+`ask()`.
 
 * Rotate the secret per race; store it in a password manager, not in the
   repo.

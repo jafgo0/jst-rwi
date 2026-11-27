@@ -123,8 +123,11 @@ If any of these is the natural next step, explain why and wait.
 
 - Ruff + mypy, line length 100, target `py312`. `make lint` and
   `make typecheck` must pass before you say "done".
-- Prefer built-in generics (`list[int]`, `X | None`) over `typing.List` / 
-  `Optional`. No `from __future__ import annotations` on 3.12.
+- Prefer built-in generics (`list[int]`, `X | None`) over `typing.List` /
+  `Optional`. `from __future__ import annotations` is in most existing
+  modules; leave it where it is (no mass edits) and omit it in new files
+  unless a forward reference needs it. Never add it to a module that FastAPI
+  or Pydantic introspects at runtime without running its tests.
 - Pydantic v2 models for anything crossing a module boundary.
 - Imports: standard lib, third-party, `rwi.*` — blank line between groups.
 - Public functions in `rwi/*` get type hints and a one-line docstring saying

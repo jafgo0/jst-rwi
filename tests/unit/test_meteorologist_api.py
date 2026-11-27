@@ -20,7 +20,8 @@ from fastapi.testclient import TestClient
 from rwi.alerts.synoptic import SYNOPTIC_VARIABLES
 from rwi.api.app import create_app
 from rwi.api.routers import meteorologist as met_router
-from rwi.config import get_settings
+from rwi.api.security import ASK_LIMITER
+from rwi.config import Settings, get_settings
 from rwi.contracts import WeatherSeries, WeatherStep
 from rwi.core.provenance import DataKind, Provenance, measured
 
@@ -36,6 +37,21 @@ def _offline_synoptic(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     met_router._reset_synoptic_cache()
     yield
     met_router._reset_synoptic_cache()
+
+
+ASK_SECRET = "test-secret"
+ASK_HEADERS = {"X-Telemetry-Secret": ASK_SECRET}
+
+
+@pytest.fixture(autouse=True)
+def _ask_secret(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """/ask requires the shared secret; the rate limiter is process-wide, so reset it."""
+    monkeypatch.setenv("RWI_TELEMETRY_SHARED_SECRET", ASK_SECRET)
+    get_settings.cache_clear()
+    ASK_LIMITER.reset()
+    yield
+    ASK_LIMITER.reset()
+    get_settings.cache_clear()
 
 
 def _client() -> TestClient:
@@ -92,7 +108,7 @@ def test_morning_briefing_returns_a_well_formed_briefing() -> None:
 def test_ask_returns_501_when_api_key_is_not_configured() -> None:
     with _client() as client:
         response = client.post(
-            "/api/meteorologist/ask", json={"question": "hello"}
+            "/api/meteorologist/ask", json={"question": "hello"}, headers=ASK_HEADERS
         )
     assert response.status_code == 501
     detail = response.json()["detail"]
@@ -101,7 +117,9 @@ def test_ask_returns_501_when_api_key_is_not_configured() -> None:
 
 def test_ask_returns_400_on_missing_question() -> None:
     with _client() as client:
-        response = client.post("/api/meteorologist/ask", json={"question": "   "})
+        response = client.post(
+            "/api/meteorologist/ask", json={"question": "   "}, headers=ASK_HEADERS
+        )
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "missing_question"
 
@@ -127,6 +145,7 @@ def test_ask_with_injected_classifier_returns_a_briefing() -> None:
             response = client.post(
                 "/api/meteorologist/ask",
                 json={"question": "vad är viktigast framför oss?"},
+                headers=ASK_HEADERS,
             )
     finally:
         router_mod.build_classifier = original  # type: ignore[assignment]
@@ -136,6 +155,47 @@ def test_ask_with_injected_classifier_returns_a_briefing() -> None:
     # The user's phrasing survives through the composer.
     assert body["question"] == "vad är viktigast framför oss?"
     assert body["uncertainty"], "uncertainty section is never empty"
+
+
+def test_ask_refuses_without_the_shared_secret() -> None:
+    with _client() as client:
+        missing = client.post("/api/meteorologist/ask", json={"question": "hello"})
+        wrong = client.post(
+            "/api/meteorologist/ask",
+            json={"question": "hello"},
+            headers={"X-Telemetry-Secret": "not-it"},
+        )
+    assert missing.status_code == 403
+    assert wrong.status_code == 403
+
+
+def test_ask_refuses_when_no_secret_is_configured() -> None:
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, telemetry_shared_secret=None
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/meteorologist/ask", json={"question": "hello"}, headers=ASK_HEADERS
+        )
+    assert response.status_code == 403
+    assert "RWI_TELEMETRY_SHARED_SECRET" in response.json()["detail"]
+
+
+def test_ask_is_rate_limited_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RWI_METEOROLOGIST_ASK_PER_MINUTE", "2")
+    get_settings.cache_clear()
+    with _client() as client:
+        codes = [
+            client.post(
+                "/api/meteorologist/ask", json={"question": "hello"}, headers=ASK_HEADERS
+            )
+            for _ in range(3)
+        ]
+    # Two calls reach the (unconfigured) classifier; the third never does.
+    assert [r.status_code for r in codes] == [501, 501, 429]
+    assert codes[2].json()["detail"]["code"] == "rate_limited"
+    assert int(codes[2].headers["Retry-After"]) >= 1
 
 
 # get_settings is cached; make sure tests don't leak state via the cache.

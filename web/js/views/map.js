@@ -12,7 +12,7 @@ import { h, replace } from "../dom.js";
 import { api } from "../api.js";
 import { cfg, mapStyleUrl, prefs } from "../settings.js";
 import { DASH, compass, fmtLocal, fmtNum, fmtUtc, nowMs } from "../format.js";
-import { res, activePoint, displayRoute, controlStops, vehicleTimezone, signature } from "../store.js";
+import { res, activePoint, displayRoute, controlStops, vehicleTimezone, signature, effectiveTimeMs } from "../store.js";
 import { loadRoutes, loadRouteGeojson } from "../loaders.js";
 
 const KEYS = ["state", "routes", "routeGeojson"];
@@ -275,7 +275,7 @@ export function create(root) {
     const ts = grid?.valid_times_utc || [];
     if (!ts.length) return 0;
     if (prefer) { const i = ts.indexOf(prefer); if (i >= 0) return i; }
-    const now = nowMs(); let best = 0, bd = Infinity;
+    const now = effectiveTimeMs(); let best = 0, bd = Infinity;
     ts.forEach((t, i) => { const d = Math.abs(Date.parse(t) - now); if (d < bd) { bd = d; best = i; } });
     return best;
   }
@@ -393,7 +393,7 @@ export function create(root) {
     if (!t) return DASH;
     const { tz } = vehicleTimezone();
     const local = tz ? ` · ${fmtLocal(t, tz, { timeOnly: false })} lokal` : "";
-    const lead = Math.round((Date.parse(t) - nowMs()) / 3600000);
+    const lead = Math.round((Date.parse(t) - effectiveTimeMs()) / 3600000);
     const rel = lead === 0 ? "nu" : lead > 0 ? `+${lead} h` : `${lead} h`;
     return `${fmtUtc(t)}${local} (${rel})`;
   }

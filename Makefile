@@ -4,9 +4,10 @@ PY := $(VENV)/bin/python
 
 .PHONY: setup lint typecheck test test-network test-science api dashboard check clean product-schema
 
+# Installs exactly uv.lock. After changing dependencies in pyproject.toml run
+# `uv lock` and commit uv.lock; CI fails on a stale lock (--frozen).
 setup:
-	uv venv --python 3.12 $(VENV)
-	VIRTUAL_ENV=$(VENV) uv pip install -e ".[dev]"
+	uv sync --frozen --python 3.12 --extra dev
 
 lint:
 	$(VENV)/bin/ruff check src tests

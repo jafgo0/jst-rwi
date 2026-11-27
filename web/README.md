@@ -26,10 +26,13 @@ Other ways:
 
 * Any static server from inside `web/` (`python -m http.server 8080`), then
   `http://localhost:8080/?api=http://localhost:8000`. The API's CORS allow-list is
-  `localhost:8000`, `127.0.0.1:8000` and `null`, so another origin needs a backend
+  `localhost:8000` and `127.0.0.1:8000`, so another origin needs a backend
   change or a proxy.
 * `file://` does **not** work in current browsers (they block ES modules from
   file URLs). `index.html` detects this and says so on screen after 2.5 s.
+  The `null` origin a file page sends is deliberately **not** in the CORS
+  allow-list: serve the dashboard from the API (`make api`, then
+  http://localhost:8000/) instead.
 * The browser caches ES modules heuristically. After editing a file, hard-reload
   (Cmd/Ctrl+Shift+R) or you will see the old code.
 
@@ -46,7 +49,7 @@ A classic script that sets `window.RWI_CONFIG`; every key is optional
 to `web/config.js` on each machine and put map tokens or API-key
 overrides there. The real `config.js` never enters version control.
 
-* `apiBase`: API base URL ("" = same origin; `http://localhost:8000` under file://).
+* `apiBase`: API base URL ("" = same origin, the normal case when the API serves `web/`).
 * `requestTimeoutMs`, `pollStateMs`, `pollSlowMs`.
 * `freshnessDefaultsS`: fallback freshness limits used **only** while
   `GET /api/health` has not been read. Normally the limits come from

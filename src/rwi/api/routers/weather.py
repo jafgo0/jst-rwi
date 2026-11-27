@@ -67,10 +67,11 @@ async def _fetch(
         providers = {name: p for name, p in providers.items() if name == provider}
     point = resolve_point(lat, lon, elev, store)
     now = utc_now()
+    at = store.state.effective_time(now)  # window follows the selected time; QC age uses now
     window = (
-        TimeWindow(start_utc=now, end_utc=now + timedelta(hours=hours))
+        TimeWindow(start_utc=at, end_utc=at + timedelta(hours=hours))
         if kind is DataKind.FORECAST
-        else TimeWindow(start_utc=now - timedelta(hours=hours), end_utc=now)
+        else TimeWindow(start_utc=at - timedelta(hours=hours), end_utc=at)
     )
     series = await fetch_with_fallback(
         providers, point, window, _variables(variables), kind=kind

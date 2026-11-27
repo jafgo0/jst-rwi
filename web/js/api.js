@@ -9,6 +9,9 @@
 import { apiBase, cfg } from "./settings.js";
 import { setClockOffset } from "./format.js";
 
+/** Capture and /ask cost bandwidth or tokens; the backend requires the shared secret. */
+const secretHeaders = () => (cfg.telemetry?.sharedSecret ? { "X-Telemetry-Secret": cfg.telemetry.sharedSecret } : {});
+
 /* ------------------------------------------------------------------ typedefs */
 
 /** @typedef {{latitude_deg:number, longitude_deg:number, elevation_m:(number|null)}} GeoPoint */
@@ -387,7 +390,7 @@ export const api = {
   /** EXPERIMENTAL (ADR 0008): ML P10/P50/P90, or status "no_model"/"not_applicable" with the reason. */
   mlBands: ({ variable, lat, lon, hours }) => request("/api/ml/bands", { params: { variables: variable, lat, lon, hours }, timeoutMs: 60000 }),
   /** Operator action: runs one capture cycle NOW. Makes real provider calls. @returns {Promise<CaptureResult>} */
-  capture: (sites) => request("/api/forecast/capture", { method: "POST", params: { sites }, timeoutMs: 180000 }),
+  capture: (sites) => request("/api/forecast/capture", { method: "POST", params: { sites }, headers: secretHeaders(), timeoutMs: 180000 }),
   /** GET /api/regulations: verified BWSC 2027 limits and what is not yet published. */
   regulations: () => request("/api/regulations"),
   /** @returns {Promise<Alert[]>} */
@@ -395,7 +398,7 @@ export const api = {
   /** GET /api/meteorologist/{kind}: deterministic, cited briefing (no LLM). */
   briefing: (kind, params) => request(`/api/meteorologist/${kind}`, { params }),
   /** POST /api/meteorologist/ask: free text; 501 when the LLM classifier is not configured. */
-  ask: (question, hours) => request("/api/meteorologist/ask", { method: "POST", body: { question, hours }, timeoutMs: 30000 }),
+  ask: (question, hours) => request("/api/meteorologist/ask", { method: "POST", body: { question, hours }, headers: secretHeaders(), timeoutMs: 30000 }),
 };
 
 /** Every endpoint this UI calls (documentation / footer / README check). */

@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     # environment (RWI_ANTHROPIC_API_KEY), never in the repository.
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-5-5"
+    # /ask also requires X-Telemetry-Secret; this caps token spend per process.
+    meteorologist_ask_per_minute: int = 6
 
 
 @lru_cache(maxsize=1)

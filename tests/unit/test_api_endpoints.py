@@ -631,3 +631,102 @@ def test_all_models_failing_returns_503_with_the_reasons(
     assert error["code"] == "ProviderUnavailableError"
     assert "all failed" in error["message"]
     assert "overloaded" in error["detail"]
+
+
+def test_capture_requires_the_shared_secret(client: TestClient) -> None:
+    response = client.post("/api/forecast/capture")
+    assert response.status_code == 403
+
+
+def test_capture_is_refused_while_capture_is_disabled(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RWI_CAPTURE_ENABLED", "false")
+    get_settings.cache_clear()
+    response = client.post("/api/forecast/capture", headers=TELEMETRY_HEADERS)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "capture_disabled"
+
+
+@pytest.mark.parametrize("step", ["search", "download"])
+def test_satcorps_network_failure_is_a_typed_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    # earthaccess raises requests exceptions (OSError subclasses) when NASA
+    # Earthdata is unreachable; the endpoint must answer 503, not crash with 500.
+    import requests
+
+    from rwi.api.routers import satellite as satellite_router
+    from rwi.satellite import satcorps
+
+    def boom(*_a: Any, **_k: Any) -> Any:
+        raise requests.ConnectionError("earthdata down")
+
+    if step == "search":
+        monkeypatch.setattr(satellite_router, "_cached_latest_scene", boom)
+    else:
+        monkeypatch.setattr(satellite_router, "_cached_latest_scene", lambda _h: object())
+        monkeypatch.setattr(satcorps, "download_scene", boom)
+
+    response = client.get(
+        "/api/satellite/satcorps-crosscheck", params={"lat": -12.46, "lon": 130.84}
+    )
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "ProviderUnavailableError"
+    assert "ConnectionError" in error["message"]
+
+
+def test_route_weather_window_follows_the_selected_time(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the trajectory starts at the selected time but the horizon was
+    anchored to the wall clock, so a selected time more than `hours` ahead gave 0
+    samples. The window must follow the effective time."""
+    import types
+    from datetime import UTC, datetime, timedelta
+
+    from rwi.contracts import WeatherSeries, WeatherStep
+    from rwi.core.provenance import DataKind, Provenance, measured
+
+    selected = (datetime.now(UTC) + timedelta(hours=30)).replace(
+        minute=0, second=0, microsecond=0
+    )
+
+    async def fetch(_providers: Any, point: Any, window: Any, _vars: Any, *, kind: Any) -> Any:
+        steps = []
+        t = window.start_utc.replace(minute=0, second=0, microsecond=0)
+        while t <= window.end_utc + timedelta(hours=1):
+            prov = Provenance(
+                provider="stub", dataset="forecast", kind=DataKind.FORECAST,
+                retrieved_at_utc=datetime.now(UTC), valid_time_utc=t, point=point,
+            )
+            steps.append(WeatherStep(
+                valid_time_utc=t, values={"temperature_2m": measured("temperature_2m", 30.0, prov)}
+            ))
+            t += timedelta(hours=1)
+        return WeatherSeries(
+            point=point, requested_point=point, provider="stub", dataset="forecast",
+            kind=DataKind.FORECAST, retrieved_at_utc=datetime.now(UTC),
+            temporal_resolution_s=3600.0, steps=steps,
+        )
+
+    stub = types.ModuleType("rwi.providers.registry")
+    stub.available_providers = lambda _s: {"stub": object()}  # type: ignore[attr-defined]
+    stub.fetch_with_fallback = fetch  # type: ignore[attr-defined]
+    real_import = capability._try_import
+    monkeypatch.setattr(
+        capability, "_try_import",
+        lambda name: stub if name == "rwi.providers.registry" else real_import(name),
+    )
+    client.post("/api/state/time", json={"selected_time_utc": selected.isoformat()})
+
+    route_id = client.get("/api/route").json()[0]["id"]
+    response = client.get(
+        f"/api/route/{route_id}/weather", params={"hours": 10, "start_distance_m": 0}
+    )
+    assert response.status_code == 200, response.text
+    samples = response.json()["forecast"]["samples"]
+    assert len(samples) > 0
+    first_eta = datetime.fromisoformat(samples[0]["trajectory_point"]["eta_utc"])
+    assert first_eta >= selected

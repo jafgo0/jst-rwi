@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from rwi.alerts import (
     data_integrity_alerts,
@@ -27,6 +27,7 @@ from rwi.alerts import (
 )
 from rwi.api.capability import require_attr
 from rwi.api.deps import resolve_point
+from rwi.api.security import ASK_LIMITER, enforce_rate_limit, require_shared_secret
 from rwi.config import Settings, get_settings
 from rwi.core.errors import PositionUnavailableError, RwiError
 from rwi.core.provenance import DataKind
@@ -82,6 +83,9 @@ async def _assemble_context(
     rather than silently omitting it.
     """
     now = utc_now()
+    # Weather windows and outlooks follow the selected time; data-integrity and
+    # archive ages stay on the wall clock.
+    at = store.state.effective_time(now)
     state_result = mt.where_and_when(store.state)
 
     # Solar day events: only when we have a position.
@@ -93,7 +97,7 @@ async def _assemble_context(
             solar_day_events: Any = require_attr(
                 "rwi.solar.geometry", "solar_day_events", capability="solar geometry"
             )
-            events = solar_day_events(store.state.fix.point, now)
+            events = solar_day_events(store.state.fix.point, at)
             solar_day_result = mt.solar_day(events)
     except (PositionUnavailableError, RwiError) as exc:
         solar_day_result = ToolResult.unavailable(
@@ -122,7 +126,7 @@ async def _assemble_context(
         providers = available(settings)
         provider_health = [await p.health() for p in providers.values()]
         point = resolve_point(None, None, None, store)
-        window = TimeWindow(start_utc=now, end_utc=now + timedelta(hours=hours))
+        window = TimeWindow(start_utc=at, end_utc=at + timedelta(hours=hours))
         series = await fetch_with_fallback(
             providers, point, window, BRIEFING_VARIABLES, kind=DataKind.FORECAST
         )
@@ -163,7 +167,7 @@ async def _assemble_context(
         alerts: list[Any] = []
         for item in weather_series:
             alerts.extend(
-                weather_alerts(item, now=now, horizon_s=hours * 3600.0)
+                weather_alerts(item, now=at, horizon_s=hours * 3600.0)
             )
         alerts.extend(
             data_integrity_alerts(
@@ -197,10 +201,10 @@ async def _assemble_context(
     # Convection + wind outlooks: read from the first fetched series if any.
     series_for_outlook = weather_series[0] if weather_series else None
     convection_result = mt.convection_outlook(
-        series_for_outlook, now=now, horizon_s=hours * 3600.0
+        series_for_outlook, now=at, horizon_s=hours * 3600.0
     )
     wind_result = mt.wind_outlook(
-        series_for_outlook, now=now, horizon_s=hours * 3600.0
+        series_for_outlook, now=at, horizon_s=hours * 3600.0
     )
 
     # Fas 3: self-knowledge from the verification archive. open_archive is
@@ -399,6 +403,7 @@ async def ask(
     payload: dict[str, Any],
     store: StoreDep,
     settings: SettingsDep,
+    x_telemetry_secret: Annotated[str | None, Header(alias="X-Telemetry-Secret")] = None,
 ) -> Any:
     """Free-form question → classifier → deterministic composer.
 
@@ -411,6 +416,7 @@ async def ask(
     ``anthropic`` package not installed); the dashboard then knows the
     capability is off and can show it honestly.
     """
+    require_shared_secret(settings, x_telemetry_secret, action="meteorologist/ask")
     question = str(payload.get("question", "")).strip()
     if not question:
         raise HTTPException(
@@ -423,6 +429,9 @@ async def ask(
             status_code=400,
             detail={"code": "invalid_hours", "message": "hours måste vara i (0, 48]"},
         )
+    enforce_rate_limit(
+        ASK_LIMITER, settings.meteorologist_ask_per_minute, action="meteorologist/ask"
+    )
     try:
         classifier = build_classifier(
             api_key=settings.anthropic_api_key, model=settings.anthropic_model

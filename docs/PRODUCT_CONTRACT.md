@@ -29,7 +29,7 @@ the tier.
 ### STABLE
 - `GET /api/state` — vehicle position, mode, time base.
 - `GET /api/meteorologist/risk-ahead | forecast-reliability | morning-briefing`  
-- `POST /api/meteorologist/ask`
+- `POST /api/meteorologist/ask` — requires `X-Telemetry-Secret` (403 without it) and is rate limited (429 + `Retry-After`) since 0.3.0.
 - `GET /api/route/{route_id}/progress | trajectory | weather`
 - `GET /api/solar/position | day | clearsky | clearsky/day`
 - `GET /api/weather/forecast | observations | providers | observable | variables`

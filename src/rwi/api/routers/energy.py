@@ -138,8 +138,8 @@ async def read_energy_forecast(
     providers = available(settings)
     if provider:
         providers = {name: p for name, p in providers.items() if name == provider}
-    now = utc_now()
-    window = TimeWindow(start_utc=now, end_utc=now + timedelta(hours=hours))
+    at = store.state.effective_time(utc_now())
+    window = TimeWindow(start_utc=at, end_utc=at + timedelta(hours=hours))
     series = await fetch_with_fallback(
         providers, point, window, ENERGY_VARIABLES, kind=DataKind.FORECAST
     )

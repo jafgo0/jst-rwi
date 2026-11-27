@@ -12,11 +12,12 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from rwi.api.capability import require_attr
 from rwi.api.deps import LatQuery, LonQuery, resolve_point
+from rwi.api.security import require_shared_secret
 from rwi.config import Settings, get_settings
 from rwi.contracts import (
     EnsembleSummary,
@@ -254,12 +255,23 @@ class CaptureTriggerResponse(BaseModel):
 async def trigger_capture(
     settings: SettingsDep,
     sites: Annotated[str | None, Query(description="comma-separated site ids")] = None,
+    x_telemetry_secret: Annotated[str | None, Header(alias="X-Telemetry-Secret")] = None,
 ) -> Any:
     """Run one capture cycle now.
 
     Manual trigger for operators and for seeding the archive; the scheduled
-    worker runs as its own process (`python -m rwi.capture`).
+    worker runs as its own process (`python -m rwi.capture`). It spends
+    provider bandwidth, so it needs ``capture_enabled`` and the shared secret.
     """
+    require_shared_secret(settings, x_telemetry_secret, action="capture")
+    if not settings.capture_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "capture_disabled",
+                "message": "capture is disabled on this deployment (RWI_CAPTURE_ENABLED=false)",
+            },
+        )
     capture_once: Any = require_attr("rwi.capture", "capture_once", capability="capture worker")
     sites_from_ids: Any = require_attr("rwi.capture", "sites_from_ids", capability="capture worker")
     available: Any = require_attr(

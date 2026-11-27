@@ -3214,6 +3214,21 @@
                 }
               ]
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Telemetry-Secret",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -3528,6 +3543,23 @@
     "/api/meteorologist/ask": {
       "post": {
         "operationId": "ask_api_meteorologist_ask_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Telemetry-Secret",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

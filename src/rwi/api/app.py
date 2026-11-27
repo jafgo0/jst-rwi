@@ -139,7 +139,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "null"],
+        allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
         expose_headers=["X-Rwi-Product-Version", "X-Rwi-Product-Tier"],

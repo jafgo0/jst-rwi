@@ -130,10 +130,15 @@ class RwiClient:
             "/api/meteorologist/morning-briefing", params={"hours": hours}
         )
 
-    def ask(self, question: str, *, hours: float = 12.0) -> dict[str, Any]:
+    def ask(
+        self, question: str, *, hours: float = 12.0, shared_secret: str | None = None
+    ) -> dict[str, Any]:
+        """Free-text question; the server requires X-Telemetry-Secret (403 without it)."""
+        headers = {"X-Telemetry-Secret": shared_secret} if shared_secret else None
         return self._post(
             "/api/meteorologist/ask",
             json={"question": question, "hours": hours},
+            headers=headers,
         )
 
     def route_weather(self, route_id: str) -> dict[str, Any]:
@@ -164,9 +169,11 @@ class RwiClient:
             raise RwiClientError(f"GET {path} failed: {exc}") from exc
         return self._parse(resp, path)
 
-    def _post(self, path: str, *, json: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self, path: str, *, json: dict[str, Any], headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         try:
-            resp = self._client.post(path, json=json)
+            resp = self._client.post(path, json=json, headers=headers)
         except httpx.HTTPError as exc:
             raise RwiClientError(f"POST {path} failed: {exc}") from exc
         return self._parse(resp, path)

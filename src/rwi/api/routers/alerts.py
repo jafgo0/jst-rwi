@@ -41,6 +41,7 @@ async def read_alerts(
     hours: Annotated[float, Query(gt=0.0, le=48.0)] = 6.0,
 ) -> Any:
     now = utc_now()
+    at = store.state.effective_time(now)  # weather window; data-integrity ages use now
     fix = store.state.fix
     suspect_fix = store.state.suspect_fix
     series: list[Any] = []
@@ -56,7 +57,7 @@ async def read_alerts(
         providers = available(settings)
         health = [await provider.health() for provider in providers.values()]
         point = resolve_point(None, None, None, store)
-        window = TimeWindow(start_utc=now, end_utc=now + timedelta(hours=hours))
+        window = TimeWindow(start_utc=at, end_utc=at + timedelta(hours=hours))
         series = [
             await fetch_with_fallback(
                 providers, point, window, ALERT_VARIABLES, kind=DataKind.FORECAST
@@ -69,7 +70,7 @@ async def read_alerts(
 
     alerts: list[Alert] = []
     for item in series:
-        alerts.extend(weather_alerts(item, now=now, horizon_s=hours * 3600.0))
+        alerts.extend(weather_alerts(item, now=at, horizon_s=hours * 3600.0))
     alerts.extend(
         data_integrity_alerts(
             series=series,

@@ -254,7 +254,9 @@ async def read_route_weather(
         route, speed_kmh=speed_kmh, start_distance_m=start_distance_m, hours=hours, store=store
     )
     now = utc_now()
-    horizon = now + timedelta(hours=hours)
+    # The trajectory starts at the selected (effective) time, so the horizon must too;
+    # anchoring it to the wall clock dropped every sample once a later time was selected.
+    horizon = store.state.effective_time(now) + timedelta(hours=hours)
     points = [p for p in trajectory.points if p.eta_utc <= horizon]
     if len(points) > MAX_TRAJECTORY_SAMPLES:
         stride = max(1, len(points) // MAX_TRAJECTORY_SAMPLES)

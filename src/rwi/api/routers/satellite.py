@@ -21,6 +21,7 @@ from rwi.api.capability import require_attr
 from rwi.api.deps import LatQuery, LonQuery, resolve_point
 from rwi.config import Settings, get_settings
 from rwi.contracts import CloudMotion, IrradianceNowcast, SatelliteTile
+from rwi.core.errors import ProviderUnavailableError
 from rwi.core.state import StateStore, get_state_store
 from rwi.core.timebase import utc_now
 
@@ -250,6 +251,14 @@ def _cached_latest_scene(window_hours: int) -> Any:
     return latest
 
 
+def _satcorps_unreachable(step: str, exc: OSError) -> ProviderUnavailableError:
+    """Return the typed 503 for a network failure talking to NASA Earthdata."""
+    return ProviderUnavailableError(
+        f"SatCORPS {step} failed ({type(exc).__name__}): {exc}. NASA Earthdata "
+        "is unreachable or refused the request; nothing was cached for this scene."
+    )
+
+
 @router.get("/satcorps-crosscheck")
 async def read_satcorps_crosscheck(
     store: StoreDep,
@@ -283,6 +292,8 @@ async def read_satcorps_crosscheck(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
         ) from exc
+    except OSError as exc:  # requests.RequestException is an OSError
+        raise _satcorps_unreachable("CMR scene search", exc) from exc
     if latest is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -298,6 +309,8 @@ async def read_satcorps_crosscheck(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc),
         ) from exc
+    except OSError as exc:
+        raise _satcorps_unreachable("granule download", exc) from exc
     if downloaded.local_path is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

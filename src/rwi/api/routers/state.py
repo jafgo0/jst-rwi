@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from rwi.api.security import require_shared_secret
 from rwi.config import Settings, get_settings
 from rwi.core.errors import NaiveDatetimeError
 from rwi.core.fix_guard import FixVerdict, assess_live_fix, normalise_optional_utc
@@ -215,22 +216,7 @@ def _authorise_mode(mode: PositionMode, settings: Settings, secret: str | None) 
     """
     if mode is not PositionMode.LIVE_GPS:
         return
-    expected = settings.telemetry_shared_secret
-    if not expected:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "mode=live_gps is not accepted on this deployment because "
-                "RWI_TELEMETRY_SHARED_SECRET is not set. Use mode=manual for "
-                "operator entry, mode=route_sim for simulation, or configure "
-                "the secret and resend with the X-Telemetry-Secret header."
-            ),
-        )
-    if not secret or secret != expected:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="mode=live_gps requires a correct X-Telemetry-Secret header.",
-        )
+    require_shared_secret(settings, secret, action="mode=live_gps")
 
 
 def _project_progress(route_id: str, fix: PositionFix) -> float | None:
