@@ -16,6 +16,7 @@ data/replay/
 # version control: it grows to gigabytes and is a binary that cannot be merged.
 data/archive/
 data/spool/
+data/climatology/parts/
 node_modules/
 .DS_Store
 

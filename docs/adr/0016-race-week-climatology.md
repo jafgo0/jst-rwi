@@ -81,3 +81,26 @@ beyond the forecast horizon), `docs/science/climatology.md`
 
 Accepted. Tested with `respx`-mocked ERA5 archive responses and pvlib references. The real
 file has not been built yet; that is a live-provider run.
+
+## Amendment 2026-11-27 — resumable, retrying build
+
+Decision item 3 said any provider error aborts the build. With 35 years at 50 km spacing
+that is about 2,000 archive calls, and one 503 near the end threw all of them away. It
+now reads:
+
+* **Checkpoints.** Every point-year series is written as gzipped JSON (about 11 KB) to
+  `<parts-dir>/<route_id>/era5/<year>/<lat>_<lon>.json.gz` as soon as it arrives, by
+  write-then-rename. A rerun loads a part instead of fetching it. A part that cannot be
+  read, is not `era5`, lacks a variable, does not cover the race week or belongs to
+  another point is fetched again. Parts are keyed by coordinates, not spacing.
+* **Retries.** A point-year is tried `--attempts` times (default 5), waiting
+  `--backoff-s · 2^k` between tries (default 30 s, so 30/60/120/240 s), on top of the
+  provider's own HTTP retries. `CapabilityNotSupportedError` is a configuration bug and is
+  never retried.
+* **Failures.** A point-year that still fails is recorded and the build goes on with the
+  rest. `--max-consecutive-failures` (default 3) failures in a row stop the run early, since
+  the provider is then down or the quota is spent.
+* **Still no partial climatology.** If any point-year is missing at the end, the build
+  raises `IncompleteClimatologyError` listing them, the script exits with status 2 and no
+  climatology file is written. Rerunning the same command fetches only what is missing.
+

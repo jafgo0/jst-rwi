@@ -27,6 +27,16 @@ given day, and its source (ERA5) is reanalysis, not observation.
 * Window per year: event-time (ACST, UTC+9:30) 22 Aug 00:00 to 30 Aug 00:00. The archive is
   queried in whole UTC days covering it.
 
+### Building and resuming
+
+* One archive request per point per year. Each answer is saved straight away as a gzipped
+  part under `<RWI_CLIMATOLOGY_DIR>/parts/` (git-ignored) and reused by the next run.
+* A failed request is retried with exponential backoff; a point-year that still fails is
+  listed and the build continues. Three failures in a row stop it early.
+* The climatology file is only written when every point-year is present, so a gap never
+  turns into a silently thinner sample. Rerun the same command to fill the gaps.
+* Change of years or spacing reuses every part whose coordinates and year match.
+
 ## 4. Hour selection
 
 Driving window: `SCHEDULE.daily_start`..`daily_stop` (08:00–17:00 event time).
@@ -70,5 +80,7 @@ sun more than 30° below the horizon then at Darwin and Adelaide (test
 Unit tests (`tests/unit/test_climatology_*.py`, `tests/unit/test_api_climatology.py`):
 segment boundaries, UTC race-week window, hour-selection counts on a synthetic series,
 quantile type 7 against a hand-checked case, tailwind sign, wind-rose binning, daily-energy
-gap handling, the build loop against a `respx`-mocked archive, and every API error path.
+gap handling, the build loop against a `respx`-mocked archive (one call per point-year,
+resume with zero calls, retry backoff, a failure that does not stop the rest, corrupt and
+foreign parts refetched), and every API error path.
 No comparison against ground truth yet.
