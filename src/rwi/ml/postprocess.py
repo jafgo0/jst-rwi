@@ -7,6 +7,9 @@ The output is a new `WeatherSeries` from provider ``rwi`` / dataset
 Refusals are silent omissions, never pass-through: a step whose features fall
 outside the training envelope gets no ML value at all, so a raw upstream number
 is never relabelled as post-processed.
+
+Wind ``wind_u_10m``/``wind_v_10m`` models read u/v derived from the upstream
+speed and direction (ADR 0011 §2); the upstream series itself is unchanged.
 """
 
 from collections.abc import Mapping
@@ -22,6 +25,7 @@ from rwi.ml.artifacts import ModelManifest
 from rwi.ml.constraints import IRRADIANCE_VARIABLES
 from rwi.ml.features import build_features, solar_context, source_id
 from rwi.ml.quantile import QuantileModel
+from rwi.ml.targets import upstream_value
 
 __all__ = ["ML_DATASET", "ML_PROVIDER", "UNCERTAINTY_METHOD", "MlPostprocessor"]
 
@@ -70,16 +74,15 @@ class MlPostprocessor:
             if src not in model.source_vocabulary:
                 continue
             code = model.source_vocabulary.index(src)
+            upstream = [upstream_value(step, variable) for step in series.steps]
             rows = [
-                i
-                for i, step in enumerate(series.steps)
-                if step.value(variable) is not None and times[i] >= init
+                i for i, value in enumerate(upstream) if value is not None and times[i] >= init
             ]
             if not rows:
                 continue
             x = build_features(
                 source_codes=[code] * len(rows),
-                forecast_values=[float(series.steps[i].value(variable) or 0.0) for i in rows],
+                forecast_values=[float(upstream[i] or 0.0) for i in rows],
                 points=[series.point] * len(rows),
                 lead_times_s=[(times[i] - init).total_seconds() for i in rows],
                 solar=solar.take(rows),

@@ -51,6 +51,8 @@ TIER_BY_PREFIX: Final[dict[str, ProductTier]] = {
     "/api/weather": ProductTier.STABLE,
     "/api/alerts": ProductTier.STABLE,
     "/api/energy": ProductTier.STABLE,
+    # ADR 0011: versioned route bands + verification; breaking changes go to /api/v2.
+    "/api/v1": ProductTier.STABLE,
     # EXPERIMENTAL: implemented, not validated; the strategy repo lives
     # in its own repository, so the strategy endpoints here are a
     # preview of the integration surface.
@@ -110,9 +112,7 @@ def product_schema(app: FastAPI) -> dict[str, Any]:
     full = app.openapi()
     paths = full.get("paths", {})
     stable_paths = {
-        p: entry
-        for p, entry in paths.items()
-        if tier_for_path(p) is ProductTier.STABLE
+        p: entry for p, entry in paths.items() if tier_for_path(p) is ProductTier.STABLE
     }
     schema: dict[str, Any] = {
         "openapi_subset": "product-v1",  # not an openapi version - our shape tag
@@ -158,11 +158,7 @@ def _normalise(obj: Any) -> Any:
     """Recursively sort dict keys and strip fields that drift with FastAPI."""
     DROP = {"example", "examples", "description", "summary", "title"}
     if isinstance(obj, dict):
-        return {
-            k: _normalise(v)
-            for k, v in sorted(obj.items())
-            if k not in DROP
-        }
+        return {k: _normalise(v) for k, v in sorted(obj.items()) if k not in DROP}
     if isinstance(obj, list):
         return [_normalise(x) for x in obj]
     return obj

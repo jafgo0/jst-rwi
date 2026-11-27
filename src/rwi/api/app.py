@@ -43,6 +43,7 @@ from rwi.api.routers import (
     solar,
     state,
     strategy,
+    v1,
     validation,
     weather,
 )
@@ -184,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts.router)
     app.include_router(meteorologist.router)
     app.include_router(ml.router)
+    app.include_router(v1.router)
     app.include_router(map.router)
 
     web_dir = Path(__file__).resolve().parents[3] / "web"

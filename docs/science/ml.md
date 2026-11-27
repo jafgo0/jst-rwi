@@ -79,6 +79,28 @@ extrapolated. Night irradiance steps are always emitted as 0.
 - Strategy: `rwi.strategy.segments.generation_band_from_ghi` turns these bands into segment
   P10/P90 generation (see `docs/science/vehicle.md` §5.6a).
 
+## 7b. Targets, truth and the stable v1 bands (ADR 0011)
+
+- Targets: ghi, dni, cloud_cover, wind_speed_10m, temperature_2m, and wind u/v
+  (`wind_u_10m` / `wind_v_10m`, which are `DERIVED_VARIABLES`). The u/v values come
+  from speed and direction through `rwi.core.wind.met_to_uv`, both on the forecast
+  side and on the observation side (`rwi.ml.targets`).
+- Truth priority (`TRUTH_PRIORITY`): ghi and temperature_2m use on-board first
+  (EKO ML-01 / Airmar), then BoM. All other variables use BoM only, and u/v follow
+  wind_speed. Each pair is labelled with the provider it was queried for, and the
+  manifest's `target_kind` names the truth. BSRN is deferred.
+- Head- and crosswind: these are never trained. `rwi.ml.bands.box_projection_bands`
+  projects the P10/P90 corners of u and v onto the route heading and keeps the
+  extremes. The result covers at least the u-v rectangle, so `interval_probability`
+  is `None` (only ≥ 0.6 holds if both marginals are calibrated at 0.8).
+  Science test: it matches `relative_wind` at vehicle speed 0.
+- `route_distance_km` is not passed to the v1 post-processor. No training path fills
+  it yet (it is all-NaN in every envelope), so a finite value would mark every point
+  `outside_training_range`. It will be enabled when the dataset builder gets a route
+  projection.
+- `/api/v1/*` is tier `stable` in form only. Skill on real race data is still
+  **not validated** (§9). `/api/ml/*` remains `experimental`.
+
 ## 8. Nowcast (`nowcast.py`)
 
 `Nowcaster` is a Protocol. `PersistenceNowcaster` and `AdvectionNowcaster` wrap
@@ -94,6 +116,7 @@ patch around a point (its future input).
 | Quantile training, artifacts, post-processor, CLI | tested on synthetic data; **skipped without libomp** |
 | K_MAX = 1.5, night = 0 | science tests |
 | `/api/ml/*`, strategy generation band | tested (API with mocked upstream) |
+| `/api/v1/*` bands, box projection, verification | tested (mocked upstream and archive); box vs `relative_wind` science test |
 | Skill on real race data | **not validated**: needs an archive with real pairs |
 
 Runtime requirement: lightgbm needs `libomp` on macOS. Without it, `lazy_lightgbm()` raises

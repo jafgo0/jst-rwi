@@ -142,6 +142,21 @@ OBSERVATION_ONLY_VARIABLES: dict[str, VariableSpec] = {
     )
 }
 
+#: Variables no provider serves but the platform derives from canonical ones
+#: (ADR 0011). Kept out of CANONICAL_VARIABLES for the same reason as the
+#: sensor-only set: providers must cover that set exactly. u/v follow the
+#: meteorological convention of rwi.core.wind.met_to_uv: u positive toward the
+#: east, v positive toward the north.
+DERIVED_VARIABLES: dict[str, VariableSpec] = {
+    s.name: s
+    for s in (
+        _spec("wind_u_10m", "m/s", -120.0, 120.0, V.WIND,
+              "Eastward component of the 10 m wind (positive = blowing toward east)"),
+        _spec("wind_v_10m", "m/s", -120.0, 120.0, V.WIND,
+              "Northward component of the 10 m wind (positive = blowing toward north)"),
+    )
+}
+
 RADIATION_VARIABLES = tuple(
     name for name, s in CANONICAL_VARIABLES.items() if s.variable_class is V.RADIATION
 )
@@ -155,6 +170,10 @@ def spec_for(name: str) -> VariableSpec:
         pass
     try:
         return OBSERVATION_ONLY_VARIABLES[name]
+    except KeyError:
+        pass
+    try:
+        return DERIVED_VARIABLES[name]
     except KeyError as exc:
         raise UnknownVariableError(
             f"{name!r} is not a canonical variable; add it to rwi.core.variables"

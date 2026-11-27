@@ -27,8 +27,16 @@ __all__ = [
 
 FloatArray = NDArray[np.float64]
 
-#: Variables the post-processor learns (ADR 0008 §2).
-ML_VARIABLES: tuple[str, ...] = ("ghi", "dni", "cloud_cover", "wind_speed_10m")
+#: Variables the post-processor learns (ADR 0008 §2; temperature and u/v per ADR 0011).
+ML_VARIABLES: tuple[str, ...] = (
+    "ghi",
+    "dni",
+    "cloud_cover",
+    "wind_speed_10m",
+    "temperature_2m",
+    "wind_u_10m",
+    "wind_v_10m",
+)
 #: Variables predicted as a clear-sky index and multiplied back by pvlib clear sky.
 IRRADIANCE_VARIABLES: frozenset[str] = frozenset({"ghi", "dni"})
 

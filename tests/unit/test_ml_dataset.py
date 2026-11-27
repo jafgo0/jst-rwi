@@ -30,7 +30,7 @@ def test_non_irradiance_target_is_the_physical_value_and_keeps_night_rows() -> N
 def test_other_variables_and_unknown_variable() -> None:
     assert len(dataset_from_pairs(wind_pairs(1), variable="ghi")) == 0
     with pytest.raises(ValueError):
-        dataset_from_pairs([], variable="temperature_2m")
+        dataset_from_pairs([], variable="wind_direction_10m")  # direction: via u/v only
 
 
 def test_split_never_trains_on_anything_unknown_at_the_cutoff() -> None:

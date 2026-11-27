@@ -33,8 +33,20 @@ __all__ = [
 ]
 
 #: Where the training target came from (ADR 0008 §2, irradiance rank order).
-TargetKind = Literal["telemetry", "bom_one_minute", "era5_analysis", "bom_observation"]
-TARGET_KINDS: tuple[str, ...] = ("telemetry", "bom_one_minute", "era5_analysis", "bom_observation")
+TargetKind = Literal[
+    "telemetry",
+    "bom_one_minute",
+    "era5_analysis",
+    "bom_observation",
+    "telemetry+bom_observation",
+]
+TARGET_KINDS: tuple[str, ...] = (
+    "telemetry",
+    "bom_one_minute",
+    "era5_analysis",
+    "bom_observation",
+    "telemetry+bom_observation",
+)
 _FILES = {q: f"q{round(q * 100):02d}.txt" for q in QUANTILES}
 
 

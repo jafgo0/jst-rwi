@@ -28,6 +28,7 @@ from rwi.core.geo import GeoPoint
 from rwi.core.position import PositionFix
 from rwi.core.provenance import DataKind, Measured, Provenance, QualityFlag, Uncertainty
 from rwi.core.timebase import TimeWindow, ensure_utc
+from rwi.core.variables import spec_for
 from rwi.core.wind import RelativeWind
 
 # ---------------------------------------------------------------------------
@@ -483,6 +484,62 @@ class RouteWeatherForecast(BaseModel):
     samples: list[RouteWeatherSample]
     provider: str
     assumptions: dict[str, str | float | bool] = Field(default_factory=dict)
+
+
+#: Route-relative quantities a band may describe that are not forecastable
+#: variables (they depend on the vehicle heading). Sign convention follows
+#: rwi.core.wind: headwind positive opposing travel, crosswind positive from
+#: the left. ADR 0011.
+ROUTE_RELATIVE_BAND_UNITS: dict[str, str] = {"headwind_10m": "m/s", "crosswind_10m": "m/s"}
+
+
+class QuantileBand(BaseModel):
+    """P10/P50/P90 for one variable at one place and valid time (ADR 0011).
+
+    ``interval_probability`` is the nominal probability of the P10-P90
+    interval, or ``None`` when only a bound is known (e.g. the conservative
+    ``uv_box_projection`` for head/cross wind, which guarantees >= 0.6 only if
+    the u and v marginals are calibrated). A band is never an observation.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    variable: str
+    unit: str
+    valid_time_utc: datetime
+    point: GeoPoint
+    p10: float
+    p50: float
+    p90: float
+    method: str = Field(description="e.g. 'quantile_regression:lightgbm', 'uv_box_projection'")
+    interval_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    quality: QualityFlag = QualityFlag.UNVALIDATED
+    ml_derived: bool = Field(
+        description="true when a learned model produced it; then provenance must name the "
+        "model_version and training_cutoff_utc"
+    )
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        object.__setattr__(self, "valid_time_utc", ensure_utc(self.valid_time_utc))
+        if not self.p10 <= self.p50 <= self.p90:
+            raise ValueError("quantiles must satisfy p10 <= p50 <= p90")
+        expected = ROUTE_RELATIVE_BAND_UNITS.get(self.variable) or spec_for(self.variable).unit
+        if self.unit != expected:
+            raise ValueError(f"{self.variable} must be in {expected!r}, got {self.unit!r}")
+        if self.provenance.kind is DataKind.OBSERVATION:
+            raise ValueError("a quantile band is a prediction, never DataKind.OBSERVATION")
+        if self.provenance.valid_time_utc != self.valid_time_utc:
+            raise ValueError("provenance.valid_time_utc must equal the band's valid_time_utc")
+        if self.ml_derived and (
+            not self.provenance.model_version or self.provenance.training_cutoff_utc is None
+        ):
+            raise ValueError(
+                "an ML-derived band must carry provenance.model_version and "
+                "provenance.training_cutoff_utc"
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -1309,6 +1366,7 @@ class TelemetryReader(Protocol):
 
 
 __all__ = [
+    "ROUTE_RELATIVE_BAND_UNITS",
     "Alert",
     "AlertCategory",
     "AlertSeverity",
@@ -1334,6 +1392,7 @@ __all__ = [
     "PowerEstimate",
     "ProviderCapabilities",
     "ProviderHealth",
+    "QuantileBand",
     "Recommendation",
     "Route",
     "RouteProjection",

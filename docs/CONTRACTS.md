@@ -340,6 +340,39 @@ GET  /api/strategy/scenarios?route_id&speed_kmh&start_soc&hours&start_distance_m
 GET  /api/alerts                      -> [Alert]
 ```
 
+### 4a. Versioned stable surface: `/api/v1` (ADR 0011)
+
+Tier `stable` (`X-Rwi-Product-Tier`), schema-pinned in `docs/product/openapi.v0.json`.
+A breaking change goes to `/api/v2`, never into `/api/v1`. Unknown variable names give 422.
+
+```
+GET  /api/v1/forecast/route?route_id&speed_kmh&start_distance_m&hours&variables
+     -> {route_id, generated_at_utc, variables, loaded:[model manifests], missing,
+         points:[{distance_m, eta_utc, eta_local, point, heading_deg, upstream_source,
+                  bands:{variable: QuantileBand}, unavailable:{variable: reason}}], notes}
+     variables: ghi, dni, cloud_cover, wind_speed_10m, temperature_2m, wind_u_10m,
+     wind_v_10m, headwind_10m, crosswind_10m (default ghi, dni, cloud_cover,
+     temperature_2m, headwind_10m, crosswind_10m)
+GET  /api/v1/verification?variables -> {variables:[{variable, status, reason,
+         model_version, truth_sources:{provider: n}, target_kind, n_holdout,
+         scores:[{system, metric, value, n}]}]}
+     status: ok | no_truth | no_model | no_holdout; 503 when the archive is unavailable
+```
+
+* Every band is ML post-processed (`ml_derived=true`) and carries lineage:
+  `model_version` and `training_cutoff_utc` in its provenance (`QuantileBand` validates it).
+* A variable without a band gets a reason: `no_model`, `no_upstream`,
+  `not_applicable` or `outside_training_range`. It is **never** filled with the raw
+  upstream value.
+* `headwind_10m` / `crosswind_10m` are relative to the route heading at the point.
+  They come from the u/v bands by a conservative box projection
+  (`method="uv_box_projection"`, `interval_probability=null`). Headwind is positive
+  against the direction of travel, crosswind is positive from the left.
+* No upstream forecast is fetched for a variable without a model. Route points are
+  limited to `MAX_TRAJECTORY_SAMPLES`.
+* Truth priority for verification: GHI and temperature use on-board EKO ML-01 or
+  Airmar first and BoM second. Everything else uses BoM only. BSRN is deferred.
+
 ## 4b. Contract clarifications agreed during implementation
 
 1. **`ArrayConfig.surface_azimuth_deg` under `vehicle_relative` mounting** is a
@@ -363,9 +396,9 @@ GET  /api/alerts                      -> [Alert]
 * `/api/alerts` carries weather and data-integrity alerts only. Strategy alerts
   (for example "no feasible scenario") need the scenario inputs and therefore
   arrive inside the `/api/strategy/scenarios` response.
-* There is no battery, telemetry, archive or forecast-verification endpoint:
-  those subsystems do not exist yet, and the History view says so rather than
-  showing an empty chart.
+* There is no battery, telemetry or archive endpoint: those subsystems do not
+  exist yet, and the History view says so rather than showing an empty chart.
+  Forecast verification is `/api/v1/verification` (§4a).
 * Route weather samples at most 12 points per request. Denser sampling would
   need a provider plan that permits it.
 

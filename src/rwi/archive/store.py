@@ -490,6 +490,7 @@ class SqliteArchive:
         max_separation_m: float = DEFAULT_MAX_SEPARATION_M,
         max_time_offset_s: float = DEFAULT_MAX_TIME_OFFSET_S,
         lead_time_range_s: tuple[float, float] | None = None,
+        observation_provider: str | None = None,
     ) -> list[ForecastObservationPair]:
         """Forecast/observation pairs for ``variable``, ordered by valid time.
 
@@ -504,6 +505,8 @@ class SqliteArchive:
           it directly.
         * ``period`` is half-open on valid time; ``lead_time_range_s`` is an
           optional half-open ``[lo, hi)`` lead-time filter (a lead-time bucket).
+        * ``observation_provider`` restricts the truth side to observation series
+          from that provider (ADR 0011 truth hierarchy); ``None`` accepts any.
         """
         found, _ = self.pairs_with_report(
             variable=variable,
@@ -513,6 +516,7 @@ class SqliteArchive:
             max_separation_m=max_separation_m,
             max_time_offset_s=max_time_offset_s,
             lead_time_range_s=lead_time_range_s,
+            observation_provider=observation_provider,
         )
         return found
 
@@ -526,6 +530,7 @@ class SqliteArchive:
         max_separation_m: float = DEFAULT_MAX_SEPARATION_M,
         max_time_offset_s: float = DEFAULT_MAX_TIME_OFFSET_S,
         lead_time_range_s: tuple[float, float] | None = None,
+        observation_provider: str | None = None,
     ) -> tuple[list[ForecastObservationPair], PairsReport]:
         """As :meth:`pairs`, also returning the :class:`PairsReport`."""
         if max_separation_m < 0 or max_time_offset_s < 0:
@@ -542,6 +547,7 @@ class SqliteArchive:
                 max_separation_m=max_separation_m,
                 max_time_offset_s=max_time_offset_s,
                 lead_range=lead_time_range_s,
+                observation_provider=observation_provider,
             )
         out = self._build_pairs(variable, matches)
         self.last_pairs_report = report
@@ -593,6 +599,7 @@ class SqliteArchive:
         "WHERE v.variable = :variable AND v.valid_time_utc >= :o0 AND v.valid_time_utc < :o1 "
         "AND s.kind = 'observation' AND v.value IS NOT NULL "
         f"AND v.quality IN ({_QUALITY_SQL}) "
+        "AND (:obs_provider IS NULL OR s.provider = :obs_provider) "
         "ORDER BY v.valid_time_utc, v.series_id"
     )
     _DROPPED_SQL: Final[str] = (
@@ -648,7 +655,7 @@ class SqliteArchive:
         """
         t0, t1 = self._bounds(period)
         params = self._query_params(variable, t0, t1, provider, model_name, None)
-        obs_params = {"variable": variable, "o0": t0, "o1": t1}
+        obs_params = {"variable": variable, "o0": t0, "o1": t1, "obs_provider": None}
         lines: list[str] = []
         with self._txn(write=False) as conn:
             for sql, p in ((self._forecast_query(), params), (self._OBS_SQL, obs_params)):
@@ -668,6 +675,7 @@ class SqliteArchive:
         max_separation_m: float,
         max_time_offset_s: float,
         lead_range: tuple[float, float] | None,
+        observation_provider: str | None = None,
     ) -> tuple[list[_Match], PairsReport]:
         params = self._query_params(variable, t0, t1, provider, model_name, lead_range)
 
@@ -681,7 +689,8 @@ class SqliteArchive:
         obs_times: list[int] = []
         obs_rows: list[tuple[int, float, tuple[float, float, float | None]]] = []
         for ot, osid, oval, olat, olon, oelev in conn.execute(
-            self._OBS_SQL, {"variable": variable, "o0": o0, "o1": o1}
+            self._OBS_SQL,
+            {"variable": variable, "o0": o0, "o1": o1, "obs_provider": observation_provider},
         ):
             obs_times.append(ot)
             obs_rows.append((osid, oval, (olat, olon, oelev)))

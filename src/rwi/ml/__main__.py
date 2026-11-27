@@ -1,9 +1,12 @@
 """``python -m rwi.ml`` - retrain, evaluate and list post-processing models.
 
-    python -m rwi.ml retrain --variable ghi --cutoff 2027-08-01T00:00Z \\
-        --target-kind bom_observation
+    python -m rwi.ml retrain --variable ghi --cutoff 2027-08-01T00:00Z
     python -m rwi.ml eval --variable ghi --cutoff 2027-08-01T00:00Z
     python -m rwi.ml list
+
+Pairs come from the ADR 0011 truth hierarchy (`rwi.ml.targets`): on-board
+ML-01/Airmar first where it is truth, then BoM. ``--target-kind`` defaults to the
+mix of the training rows; a value that contradicts that mix is refused.
 
 The archive is opened read-only. ``retrain`` writes a new immutable version
 under ``--models-dir``; it never overwrites one. Pure functions (`retrain`,
@@ -16,7 +19,6 @@ import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -34,6 +36,7 @@ from rwi.ml.constraints import ML_VARIABLES
 from rwi.ml.dataset import dataset_from_pairs, split_by_cutoff
 from rwi.ml.quantile import NUM_BOOST_ROUND, MlUnavailableError, train_quantile_model
 from rwi.ml.scoring import ScoreRow, score_holdout, summary_metrics
+from rwi.ml.targets import TruthPairs, truth_pairs
 
 __all__ = ["CALIBRATION_MIN_COVERAGE", "EvalReport", "evaluate", "main", "retrain"]
 
@@ -126,7 +129,7 @@ def _parser() -> argparse.ArgumentParser:
     r = sub.add_parser("retrain", help="fit a new model version")
     r.add_argument("--variable", choices=ML_VARIABLES, required=True)
     r.add_argument("--cutoff", type=_utc, required=True, help="training cutoff (UTC)")
-    r.add_argument("--target-kind", choices=TARGET_KINDS, required=True)
+    r.add_argument("--target-kind", choices=TARGET_KINDS, default=None)
     r.add_argument("--rounds", type=int, default=NUM_BOOST_ROUND)
     e = sub.add_parser("eval", help="score a saved model on later rows")
     e.add_argument("--variable", choices=ML_VARIABLES, required=True)
@@ -136,11 +139,25 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def _pairs(archive: Path | None, variable: str) -> list[ForecastObservationPair]:
+def _pairs(archive: Path | None, variable: str) -> TruthPairs:
     from rwi.archive.store import SqliteArchive, open_archive
 
     store = SqliteArchive(archive, read_only=True) if archive else open_archive()
-    return store.pairs(variable=variable)
+    return truth_pairs(store, variable)
+
+
+def _target_kind(truth: TruthPairs, cutoff_utc: datetime, requested: str | None) -> TargetKind:
+    """Target kind of the training rows; ``requested`` must agree with it."""
+    train = truth.known_at(cutoff_utc)
+    if not train.pairs:
+        raise MlUnavailableError(f"{truth.variable}: no truth rows at or before {cutoff_utc}")
+    derived = train.target_kind
+    if requested is not None and requested != derived:
+        raise MlUnavailableError(
+            f"{truth.variable}: --target-kind {requested} contradicts the training truth "
+            f"{derived} ({train.sources})"
+        )
+    return derived
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -155,13 +172,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "n_train": m.n_train, "calibrated": m.calibrated, "metrics": m.metrics,
                 }))
             return 0
-        pairs = _pairs(args.archive, args.variable)
+        truth = _pairs(args.archive, args.variable)
+        pairs = list(truth.pairs)
         if args.command == "retrain":
             manifest, rows = retrain(
                 pairs,
                 variable=args.variable,
                 cutoff_utc=args.cutoff,
-                target_kind=cast(TargetKind, args.target_kind),
+                target_kind=_target_kind(truth, args.cutoff, args.target_kind),
                 models_dir=args.models_dir,
                 num_boost_round=args.rounds,
             )

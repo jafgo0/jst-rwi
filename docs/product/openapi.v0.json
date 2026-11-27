@@ -993,6 +993,29 @@
         ],
         "type": "object"
       },
+      "MlLoadedModel": {
+        "properties": {
+          "calibrated": {
+            "type": "boolean"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "model_id",
+          "model_version",
+          "calibrated"
+        ],
+        "type": "object"
+      },
       "ModelComparison": {
         "properties": {
           "disagreements": {
@@ -1801,6 +1824,70 @@
         ],
         "type": "string"
       },
+      "QuantileBand": {
+        "properties": {
+          "interval_probability": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "ml_derived": {
+            "type": "boolean"
+          },
+          "p10": {
+            "type": "number"
+          },
+          "p50": {
+            "type": "number"
+          },
+          "p90": {
+            "type": "number"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityFlag",
+            "default": "unvalidated"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "valid_time_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "unit",
+          "valid_time_utc",
+          "point",
+          "p10",
+          "p50",
+          "p90",
+          "method",
+          "ml_derived",
+          "provenance"
+        ],
+        "type": "object"
+      },
       "QuestionKind": {
         "enum": [
           "risk_ahead",
@@ -2600,6 +2687,266 @@
         "required": [
           "kind",
           "statement"
+        ],
+        "type": "object"
+      },
+      "V1PointForecast": {
+        "properties": {
+          "bands": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/QuantileBand"
+            },
+            "type": "object"
+          },
+          "distance_m": {
+            "type": "number"
+          },
+          "eta_local": {
+            "type": "string"
+          },
+          "eta_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "heading_deg": {
+            "type": "number"
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "unavailable": {
+            "additionalProperties": {
+              "enum": [
+                "no_model",
+                "no_upstream",
+                "not_applicable",
+                "outside_training_range"
+              ],
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "upstream_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "distance_m",
+          "eta_utc",
+          "eta_local",
+          "point",
+          "heading_deg",
+          "upstream_source"
+        ],
+        "type": "object"
+      },
+      "V1RouteForecast": {
+        "properties": {
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "loaded": {
+            "items": {
+              "$ref": "#/components/schemas/MlLoadedModel"
+            },
+            "type": "array"
+          },
+          "missing": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/V1PointForecast"
+            },
+            "type": "array"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "route_id",
+          "generated_at_utc",
+          "variables",
+          "points"
+        ],
+        "type": "object"
+      },
+      "V1Score": {
+        "properties": {
+          "bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage_80": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "crps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "n": {
+            "type": "integer"
+          },
+          "rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "system": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "n",
+          "mae",
+          "rmse",
+          "bias",
+          "crps"
+        ],
+        "type": "object"
+      },
+      "V1VariableVerification": {
+        "properties": {
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "n_holdout": {
+            "default": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/V1Score"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "no_truth",
+              "no_model",
+              "no_holdout"
+            ],
+            "type": "string"
+          },
+          "target_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "truth_sources": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "variable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "status"
+        ],
+        "type": "object"
+      },
+      "V1Verification": {
+        "properties": {
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/V1VariableVerification"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at_utc",
+          "variables"
         ],
         "type": "object"
       },
@@ -4520,6 +4867,143 @@
         },
         "tags": [
           "state"
+        ]
+      }
+    },
+    "/api/v1/forecast/route": {
+      "get": {
+        "operationId": "read_route_forecast_api_v1_forecast_route_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "speed_kmh",
+            "required": false,
+            "schema": {
+              "default": 80.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 130.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_distance_m",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 240.0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "variables",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1RouteForecast"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/verification": {
+      "get": {
+        "operationId": "read_verification_api_v1_verification_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "variables",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1Verification"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "v1"
         ]
       }
     },
