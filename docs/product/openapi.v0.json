@@ -630,6 +630,65 @@
         ],
         "type": "object"
       },
+      "DeterministicPassage": {
+        "properties": {
+          "criteria_met": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "passage_time_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model_name"
+        ],
+        "type": "object"
+      },
       "EnergyEstimate": {
         "properties": {
           "energy_wh": {
@@ -838,6 +897,55 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "FrontOutlook": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "alerts_configured": {
+            "default": false,
+            "type": "boolean"
+          },
+          "caveat": {
+            "default": "Model-front probability from uncalibrated surface rules (trough, NW->SW wind shift, 24 h cooling, dewpoint drop) applied per ensemble member; not a verified frequency of observed fronts. Ensemble values are interpolated hourly from 3-6 h native steps. Passage quantiles are conditional on a front. Not meaningful for the tropical north of the route.",
+            "type": "string"
+          },
+          "deterministic_model": {
+            "type": "string"
+          },
+          "ensemble_model": {
+            "type": "string"
+          },
+          "generated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "horizon_h": {
+            "type": "number"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/StopFrontPassage"
+            },
+            "type": "array"
+          },
+          "window": {
+            "$ref": "#/components/schemas/TimeWindow"
+          }
+        },
+        "required": [
+          "generated_at_utc",
+          "window",
+          "horizon_h",
+          "ensemble_model",
+          "deterministic_model",
+          "stops"
+        ],
+        "type": "object"
       },
       "GeoPoint": {
         "properties": {
@@ -2433,6 +2541,141 @@
           "is_simulated",
           "position_age_s",
           "server_time_utc"
+        ],
+        "type": "object"
+      },
+      "StopFrontPassage": {
+        "properties": {
+          "deterministic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeterministicPassage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "member_passages_utc": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "members_evaluated": {
+            "default": 0,
+            "type": "integer"
+          },
+          "members_total": {
+            "default": 0,
+            "type": "integer"
+          },
+          "members_with_front": {
+            "default": 0,
+            "type": "integer"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "p10_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "p50_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "p90_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantile_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantiles_conditional_on_front": {
+            "default": true,
+            "type": "boolean"
+          },
+          "route_distance_m": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "route_distance_m",
+          "point"
         ],
         "type": "object"
       },
@@ -4943,6 +5186,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/V1RouteForecast"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/fronts": {
+      "get": {
+        "operationId": "read_fronts_api_v1_fronts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stops",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 72.0,
+              "maximum": 168.0,
+              "minimum": 1.0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontOutlook"
                 }
               }
             }

@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     ml01_level_tolerance_deg: float | None = None
     ml01_assume_level: bool = False
     ml01_command: str | None = None  # prints "time_utc,value[,pitch_deg,roll_deg]" lines
+    # Ensemble front-passage alerts (ADR 0012): operational choices, no default.
+    front_alert_watch_probability: float | None = None
+    front_alert_warning_probability: float | None = None
 
 
 @lru_cache(maxsize=1)

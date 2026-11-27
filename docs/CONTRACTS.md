@@ -357,6 +357,15 @@ GET  /api/v1/verification?variables -> {variables:[{variable, status, reason,
          model_version, truth_sources:{provider: n}, target_kind, n_holdout,
          scores:[{system, metric, value, n}]}]}
      status: ok | no_truth | no_model | no_holdout; 503 when the archive is unavailable
+GET  /api/v1/fronts?stops&hours -> {generated_at_utc, window, horizon_h, ensemble_model,
+         deterministic_model, stops:[{name, route_distance_m, point, members_total,
+         members_evaluated, members_with_front, probability, p10_utc, p50_utc, p90_utc,
+         quantiles_conditional_on_front, quantile_reason, member_passages_utc,
+         deterministic:{model_name, passage_time_utc, strength, criteria_met, error},
+         provenance, error}], alerts:[Alert], alerts_configured, caveat}   (ADR 0012)
+     stops: named route waypoints (default Coober Pedy, Glendambo, Port Augusta; unknown
+     -> 422); hours 1-168 (default 72); alerts only when RWI_FRONT_ALERT_WATCH_PROBABILITY
+     and RWI_FRONT_ALERT_WARNING_PROBABILITY are set; 503 without an ensemble provider
 ```
 
 * Every band is ML post-processed (`ml_derived=true`) and carries lineage:

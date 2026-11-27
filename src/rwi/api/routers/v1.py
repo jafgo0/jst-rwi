@@ -13,12 +13,20 @@ and names which truth source supplied how many rows.
 ``/api/ml/*`` stays EXPERIMENTAL; this prefix is STABLE (docs/CONTRACTS.md).
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from rwi.alerts.fronts import (
+    DEFAULT_FRONT_STOPS,
+    FRONT_LOOKBACK_H,
+    FrontOutlook,
+    front_alerts,
+    stop_front_passage,
+)
 from rwi.api.capability import require_attr
 from rwi.api.integration import MAX_TRAJECTORY_SAMPLES
 from rwi.api.routers.ml import MlLoadedModel
@@ -352,3 +360,132 @@ async def read_verification(
     finally:
         archive.close()
     return V1Verification(generated_at_utc=utc_now(), variables=results)
+
+
+# --- /api/v1/fronts (ADR 0012) ---------------------------------------------------------
+
+FRONT_ENSEMBLE_MODEL = "ecmwf_ifs025"
+FRONT_DETERMINISTIC_MODEL = "ecmwf_aifs025_single"
+FRONT_CACHE_TTL_S = 600.0
+FRONT_FETCH_TIMEOUT_S = 30.0
+
+_fronts_cache: dict[tuple[tuple[str, ...], float], tuple[datetime, Any]] = {}
+_fronts_lock = asyncio.Lock()
+
+
+def _reset_fronts_cache() -> None:
+    """Drop cached outlooks (tests; each TestClient runs its own event loop)."""
+    global _fronts_lock
+    _fronts_cache.clear()
+    _fronts_lock = asyncio.Lock()
+
+
+def _reason(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}".rstrip(": ")
+
+
+@router.get("/fronts", response_model=FrontOutlook)
+async def read_fronts(
+    settings: SettingsDep,
+    stops: Annotated[str | None, Query(description="comma-separated stop names")] = None,
+    hours: Annotated[float, Query(ge=1.0, le=168.0)] = 72.0,
+) -> Any:
+    """Ensemble front probability and conditional P10/P50/P90 passage per stop (ADR 0012)."""
+    variables: Any = require_attr(
+        "rwi.alerts.synoptic", "SYNOPTIC_VARIABLES", capability="synoptic analysis"
+    )
+    load_route: Any = require_attr("rwi.route.bwsc", "load_bwsc_route", capability="BWSC route")
+    from rwi.api.routers.meteorologist import _synoptic_points
+
+    known = {name: (dist, point) for name, dist, point in _synoptic_points(load_route())}
+    wanted = (
+        tuple(s.strip() for s in stops.split(",") if s.strip()) if stops else DEFAULT_FRONT_STOPS
+    )
+    unknown = [s for s in wanted if s not in known]
+    if unknown or not wanted:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"unknown stop(s) {unknown}; known: {sorted(known)}",
+        )
+    now = utc_now()
+    key = (wanted, hours)
+    async with _fronts_lock:
+        cached = _fronts_cache.get(key)
+        if cached is not None and (now - cached[0]).total_seconds() < FRONT_CACHE_TTL_S:
+            return cached[1]
+        available: Any = require_attr(
+            "rwi.providers.registry", "available_providers", capability="weather providers"
+        )
+        close: Any = require_attr(
+            "rwi.providers.registry", "close_providers", capability="weather providers"
+        )
+        horizon = timedelta(hours=hours)
+        window = TimeWindow(
+            start_utc=now - timedelta(hours=FRONT_LOOKBACK_H),
+            end_utc=now + horizon + timedelta(hours=3),
+        )
+        providers = available(settings)
+        try:
+            openmeteo = providers.get("open-meteo")
+            if openmeteo is None or not openmeteo.capabilities.supports_ensemble:
+                raise HTTPException(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Open-Meteo ensemble provider is not available",
+                )
+
+            async def ens(point: GeoPoint) -> Any:
+                return await asyncio.wait_for(
+                    openmeteo.fetch_ensemble(point, window, variables, models=FRONT_ENSEMBLE_MODEL),
+                    timeout=FRONT_FETCH_TIMEOUT_S,
+                )
+
+            async def det(point: GeoPoint) -> Any:
+                return await asyncio.wait_for(
+                    openmeteo.fetch_forecast(
+                        point, window, variables, models=FRONT_DETERMINISTIC_MODEL
+                    ),
+                    timeout=FRONT_FETCH_TIMEOUT_S,
+                )
+
+            results = await asyncio.gather(
+                *(f(known[s][1]) for s in wanted for f in (ens, det)), return_exceptions=True
+            )
+        finally:
+            await close(providers)
+        per_stop = []
+        for i, name in enumerate(wanted):
+            e, d = results[2 * i], results[2 * i + 1]
+            dist, point = known[name]
+            per_stop.append(
+                stop_front_passage(
+                    name,
+                    dist,
+                    point,
+                    None if isinstance(e, BaseException) else e,
+                    now=now,
+                    horizon=horizon,
+                    ensemble_error=_reason(e) if isinstance(e, BaseException) else None,
+                    deterministic=None if isinstance(d, BaseException) else d,
+                    deterministic_model=FRONT_DETERMINISTIC_MODEL,
+                    deterministic_error=_reason(d) if isinstance(d, BaseException) else None,
+                )
+            )
+        watch = settings.front_alert_watch_probability
+        warning = settings.front_alert_warning_probability
+        try:
+            alerts = front_alerts(per_stop, watch=watch, warning=warning, now=now)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        outlook = FrontOutlook(
+            generated_at_utc=now,
+            window=window,
+            horizon_h=hours,
+            ensemble_model=FRONT_ENSEMBLE_MODEL,
+            deterministic_model=FRONT_DETERMINISTIC_MODEL,
+            stops=per_stop,
+            alerts=alerts,
+            alerts_configured=watch is not None and warning is not None,
+        )
+        if any(s.error is None for s in per_stop):
+            _fronts_cache[key] = (now, outlook)
+        return outlook

@@ -185,8 +185,32 @@ another model is allowed but is a statement about the ensemble, not that model.
 | `probability_note`, `MemberFrequency.note` | tested |
 | `attach_uncertainty` | tested |
 | `spread_skill_note` | tested |
+| Ensemble front passage: probability, conditional P10/P50/P90, AIFS kept apart (section 7) | tested |
 | Reliability of ensemble spread as forecast uncertainty (any function) | not started (needs verification history) |
 | Calibration of member frequencies into probabilities | not started (needs verification history) |
 
 "tested" means correctness of the arithmetic and conventions on constructed
 inputs. It does not mean the ensemble is skilful.
+
+## 7. Ensemble front passage (`rwi.alerts.fronts`, ADR 0012)
+
+The deterministic surface front detector (`rwi.alerts.synoptic`) runs unchanged on
+every IFS ENS member at a stop. A member's front is its earliest passage in
+`[now, now + hours]`.
+
+* **Probability** is `members_with_front / members_evaluated`, the same k/n member
+  frequency as section 4, with the same caveat. A member with no steps is not
+  evaluated; a member without a front stays in the denominator.
+* **P10/P50/P90** are numpy linear quantiles (Hyndman & Fan definition 7) of the
+  passage epochs of the members *with* a front. They are conditional on a front
+  occurring, and null below 3 such members, where the three cannot differ.
+* **AIFS** goes through the same detector and is reported apart. It is a different
+  system, not an exchangeable member, so it never enters the quantiles.
+* **Inputs.** Ensemble values are hourly interpolations of native 3-6 h steps, so
+  passage times carry at least that much timing uncertainty.
+
+Validation: `tests/unit/test_alerts_fronts.py` pins the probability, quantiles,
+the `[now, now + hours]` filter and the AIFS separation on synthetic fronts whose
+passage hour is known. The detector itself is uncalibrated (REQUIREMENTS #14), so
+the probability is that of a *model* front under these rules, not a verified
+frequency of observed fronts.

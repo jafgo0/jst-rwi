@@ -12,5 +12,7 @@
 | [0008](0008-aifs-provider-and-ml-postprocessing.md) | ECMWF AIFS as a gridded provider; quantile ML post-processing | **Accepted** |
 | [0009](0009-nmea2000-decoding-via-canboat.md) | NMEA 2000 decoding through canboat, not an in-house decoder | Accepted |
 | [0010](0010-onboard-sensor-ingestion.md) | On-board sensor ingestion: Airmar 200WX and EKO ML-01 | Accepted |
+| [0011](0011-quantile-bands-and-stable-v1-api.md) | Quantile bands and the stable `/api/v1` | Accepted |
+| [0012](0012-ensemble-cold-front-passage.md) | Ensemble cold-front passage time per control stop | Accepted |
 
 Format: Context / Decision / Consequences / Alternatives considered / Status. A decision is changed by a new ADR that supersedes the old one, not by editing history.
