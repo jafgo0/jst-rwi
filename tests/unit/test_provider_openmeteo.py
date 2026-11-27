@@ -172,6 +172,8 @@ async def test_out_of_range_values_are_flagged_not_clipped(tmp_path):
 async def test_null_values_are_missing_never_zero(tmp_path):
     """Real response: bom_access_global in Open-Meteo is stale and returns only nulls."""
     respx.get(FORECAST_URL).respond(200, json=fx("openmeteo_forecast_all_null_bom_access.json"))
+    # Metadata unreachable: the staleness guard cannot fire, so the nulls must stay MISSING.
+    respx.get(BOM_META_URL).respond(503)
     window = TimeWindow(
         start_utc=datetime(2026, 11, 1, 22, tzinfo=UTC),
         end_utc=datetime(2026, 11, 1, 23, tzinfo=UTC),
@@ -185,6 +187,58 @@ async def test_null_values_are_missing_never_zero(tmp_path):
             assert m.value is None and m.quality is QualityFlag.MISSING
             assert not m.is_usable
     assert s.steps[0].value("temperature_2m") is None
+
+
+BOM_META_URL = "https://api.open-meteo.com/data/bom_access_global/static/meta.json"
+BOM_ENS_META_URL = "https://api.open-meteo.com/data/bom_access_global_ensemble/static/meta.json"
+
+
+@respx.mock
+async def test_stale_model_is_refused_not_served_as_nulls(tmp_path):
+    """Real metadata (2026-11-27): ACCESS-G data ends 2025-06-30 07Z, run 2025-06-26 18Z."""
+    data = respx.get(FORECAST_URL).respond(
+        200, json=fx("openmeteo_forecast_all_null_bom_access.json")
+    )
+    respx.get(BOM_META_URL).respond(200, json=fx("openmeteo_meta_bom_access_global.json"))
+    window = TimeWindow(
+        start_utc=datetime(2026, 11, 1, 22, tzinfo=UTC),
+        end_utc=datetime(2026, 11, 1, 23, tzinfo=UTC),
+    )
+    p = make(tmp_path)
+    with pytest.raises(ProviderUnavailableError, match="stale") as exc:
+        await p.fetch_forecast(DARWIN, window, ["temperature_2m"], models="bom_access_global")
+    msg = str(exc.value)
+    assert "bom_access_global" in msg
+    assert "2025-06-26T18:00:00+00:00" in msg and "2025-06-30T07:00:00+00:00" in msg
+    # Not cached: a second call asks again instead of replaying the refusal.
+    with pytest.raises(ProviderUnavailableError):
+        await p.fetch_forecast(DARWIN, window, ["temperature_2m"], models="bom_access_global")
+    assert data.call_count == 2
+
+
+@respx.mock
+async def test_stale_ensemble_is_refused(tmp_path):
+    """Real metadata (2026-11-27): ACCESS-GE data ends 2025-07-07 03Z."""
+    respx.get(ENSEMBLE_URL).respond(200, json=fx("openmeteo_ensemble_darwin_ifs025.json"))
+    respx.get(BOM_ENS_META_URL).respond(
+        200, json=fx("openmeteo_meta_bom_access_global_ensemble.json")
+    )
+    window = TimeWindow(
+        start_utc=datetime(2026, 11, 2, 3, tzinfo=UTC),
+        end_utc=datetime(2026, 11, 2, 5, tzinfo=UTC),
+    )
+    with pytest.raises(ProviderUnavailableError, match="2025-07-07T03:00:00"):
+        await make(tmp_path).fetch_ensemble(
+            DARWIN, window, ["temperature_2m"], models="bom_access_global_ensemble"
+        )
+
+
+@respx.mock
+async def test_live_model_whose_data_reaches_the_window_is_served(tmp_path):
+    """The real ecmwf_ifs025 metadata ends 2026-11-16 15Z, after the window: no refusal."""
+    mock_forecast()
+    s = await make(tmp_path).fetch_forecast(DARWIN, FORECAST_WINDOW, VARS)
+    assert s.steps and s.model_init_time_utc is not None
 
 
 # --------------------------------------------------------------------------- time handling
@@ -612,6 +666,7 @@ async def test_ensemble_rate_limit_is_typed_and_not_retried_for_a_daily_quota(tm
 
 # --------------------------------------------------------------------------- instability
 
+
 @respx.mock
 @pytest.mark.science
 async def test_lifted_index_sign_convention_is_negative_for_unstable(tmp_path):
@@ -645,9 +700,7 @@ async def test_lifted_index_sign_convention_is_negative_for_unstable(tmp_path):
     payload["hourly"]["cape"] = [2800.0] * length
     payload["hourly_units"]["cape"] = "J/kg"
     mock_forecast(payload)
-    series = await make(tmp_path).fetch_forecast(
-        DARWIN, FORECAST_WINDOW, ["lifted_index", "cape"]
-    )
+    series = await make(tmp_path).fetch_forecast(DARWIN, FORECAST_WINDOW, ["lifted_index", "cape"])
     step = series.nearest_step(datetime(2026, 11, 2, 3, 0, tzinfo=UTC), tolerance_s=0)
     assert step is not None
     # Sign is preserved: a negative API value remains negative canonical.

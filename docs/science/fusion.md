@@ -23,7 +23,7 @@ docs and `meta.json` files, 2026-11-01). Nothing in this table was re-verified f
 | `ecmwf_aifs025_single` | 25 km | **6-hourly** natively | 6 h | AI model; `wind_gusts_10m`, `precipitation_probability`, `uv_index`, `visibility` null |
 | `icon_global` | not recorded as verified for the single model | not recorded | not recorded (the `best_match` row quotes ICON at 3 h) | name accepted and probed (Darwin, 48 h); `uv_index`, `visibility` null |
 | `gfs_global` | not recorded as verified for the single model | not recorded | not recorded (the `best_match` row quotes GFS at 1 h) | name accepted and probed; `soil_temperature_0cm` null |
-| `bom_access_global` | 15 km (docs table) | - | **dead**: last run 2025-06-26, every value null on 2026-11-01 | Do not use. |
+| `bom_access_global` | 15 km (docs table) | - | **dead**: last run 2025-06-26 18Z, data end 2025-06-30 (re-checked 2026-11-27) | Do not use; rejected in ADR 0013. The adapter refuses it as stale. |
 
 Consequences for comparison:
 

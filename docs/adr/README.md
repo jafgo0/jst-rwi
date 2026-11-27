@@ -14,5 +14,6 @@
 | [0010](0010-onboard-sensor-ingestion.md) | On-board sensor ingestion: Airmar 200WX and EKO ML-01 | Accepted |
 | [0011](0011-quantile-bands-and-stable-v1-api.md) | Quantile bands and the stable `/api/v1` | Accepted |
 | [0012](0012-ensemble-cold-front-passage.md) | Ensemble cold-front passage time per control stop | Accepted |
+| [0013](0013-bom-access-g-rejected.md) | BoM ACCESS-G via Open-Meteo rejected; stale-model guard | Accepted |
 
 Format: Context / Decision / Consequences / Alternatives considered / Status. A decision is changed by a new ADR that supersedes the old one, not by editing history.

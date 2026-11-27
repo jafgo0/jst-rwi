@@ -190,6 +190,9 @@ _META_DIR: dict[tuple[str, str], str] = {
     ("forecast", "ecmwf_aifs025_single"): "ecmwf_aifs025_single",
     ("ensemble", "ecmwf_ifs025"): "ecmwf_ifs025_ensemble",
     ("ensemble", "gfs025"): "ncep_gefs025",
+    # Frozen since the 2025-06-26 18Z run (ADR 0013); listed so the staleness guard sees it.
+    ("forecast", "bom_access_global"): "bom_access_global",
+    ("ensemble", "bom_access_global_ensemble"): "bom_access_global_ensemble",
 }
 
 _ENSEMBLE_MAX_HOURS: dict[str, float] = {"ecmwf_ifs025": 360.0, "gfs025": 240.0}
@@ -542,6 +545,7 @@ class OpenMeteoProvider(BaseProvider):
             data = await self._get_json(url, self._with_key(url, params))
             self._validate_hourly(data)
             meta, meta_error, meta_at = await self._fetch_meta(dataset, model)
+            self._refuse_stale_model(dataset, model, meta, first)
             return {
                 "request_url": str(httpx.URL(url, params=params)),
                 "response": data,
@@ -567,6 +571,33 @@ class OpenMeteoProvider(BaseProvider):
             return meta, None, self._now()
         except ProviderError as exc:
             return None, f"metadata request failed: {exc}", None
+
+    @staticmethod
+    def _refuse_stale_model(
+        dataset: str, model: str, meta: dict[str, Any] | None, first: datetime
+    ) -> None:
+        """Raise when the model's metadata says its data ends before the window (ADR 0013).
+
+        Open-Meteo still answers for a model it no longer updates, with all-null series;
+        without this a frozen run would look like a live model with missing values.
+        """
+        end = (meta or {}).get("data_end_time")
+        if not isinstance(end, int | float) or isinstance(end, bool):
+            return
+        data_end = datetime.fromtimestamp(float(end), tz=UTC)
+        if data_end >= first:
+            return
+        init = (meta or {}).get("last_run_initialisation_time")
+        last_run = (
+            datetime.fromtimestamp(float(init), tz=UTC).isoformat()
+            if isinstance(init, int | float)
+            else "unknown"
+        )
+        raise ProviderUnavailableError(
+            f"open-meteo: {dataset} model {model!r} is not updated (stale): last run "
+            f"{last_run}, data ends {data_end.isoformat()}, before the requested start "
+            f"{first.isoformat()}"
+        )
 
     @staticmethod
     def _validate_hourly(data: Any) -> None:
