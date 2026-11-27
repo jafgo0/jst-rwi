@@ -11,6 +11,9 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -118,11 +121,33 @@ async def regulations() -> dict[str, Any]:
     return summary()
 
 
+def _log_onboard_exit(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        logging.getLogger(__name__).error(
+            "on-board sensor ingest stopped", exc_info=task.exception()
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
-    yield
+    onboard: asyncio.Task[None] | None = None
+    if settings.onboard_sensors_enabled:
+        # Built before the task starts so a bad sensor config fails startup (ADR 0010).
+        from rwi.core.state import get_state_store
+        from rwi.telemetry.ingest import OnboardConfig, run_live
+
+        config = OnboardConfig.from_settings(settings)
+        onboard = asyncio.create_task(run_live(settings, get_state_store(), config))
+        onboard.add_done_callback(_log_onboard_exit)
+    try:
+        yield
+    finally:
+        if onboard is not None:
+            onboard.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await onboard
 
 
 def create_app() -> FastAPI:

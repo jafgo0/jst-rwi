@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -113,6 +114,30 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-5-5"
     # /ask also requires X-Telemetry-Secret; this caps token spend per process.
     meteorologist_ask_per_minute: int = 6
+
+    # On-board sensors (ADR 0010). Off by default. Calibration and mounting
+    # values have NO defaults: rwi.telemetry validates them when the sensors
+    # are switched on and refuses to start while any is missing.
+    onboard_sensors_enabled: bool = False
+    sensor_spool_path: Path = Field(default=Path("data/spool/sensors.sqlite3"))
+    sensor_archive_interval_s: int = 60
+    sensor_late_tolerance_s: float = 0.5
+    # Airmar 200WX via NGX-1 + canboat (ADR 0009).
+    airmar_serial: str | None = None
+    airmar_mount: str | None = None  # solar_car | support_car
+    airmar_height_m: float | None = None  # sensor height above the road, m
+    airmar_drive_position: bool = False  # let its GNSS drive live_gps
+    airmar_canboat_naive_utc: bool = False  # canboat timestamps without offset are UTC
+    airmar_canboat_command: str | None = None  # e.g. "actisense-serial ... | analyzer -json -si"
+    # EKO ML-01 through an external ADC.
+    ml01_sensitivity_uv_per_wm2: float | None = None  # from the calibration certificate
+    ml01_serial: str | None = None
+    ml01_calibration_date: date | None = None
+    ml01_input_unit: str | None = None  # mv | wm2
+    ml01_mount: str | None = None  # solar_car | support_car | shared_with_airmar
+    ml01_level_tolerance_deg: float | None = None
+    ml01_assume_level: bool = False
+    ml01_command: str | None = None  # prints "time_utc,value[,pitch_deg,roll_deg]" lines
 
 
 @lru_cache(maxsize=1)

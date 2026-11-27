@@ -15,6 +15,7 @@ data/replay/
 # The forecast archive is operational data, not source. ADR 0007 keeps it out of
 # version control: it grows to gigabytes and is a binary that cannot be merged.
 data/archive/
+data/spool/
 node_modules/
 .DS_Store
 

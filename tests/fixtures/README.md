@@ -14,5 +14,7 @@ by `respx` in `tests/unit/test_provider_*.py` and `test_quality_checks.py`. Unit
 | `openmeteo_429_daily_limit.json` | **Wrapper** (status, headers, body) of the HTTP 429 from `ensemble-api.open-meteo.com` when the daily quota was exhausted |
 | `bom_idd60910_94120_darwin_trimmed.json` | `www.bom.gov.au/fwo/IDD60910/IDD60910.94120.json` (Darwin Airport), trimmed to the header + newest 6 of 149 records |
 | `ecmwf_aifs/aifs_single_20261126T06Z_corridor.grib2` | ECMWF open data AIFS Single 2026-11-26 06Z, steps 0-24 h, cropped to a 17x17 grid box; provenance in `ecmwf_aifs/README.md` |
+| `onboard/airmar_canboat.jsonl` | **Synthetic** canboat `analyzer -json -si` stream (Airmar 200WX PGNs, 3 s near Tennant Creek, 2027-08-22 03:15Z) built by hand for the true-wind and window tests; not a capture |
+| `onboard/ml01.csv` | **Synthetic** EKO ML-01 CSV (`time_utc,value[,pitch_deg,roll_deg]`, mV, sensitivity 7.00 uV/(W/m2) in the tests), including a bad value and blank tilt; not a capture |
 
 Re-capture sparingly: the free Open-Meteo ensemble pool is small (see docs/science/providers.md, sec. 1.1).

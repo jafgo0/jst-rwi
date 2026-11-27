@@ -60,7 +60,7 @@ class CoordinatorStats:
 class TelemetryCoordinator:
     """Pump samples from a reader into the StateStore under the guardrails.
 
-    Live telemetry (``TelemetrySource.LIVE_RADIO`` or ``LIVE_CELLULAR``) and
+    Live telemetry (``LIVE_RADIO``, ``LIVE_CELLULAR`` or ``LIVE_ONBOARD_SENSOR``) and
     simulated streams (``SIMULATED``) are treated as live for the freshness
     gate: a 60-second-old sample means the car has rolled a long way without
     the dashboard knowing it. Replayed historical data skips that gate
@@ -109,6 +109,7 @@ class TelemetryCoordinator:
         is_live = reader.source in {
             TelemetrySource.LIVE_RADIO,
             TelemetrySource.LIVE_CELLULAR,
+            TelemetrySource.LIVE_ONBOARD_SENSOR,
             TelemetrySource.SIMULATED,
         }
 
@@ -180,9 +181,7 @@ class TelemetryCoordinator:
             if assessment.verdict is FixVerdict.PARK_SUSPECT:
                 self.stats.position_jumps_logged += 1
                 self.stats.suspect_parked += 1
-                log.warning(
-                    "telemetry parking suspect fix: %s", assessment.reason
-                )
+                log.warning("telemetry parking suspect fix: %s", assessment.reason)
                 # Mark the parked fix as UNKNOWN quality so any subsystem
                 # that reads it cannot mistake it for a trusted GPS fix.
                 parked = fix.model_copy(update={"fix_quality": FixQuality.UNKNOWN})

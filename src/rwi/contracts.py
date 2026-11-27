@@ -1172,6 +1172,9 @@ class TelemetrySource(StrEnum):
     """Sub-GHz radio from the car, arriving within seconds."""
     LIVE_CELLULAR = "live_cellular"
     """Cellular backup link (where coverage exists)."""
+    LIVE_ONBOARD_SENSOR = "live_onboard_sensor"
+    """Read live from a sensor on the car or an escort (ADR 0010); freshness-gated
+    like the radio links."""
     MONGO_REPLAY = "mongo_replay"
     """Replayed from the team's MongoDB collection; the receive time stays the
     vehicle time, not the replay time."""

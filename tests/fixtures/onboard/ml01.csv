@@ -1,0 +1,8 @@
+# EKO ML-01 test stream; sensitivity in the tests is 7.00 uV/(W/m2), unit mv.
+time_utc,value,pitch_deg,roll_deg
+2027-08-22T03:15:00.250Z,5.60
+2027-08-22T03:15:00.750Z,5.60
+2027-08-22T03:15:01.250Z,5.74,0.5,0.5
+2027-08-22T03:15:01.750Z,5.74,,
+2027-08-22T03:15:02.250Z,not-a-number
+2027-08-22T03:15:02.500Z,5.46

@@ -127,6 +127,21 @@ CANONICAL_VARIABLES: dict[str, VariableSpec] = {
     )
 }
 
+#: Variables that only a sensor measures and no forecast serves (ADR 0010). Kept
+#: out of CANONICAL_VARIABLES because that set is what forecast providers must
+#: cover (rwi.providers.openmeteo asserts it). The sensor height is not part of
+#: the name: it is required config and travels in provenance. Until a height
+#: correction exists, these are never relabelled as the 10 m wind.
+OBSERVATION_ONLY_VARIABLES: dict[str, VariableSpec] = {
+    s.name: s
+    for s in (
+        _spec("wind_speed_sensor", "m/s", 0.0, 120.0, V.WIND,
+              "True wind speed at the sensor's own height above ground (see provenance)"),
+        _spec("wind_direction_sensor", "deg", 0.0, 360.0, V.WIND,
+              "Direction the wind at sensor height blows FROM, clockwise from true north"),
+    )
+}
+
 RADIATION_VARIABLES = tuple(
     name for name, s in CANONICAL_VARIABLES.items() if s.variable_class is V.RADIATION
 )
@@ -136,6 +151,10 @@ def spec_for(name: str) -> VariableSpec:
     """Look up a variable spec, raising :class:`UnknownVariableError` if absent."""
     try:
         return CANONICAL_VARIABLES[name]
+    except KeyError:
+        pass
+    try:
+        return OBSERVATION_ONLY_VARIABLES[name]
     except KeyError as exc:
         raise UnknownVariableError(
             f"{name!r} is not a canonical variable; add it to rwi.core.variables"
