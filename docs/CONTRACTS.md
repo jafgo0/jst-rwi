@@ -25,6 +25,7 @@ report it; the integrator changes it once.
 | Requirements + architecture docs | docs | `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/adr/**` |
 | Dashboard | web | `web/**` |
 | Race-week climatology (ADR 0016) | climatology | `src/rwi/climatology/**`, `scripts/build_climatology.py`, `tests/unit/test_climatology_*.py`, `docs/science/climatology.md` |
+| Ground-truth sources (ADR 0017) | providers / validation | `src/rwi/providers/bsrn.py`, `src/rwi/providers/merra2.py`, `src/rwi/validation/truth.py`, `scripts/truth/**`, `tests/unit/test_providers_bsrn.py`, `tests/unit/test_providers_merra2.py`, `tests/unit/test_validation_truth.py`, `docs/science/truth.md` |
 
 Never edit a path you do not own. Never run `git commit`, `git checkout`,
 `git push` or `uv pip install` — the integrator manages the repository and the
@@ -381,7 +382,8 @@ GET  /api/v1/fronts?stops&hours -> {generated_at_utc, window, horizon_h, ensembl
 * No upstream forecast is fetched for a variable without a model. Route points are
   limited to `MAX_TRAJECTORY_SAMPLES`.
 * Truth priority for verification: GHI and temperature use on-board EKO ML-01 or
-  Airmar first and BoM second. Everything else uses BoM only. BSRN is deferred.
+  Airmar first and BoM second. Everything else uses BoM only. BSRN is not a verification truth source; it is used
+  for offline ground-truth comparisons only (ADR 0017).
 
 ## 4b. Contract clarifications agreed during implementation
 

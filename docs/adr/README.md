@@ -18,5 +18,6 @@
 | [0014](0014-cams-aerosol-dynamic-turbidity-firms.md) | CAMS aerosol, dynamic Linke turbidity and NASA FIRMS hotspots | Accepted |
 | [0015](0015-camp-charging-forecast.md) | Camp-site charging forecast per candidate overnight stop | Accepted |
 | [0016](0016-race-week-climatology.md) | Race-week climatology per control-stop segment (ERA5) | Accepted |
+| [0017](0017-ground-truth-sources.md) | Ground-truth sources: BSRN Alice Springs and MERRA-2 | Accepted |
 
 Format: Context / Decision / Consequences / Alternatives considered / Status. A decision is changed by a new ADR that supersedes the old one, not by editing history.

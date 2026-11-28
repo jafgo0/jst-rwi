@@ -69,8 +69,9 @@ sun more than 30° below the horizon then at Darwin and Adelaide (test
 
 * Hourly samples within a day, and neighbouring points, are strongly correlated. Treat
   `n_years` as the record length when judging how stable a P10 or P90 is.
-* ERA5 cloud and surface radiation carry known regional biases. They are not corrected here;
-  BSRN Alice Springs and BoM stations arrive in phase 3f (ADR 0017).
+* ERA5 cloud and surface radiation carry known regional biases. They are not corrected here.
+  The bias of ERA5 GHI against BSRN Alice Springs is measured offline
+  (`docs/science/truth.md`, ADR 0017).
 * The 2025 control stops are used; rebuild after updating the table if 2027 differs.
 * The race week is pooled as a whole; there is no trend over the years and no ENSO or IOD
   stratification.
@@ -83,4 +84,4 @@ quantile type 7 against a hand-checked case, tailwind sign, wind-rose binning, d
 gap handling, the build loop against a `respx`-mocked archive (one call per point-year,
 resume with zero calls, retry backoff, a failure that does not stop the rest, corrupt and
 foreign parts refetched), and every API error path.
-No comparison against ground truth yet.
+Comparison against ground truth: `docs/science/truth.md`.

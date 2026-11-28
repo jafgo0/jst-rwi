@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     models_dir: Path = Field(default=Path("data/models"))
     # Built race-week climatology files (ADR 0016), written by scripts/build_climatology.py.
     climatology_dir: Path = Field(default=Path("data/climatology"))
+    # Downloaded ground-truth files (ADR 0017): BSRN station-to-archive files, MERRA-2
+    # series. Git-ignored; BSRN data must not be redistributed.
+    truth_dir: Path = Field(default=Path("data/truth"))
 
     # Route elevation enrichment. Points at an operator-local copy of
     # JU Solar Team's wsc_race_data.csv. The platform does not bundle it;
@@ -158,6 +161,13 @@ class Settings(BaseSettings):
     fire_alert_radius_km: float | None = None  # alert when a kept hotspot is this close
     fire_alert_min_confidence: str | None = None  # low | nominal | high
     fire_alert_min_frp_mw: float | None = None
+    # Ground-truth sources (ADR 0017). Personal accounts: .env only, never committed.
+    # BSRN FTP account from the World Radiation Monitoring Center (bsrn.awi.de).
+    bsrn_ftp_username: str | None = None
+    bsrn_ftp_password: SecretStr | None = None
+    # NASA Earthdata login (urs.earthdata.nasa.gov) for MERRA-2 via GES DISC.
+    earthdata_username: str | None = None
+    earthdata_password: SecretStr | None = None
     # Camp-site charging forecast (ADR 0015): operational choices, no default.
     # 10 m gust that flags a raised-array risk
     camp_gust_warning_m_s: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)

@@ -17,6 +17,7 @@ data/replay/
 data/archive/
 data/spool/
 data/climatology/parts/
+data/truth/
 node_modules/
 .DS_Store
 
